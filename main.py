@@ -14,16 +14,13 @@ from job_hunt.core.run_store import RunStore
 from job_hunt.core.types import RunRecord, SiteRunStep
 from job_hunt.core.verification import (
     apply_profile_filters,
-    has_blacklisted_path_token,
-    is_homepage,
-    link_is_reachable,
     normalize_link,
     verify_jobs,
 )
 from job_hunt.notify.notifier import TelegramNotifier
 from job_hunt.processing.processor import JobProcessor
-from job_hunt.scraping.discovery import SiteDiscovery
 from job_hunt.scraping.scraper import JobScraper
+from job_hunt.scraping.jobspy_scraper import JobBoardScraper
 
 
 def now_iso() -> str:
@@ -137,35 +134,6 @@ def resolve_status(success_count: int, failure_count: int) -> str:
     return "partial_failed"
 
 
-def profile_needs_refresh(
-    site_profile: dict | None,
-    revalidate_days: int,
-    timeout_seconds: int,
-) -> bool:
-    """Detect whether cached discovery profile should be refreshed before running."""
-
-    if not site_profile:
-        return True
-    selected_url = str(site_profile.get("selected_url", "")).strip()
-    if not selected_url:
-        return True
-    if is_homepage(selected_url):
-        return True
-    if has_blacklisted_path_token(selected_url):
-        return True
-    discovered_at = site_profile.get("discovered_at")
-    if discovered_at:
-        try:
-            discovered_dt = datetime.fromisoformat(str(discovered_at))
-            if discovered_dt < datetime.now(tz=timezone.utc) - timedelta(days=revalidate_days):
-                return True
-        except Exception:
-            return True
-    if not link_is_reachable(selected_url, timeout_seconds=timeout_seconds):
-        return True
-    return False
-
-
 def build_quality_report(
     run_id: str,
     sites: list[str],
@@ -236,73 +204,10 @@ def build_quality_report(
     }
 
 
-def initialize_site_profiles(
-    store: RunStore,
-    sites: list[str],
-    user_profile: str,
-    llm_provider: str,
-    llm_model: str,
-    timeout_seconds: int,
-    ollama_endpoint: str,
-    openai_api_key: str | None,
-    use_playwright_fallback: bool,
-    refresh_discovery: bool,
-) -> dict[str, dict]:
-    """Discover and cache the best job URL and recipe for each homepage."""
-
-    profiles = store.load_site_profiles()
-    discoverer = SiteDiscovery(
-        timeout_seconds=timeout_seconds,
-        use_playwright_fallback=use_playwright_fallback,
-    )
-
-    for homepage in sites:
-        if not refresh_discovery and homepage in profiles:
-            log_progress(f"Discovery cache hit: {homepage}")
-            continue
-        try:
-            log_progress(f"Discovering navigation for: {homepage}")
-            discovery = discoverer.discover_with_guidance(
-                homepage=homepage,
-                llm_provider=llm_provider,
-                llm_model=llm_model,
-                user_profile=user_profile,
-                timeout_seconds=timeout_seconds,
-                ollama_endpoint=ollama_endpoint,
-                openai_api_key=openai_api_key,
-            )
-            profiles[homepage] = discovery.to_dict()
-            log_progress(
-                f"Discovery selected URL for {homepage}: {profiles[homepage].get('selected_url', homepage)}"
-            )
-        except Exception as exc:
-            log_progress(f"Discovery failed for {homepage}: {exc}")
-            profiles[homepage] = {
-                "homepage": homepage,
-                "selected_url": homepage,
-                "candidates": [],
-                "selected_by": "fallback",
-                "selection_reason": "Discovery failed, fallback to homepage",
-                "interaction_recipe": {
-                    "entry_url": homepage,
-                    "strategy": "open_and_extract",
-                    "steps": [{"action": "open", "target": homepage}],
-                },
-                "visited_pages": 0,
-                "discovered_at": now_iso(),
-                "error": str(exc),
-            }
-
-    store.save_site_profiles(profiles)
-    return profiles
-
-
 def execute(
     settings: Settings,
     run_id: str,
     site_filter: str | None,
-    init_discovery: bool,
-    refresh_discovery: bool,
 ) -> int:
     """Execute one full pipeline run, including optional discovery initialization."""
 
@@ -321,39 +226,6 @@ def execute(
 
     manifest_before_run = store.load_manifest()
     previous_success_run = manifest_before_run.get("latest_success_run")
-
-    site_profiles = store.load_site_profiles()
-    missing_profiles = [site for site in sites if site not in site_profiles]
-    stale_profiles = [
-        site
-        for site in sites
-        if profile_needs_refresh(
-            site_profile=site_profiles.get(site),
-            revalidate_days=settings.profile_revalidate_days,
-            timeout_seconds=settings.request_timeout_seconds,
-        )
-    ]
-
-    if init_discovery or missing_profiles or stale_profiles:
-        log_progress(
-            "Initializing discovery profiles"
-            if init_discovery or stale_profiles
-            else "Initializing discovery for missing profiles"
-        )
-        initialize_site_profiles(
-            store=store,
-            sites=sites,
-            user_profile=profile,
-            llm_provider=settings.llm_provider,
-            llm_model=settings.llm_model,
-            timeout_seconds=settings.request_timeout_seconds,
-            ollama_endpoint=settings.ollama_endpoint,
-            openai_api_key=settings.openai_api_key,
-            use_playwright_fallback=settings.use_playwright_fallback,
-            refresh_discovery=refresh_discovery,
-        )
-        site_profiles = store.load_site_profiles()
-        log_progress("Discovery initialization completed")
 
     run_record = RunRecord(
         run_id=run_id,
@@ -399,15 +271,17 @@ def execute(
     site_quality: list[dict] = []
 
     for site_url in sites:
-        target_url = site_profiles.get(site_url, {}).get("selected_url", site_url)
+        target_url = site_url
         policy = get_site_policy(site_url=site_url, policies=site_policies, settings=settings)
         log_progress(f"Processing site: {site_url}")
-        if target_url != site_url:
-            log_progress(f"Using discovered target URL: {target_url}")
         log_progress(
             f"Using policy timeout={policy['timeout_seconds']} retries={policy['retries']} wait_until={policy['playwright_wait_until']}"
         )
         step = SiteRunStep(site_url=site_url, status="running", started_at=now_iso())
+        
+        debug_dir = steps_dir / "debug" / store._slugify(site_url)
+        if settings.debug_mode:
+            debug_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             log_progress("Scraping started")
@@ -421,6 +295,11 @@ def execute(
             step.attempts = scrape_result.attempts
             step.raw_html = scrape_result.raw_html
             step.cleaned_text = scrape_result.cleaned_text
+            
+            if settings.debug_mode:
+                (debug_dir / "01_raw.html").write_text(step.raw_html, encoding="utf-8")
+                (debug_dir / "02_cleaned.md").write_text(step.cleaned_text, encoding="utf-8")
+                
             log_progress(
                 f"Scraping completed via {step.fetch_method} with {step.attempts} attempt(s)"
             )
@@ -456,6 +335,12 @@ def execute(
             step.llm_model = settings.llm_model
             step.llm_raw_output = process_result.raw_output
             step.parsed_jobs = process_result.jobs
+            
+            if settings.debug_mode:
+                (debug_dir / "03_prompt.txt").write_text(step.prompt, encoding="utf-8")
+                (debug_dir / "04_llm_response.json").write_text(step.llm_raw_output, encoding="utf-8")
+                store.write_json(debug_dir / "05_parsed.json", step.parsed_jobs)
+                
             log_progress(f"LLM processing completed with {len(step.parsed_jobs)} parsed job(s)")
         except Exception as exc:
             step.status = "failed"
@@ -489,6 +374,11 @@ def execute(
         step.review_candidates = review_jobs
         step.verification_summary = verification_summary.to_dict()
 
+        if settings.debug_mode:
+            store.write_json(debug_dir / "06_validated.json", step.validated_jobs)
+            store.write_json(debug_dir / "07_rejected.json", step.rejected_jobs)
+            store.write_json(debug_dir / "08_review.json", step.review_candidates)
+
         validated_jobs_total += len(validated_jobs)
         rejected_jobs_total += len(step.rejected_jobs)
         dead_links_total += len(
@@ -513,6 +403,10 @@ def execute(
 
         deduped_jobs, seen_links = dedupe_jobs(validated_jobs, seen_links)
         step.deduped_jobs = deduped_jobs
+        
+        if settings.debug_mode:
+            store.write_json(debug_dir / "09_deduped_final.json", step.deduped_jobs)
+
         step.status = "success"
         step.ended_at = now_iso()
         store.save_step(steps_dir, step)
@@ -522,6 +416,84 @@ def execute(
         run_record.success_count += 1
         run_record.sites_processed += 1
         log_progress(f"Site completed: {site_url}")
+
+    # JobSpy Integration
+    if not site_filter:
+        try:
+            log_progress("Running JobSpy on major job boards")
+            # Using broader tech keywords that fit Europe/Profile
+            job_board_scraper = JobBoardScraper(results_wanted=100, country="UK") # using UK/USA fallback but querying EU
+            jobs_df = job_board_scraper.fetch_jobs(
+                search_term="Machine Learning OR Data Scientist OR Optimization OR Energy Systems", 
+                location="Europe"
+            )
+            
+            if jobs_df is not None and not jobs_df.empty:
+                jobspy_jobs: list[dict] = []
+                for _, row in jobs_df.iterrows():
+                    jobspy_jobs.append({
+                        "title": str(row.get("title", "")),
+                        "company": str(row.get("company", "")),
+                        "location": str(row.get("location", "")),
+                        "link": str(row.get("job_url", "")),
+                        "description": str(row.get("description", "")),
+                        "source": str(row.get("site", "jobspy")),
+                    })
+                
+                log_progress(f"JobSpy aggregated {len(jobspy_jobs)} jobs")
+                
+                if jobspy_jobs:
+                    site_url = "jobspy_boards"
+                    target_url = "https://jobspy.local"
+                    step = SiteRunStep(site_url=site_url, status="running", started_at=now_iso())
+                    step.fetch_method = "jobspy"
+                    step.attempts = 1
+                    step.parsed_jobs = jobspy_jobs
+                    
+                    parsed_jobs_total += len(jobspy_jobs)
+                    validated_jobs, review_jobs, rejected_jobs, verification_summary = verify_jobs(
+                        jobs=step.parsed_jobs,
+                        source_url=target_url,
+                        timeout_seconds=settings.request_timeout_seconds,
+                    )
+                    validated_jobs, profile_filtered = apply_profile_filters(validated_jobs, profile)
+                    step.validated_jobs = validated_jobs
+                    step.rejected_jobs = rejected_jobs + profile_filtered
+                    step.review_candidates = review_jobs
+                    step.verification_summary = verification_summary.to_dict()
+
+                    validated_jobs_total += len(validated_jobs)
+                    rejected_jobs_total += len(step.rejected_jobs)
+
+                    site_quality.append({
+                        "site_url": site_url,
+                        "target_url": target_url,
+                        "parsed": len(step.parsed_jobs),
+                        "validated": len(validated_jobs),
+                        "review": len(review_jobs),
+                        "rejected": len(step.rejected_jobs),
+                        "average_confidence": verification_summary.average_confidence,
+                    })
+
+                    log_progress(f"JobSpy Verification accepted {len(validated_jobs)}, review {len(review_jobs)}, rejected {len(step.rejected_jobs)} job(s)")
+                    
+                    deduped_jobs, seen_links = dedupe_jobs(validated_jobs, seen_links)
+                    step.deduped_jobs = deduped_jobs
+                    step.status = "success"
+                    step.ended_at = now_iso()
+                    store.save_step(steps_dir, step)
+                    log_progress(f"JobSpy Deduplication kept {len(deduped_jobs)} new job(s)")
+
+                    aggregated_jobs.extend(deduped_jobs)
+                    run_record.success_count += 1
+        except Exception as exc:
+            run_record.failures.append({
+                "site_url": "jobspy",
+                "failed_stage": "scrape",
+                "error_type": categorize_error(exc),
+                "error_message": str(exc),
+            })
+            log_progress(f"JobSpy failed: {exc}")
 
     store.save_seen_links(seen_links)
     store.save_results(run_dir, aggregated_jobs)
@@ -652,21 +624,12 @@ def parse_args() -> argparse.Namespace:
         help="Explicit run mode override",
     )
     parser.add_argument("--dry-run", action="store_true", help="Skip Telegram delivery")
+    parser.add_argument("--debug", action="store_true", help="Dump raw content, prompts, and separate filtering steps for inspection")
     parser.add_argument("--run-id", default=None, help="Custom run id")
     parser.add_argument(
         "--site-filter",
         default=None,
         help="Only process websites containing this substring",
-    )
-    parser.add_argument(
-        "--init-discovery",
-        action="store_true",
-        help="Run homepage discovery and save site profiles before processing",
-    )
-    parser.add_argument(
-        "--refresh-discovery",
-        action="store_true",
-        help="Force discovery refresh even if cached profiles exist",
     )
     return parser.parse_args()
 
@@ -678,13 +641,13 @@ def main() -> int:
     root_dir = Path(__file__).resolve().parent
     cli_mode = "local" if args.local else args.mode
     settings = load_settings(root_dir=root_dir, cli_mode=cli_mode, dry_run=args.dry_run)
+    settings.debug_mode = settings.debug_mode or args.debug
+    
     run_id = args.run_id or build_run_id()
     return execute(
         settings=settings,
         run_id=run_id,
         site_filter=args.site_filter,
-        init_discovery=args.init_discovery,
-        refresh_discovery=args.refresh_discovery,
     )
 
 

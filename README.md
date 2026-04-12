@@ -162,4 +162,28 @@ It also makes failed runs actionable, because the temporary files should contain
 * **Tests:** Add tests for alert formatting, failure capture, and run-record creation.
 * **Provider Selection:** Make the LLM provider explicit in configuration rather than inferred so switching between hosted and local models is predictable.
 
+---
+
+### Workflow Schema
+**Goal:** Define exactly what each run writes so results are verifiable and easy to inspect.
+
+The canonical schema is documented in `docs/WORKFLOW_SCHEMA.md`.
+
+Core workflow artifacts:
+
+* `data/site_profiles.json`:
+    * per-homepage cached discovery profile
+    * selected URL and selection reason
+    * interaction recipe and candidate list
+* `data/runs/<run_id>/run.json`:
+    * run-level status, counters, failure summary
+* `data/runs/<run_id>/steps/*.json`:
+    * per-site scrape, process, verification, dedupe outputs
+* `data/runs/<run_id>/results.json`:
+    * final accepted and deduped jobs for notification
+* `data/runs/<run_id>/quality_report.json`:
+    * validation rate, dead-link rate, parse success rate, jobs-per-site, drift checks
+* `data/manifest.json`:
+    * latest successful and failed runs
+
 **How many websites are on your initial list?** If it's a small list (under 10), we can probably stick to simple `requests` logic for most of them.
