@@ -12,3 +12,4 @@ scikit-learn
 requests
 rich
 questionary
+langdetect
