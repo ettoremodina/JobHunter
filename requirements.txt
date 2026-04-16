@@ -13,3 +13,5 @@ requests
 rich
 questionary
 langdetect
+seaborn
+matplotlib
