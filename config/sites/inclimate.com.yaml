@@ -36,3 +36,4 @@ scraper_behavior:
   load_more_button_text: 'Load More'
   card_selector: 'h3'
   job_url_filter: '/jobs/'
+  listing_link_selector: "a:has-text('View details')"
