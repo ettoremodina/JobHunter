@@ -59,10 +59,19 @@ python main.py --sources custom --sites climatebase.org --steps map,merge
 
 Detailed explanations of mechanics, schemas, and configurations.
 
-- [**Architecture Overview**](docs/architecture.md): The layout of how components connect.
+- [**Architecture Overview**](docs/architecture.md): Module dependency graph and package layout.
 - [**Pipeline Flow**](docs/pipeline.md): What variables exist at each `scrape -> map -> filter -> score -> merge` layer.
 - [**CLI Commands**](docs/orchestrator.md): Details on the granular flags for `--steps`, `--sources` and force overrides.
-- [**Adding New Sources**](docs/adding_sources.md): Developer Guide for integrating a completely a new web property to scrape!
+- [**Mapping & Merging**](docs/mapping_and_merging.md): Field mapping specs for all three source types.
+- [**Triage & Scoring**](docs/triage_and_scoring.md): LLM-based scoring, company multipliers, and interactive triage.
+- [**Adding New Sources**](docs/adding_sources.md): Developer guide for integrating a new web property.
+- [**API Reference**](docs/api/index.html): Auto-generated HTML docs from source docstrings (browsable locally).
+
+### Regenerating API Docs
+
+```bash
+python docs/generate_docs.py
+```
 
 ## Output
 
