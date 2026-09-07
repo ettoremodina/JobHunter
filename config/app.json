@@ -1,0 +1,18 @@
+{
+  "database": "data/jobhunter.sqlite3",
+  "raw_directory": "data/collection",
+  "profile": "user_context/profile.md",
+  "page_size": 30,
+  "port": 8000,
+  "timeout_seconds": 25,
+  "max_pages": 12,
+  "max_jobs": 100,
+  "request_delay_seconds": 1,
+  "refresh_hours": 24,
+  "sources": {
+    "jobspy": {"enabled": true, "kind": "jobspy", "config": "config/jobspy.yaml"},
+    "airtable": {"enabled": true, "kind": "airtable", "config": "config/airtable.yaml"},
+    "climatebase.org": {"enabled": true, "kind": "browser", "config": "config/sites/climatebase.org.yaml", "link_contains": "/job/"},
+    "inclimate.com": {"enabled": false, "kind": "browser", "reason": "Accesso richiesto: paywall segnalato dall'utente", "config": "config/sites/inclimate.com.yaml", "link_contains": "/jobs/"}
+  }
+}

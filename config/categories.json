@@ -1,0 +1,14 @@
+{
+  "Energia": ["clean energy", "renewable", "solar", "wind power", "energy storage", "battery", "batteries", "utilities", "oil and gas", "energia", "power generation"],
+  "Mobilità e trasporti": ["mobility", "transportation", "automotive", "motor vehicle", "logistics", "railroad", "aviation", "aerospace"],
+  "Agricoltura e alimentazione": ["food", "agriculture", "farming", "agtech", "food & ag", "agricoltura"],
+  "Ambiente e clima": ["climate tech", "environmental", "carbon removal", "carbon capture", "waste", "recycling", "efficiency & reduction", "sustainability", "water"],
+  "Industria e materiali": ["industrials", "industrial", "manufacturing", "mining", "metals", "materials", "chemicals"],
+  "Edilizia e immobili": ["built environment", "construction", "real estate", "architecture", "building"],
+  "Software e tecnologia": ["software", "it services", "information technology", "technology, information", "internet", "semiconductor"],
+  "Finanza e assicurazioni": ["financial", "financing", "fintech", "banking", "insurance", "investment"],
+  "Salute e biotecnologie": ["health", "medical", "pharmaceutical", "biotechnology", "hospital"],
+  "Ricerca e formazione": ["research", "education", "university", "universities", "schools", "training"],
+  "Consulenza e servizi": ["consulting", "business services", "engineering services", "staffing", "recruiting", "legal services"],
+  "Commercio e beni di consumo": ["retail", "wholesale", "consumer goods", "apparel", "e-commerce"]
+}

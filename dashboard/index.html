@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>JobHunter · Aziende</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#results">Vai ai risultati</a>
+    <header>
+      <div>
+        <h1>JobHunter</h1>
+        <p>Raccogli opportunità. Scegli aziende.</p>
+      </div>
+      <nav aria-label="Navigazione principale">
+        <button data-view="companies" aria-current="page">Aziende</button
+        ><button data-view="sources">Fonti</button
+        ><button data-view="profile">Profilo</button>
+      </nav>
+    </header>
+    <div id="message" role="status" aria-live="polite"></div>
+    <main>
+      <section id="companies-view">
+        <form id="filters" class="filters">
+          <label
+            >Cerca azienda, attività o ruolo<input
+              id="query"
+              type="search"
+              placeholder="Es. energy, optimization, Python" /></label
+          ><label
+            >Località<input
+              id="location"
+              type="search"
+              placeholder="Es. Italy" /></label
+          ><label
+            >Stato<select id="status">
+              <option value="">Tutti</option>
+              <option value="new">Nuove</option>
+              <option value="review">Da approfondire</option>
+              <option value="saved">Interessanti</option>
+              <option value="discarded">Scartate</option>
+              <option value="contacted">Contattate</option>
+            </select></label
+          ><label
+            >Fonte<select id="source">
+              <option value="">Tutte</option>
+            </select></label
+          ><label>Categoria<select id="category"><option value="">Tutte</option></select></label
+          ><button type="submit" class="primary">Cerca</button
+          ><button type="button" id="reset">Azzera</button>
+        </form>
+        <div class="workspace">
+          <section id="results" aria-label="Risultati aziende">
+            <div class="toolbar">
+              <p id="count" aria-live="polite">Caricamento…</p>
+              <button id="export">Esporta risultati CSV</button>
+            </div>
+            <p class="hint">
+              Una riga per azienda. Apri i dettagli per ruoli, sedi, salari e
+              fonti.
+            </p>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Azienda e attività</th>
+                    <th>Categoria</th>
+                    <th>Località</th>
+                    <th>Ruoli</th>
+                    <th>Stato</th>
+                  </tr>
+                </thead>
+                <tbody id="rows"></tbody>
+              </table>
+            </div>
+            <div class="pager">
+              <button id="previous">Precedenti</button><span id="page"></span
+              ><button id="next">Successive</button>
+            </div>
+          </section>
+          <aside id="detail" aria-label="Dettaglio azienda">
+            <h2>Scegli un’azienda</h2>
+            <p>
+              Qui trovi le opportunità osservate, le valutazioni salvate dalla
+              chat e le tue decisioni.
+            </p>
+          </aside>
+        </div>
+      </section>
+      <section id="sources-view" hidden>
+        <h2>Fonti e raccolta</h2>
+        <p>
+          Gli aggiornamenti sono limitati al numero richiesto. Una raccolta
+          parziale non implica che altri annunci siano chiusi.
+        </p>
+        <div id="source-list"></div>
+        <h3>Ultime acquisizioni</h3>
+        <p id="collection-state" role="status"></p>
+        <div id="runs"></div>
+      </section>
+      <section id="profile-view" hidden>
+        <h2>Profilo e preferenze</h2>
+        <p>
+          Il profilo originale resta invariato. Le preferenze esplicite aggiunte
+          qui sono disponibili anche a Codex.
+        </p>
+        <pre id="profile-text"></pre>
+        <h3>Preferenze aggiunte</h3>
+        <ul id="preferences"></ul>
+        <form id="preference-form">
+          <label
+            >Nuova preferenza<textarea
+              id="preference-note"
+              required
+              rows="3"
+              placeholder="Es. Preferisco ruoli di ottimizzazione applicata all’energia."
+            ></textarea></label
+          ><button class="primary">Salva preferenza</button>
+        </form>
+      </section>
+    </main>
+    <footer>
+      Archivio locale · Le date indicano osservazioni, non disponibilità
+      garantita. Verifica il ruolo sulla fonte prima di candidarti.
+    </footer>
+  </body>
+</html>

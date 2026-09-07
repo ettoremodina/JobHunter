@@ -1,6 +1,6 @@
 """JobHunter — entry point."""
 
-from jobhunter.orchestrator import main
+from jobhunter.cli import main
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -1,1 +1,11 @@
 *.log
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/*.sqlite3*
+data/collection/
+data/qa/
+
+data/maintenance/

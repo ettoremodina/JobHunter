@@ -1,17 +1,6 @@
-playwright
-openai
-python-dotenv
-pytest
-pyyaml
-python-jobspy
-crawl4ai
-pandas
-numpy
-sentence-transformers
-scikit-learn
-requests
-rich
-questionary
-langdetect
-seaborn
-matplotlib
+# CLI, archivio e dashboard: solo standard library Python 3.11+.
+# Dipendenze per le fonti, verificate nell ambiente di sviluppo.
+requests==2.33.1
+PyYAML==6.0.3
+python-jobspy==1.1.82
+playwright==1.58.0

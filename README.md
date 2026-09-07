@@ -1,78 +1,52 @@
 # JobHunter
 
-JobHunter is an autonomous data aggregation pipeline that scrapes, structures, and semantically scores technical job openings from multiple web origins.
+Archivio locale di aziende e opportunità, utilizzabile da Codex, CLI e dashboard. Una scheda per azienda, con ruoli, sedi, salari e link associati. L'analisi avviene nella chat: nessun modello o chiave API richiesti.
 
-It parses generic job boards (using JobSpy), opaque embed applications (Airtable platforms like ClimateTechList), and specific dynamic company/job-board sites using Playwright + Crawl4AI. Once fetched, the engine runs all descriptions through Semantic Neural Embeddings to rank results by how closely they match a custom user profile.
+## Avvio rapido
 
----
+Python 3.11+. La CLI e la dashboard usano solo la standard library.
 
-## What It Can Do
-
-- **Full Network Extraction**: Automate pulling from generalized platforms (LinkedIn, Indeed), specialized Airtables, and bespoke DOM/React sites.
-- **Granular Control Engine**: Select which sources run, bypass cache logic, execute partial stages (just parse mapping, just scoring text embeddings, etc).
-- **Semantics Based Scoring**: Extracts strings from Python files to evaluate relevancy via `all-MiniLM-L6-v2`. (Is this job a "Physics-Informed RL Role" or a generic "Senior Cloud Eng" role?)
-- **Multi-Source Unification**: Merges outputs from highly incongruent schema into a pristine, single flattened CSV Grouped by Company.
-
-## Quick Start
-
-### 1. Requirements
-
-You must be on Python 3.9+. 
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # (Or .venv\Scripts\activate on Windows)
-pip install -r requirements.txt
-playwright install chromium
+```powershell
+python main.py import-legacy
+python main.py serve
 ```
 
-### 2. Configure Environment
+Apri [la dashboard locale](http://127.0.0.1:8000). Gli snapshot storici e le note restano invariati. Il database nuovo è `data/jobhunter.sqlite3`.
 
-Create a `.env` in the root folder.
-```env
-OPENAI_API_KEY=""
-LLM_PROVIDER="ollama"          # optional local summaries via Custom Scraper mapping
-LLM_MODEL="llama3.2:3b"
-OLLAMA_ENDPOINT="http://localhost:11434/api/generate"
-# plus any TELEGRAM_BOT_TOKEN logic going forward
+## Raccolta
+
+Per installare le dipendenze delle fonti in un ambiente esistente:
+
+```powershell
+.venv/Scripts/python.exe -m pip install -r requirements.txt
+.venv/Scripts/python.exe -m playwright install chromium
+.venv/Scripts/python.exe main.py collect climatebase.org --limit 10
 ```
 
-### 3. Execution
+Se manca `.venv`, crearla con `python -m venv .venv`. Configurazione in `config/app.json` e YAML per fonte. inClimate è sospesa per paywall. Ogni acquisizione registra limiti, esiti e grezzi; un campione non è una raccolta completa.
 
-Execute a full pipeline run with default settings:
+## Uso con Codex
 
-```bash
-python main.py
+La skill [jobhunter](skills/jobhunter/SKILL.md) permette ricerca, approfondimento online, valutazioni e feedback persistente. Invocala con `$jobhunter`. È installata anche nella directory personale delle skill di questa macchina.
+
+```powershell
+python main.py search --query energy --limit 20
+python main.py show ID
+python main.py feedback ID saved --note "Da approfondire"
+python main.py undo EVENT_ID
+python main.py export data/aziende.csv --status saved
+python main.py --help
 ```
 
-JobHunter operates via a highly customizable Orchestrator CLI. You can target particular steps or sources. Check out [`docs/orchestrator.md`](docs/orchestrator.md) for full commands. Common patterns:
+## Documentazione e test
 
-```bash
-# Only run Airtable scraper ignoring cache limitations
-python main.py --sources airtable --force-scrape
+[Guida operativa, schema e manutenzione](docs/jobhunter-v2.md)
 
-# Only map and merge specific custom Playwright integrations
-python main.py --sources custom --sites climatebase.org --steps map,merge
+```powershell
+python -B -m unittest discover -s tests -v
+.venv/Scripts/python.exe -B tests/browser_check.py
 ```
 
-## Documentation Reference 
+Il percorso attivo è `cli.py`, `workspace.py`, `collection.py`, `dashboard.py` e `dashboard/`. Il codice legacy è stato rimosso. Snapshot, note personali e database restano in `data/` e `user_context/`.
 
-Detailed explanations of mechanics, schemas, and configurations.
-
-- [**Architecture Overview**](docs/architecture.md): Module dependency graph and package layout.
-- [**Pipeline Flow**](docs/pipeline.md): What variables exist at each `scrape -> map -> filter -> score -> merge` layer.
-- [**CLI Commands**](docs/orchestrator.md): Details on the granular flags for `--steps`, `--sources` and force overrides.
-- [**Mapping & Merging**](docs/mapping_and_merging.md): Field mapping specs for all three source types.
-- [**Triage & Scoring**](docs/triage_and_scoring.md): LLM-based scoring, company multipliers, and interactive triage.
-- [**Adding New Sources**](docs/adding_sources.md): Developer guide for integrating a new web property.
-- [**API Reference**](docs/api/index.html): Auto-generated HTML docs from source docstrings (browsable locally).
-
-### Regenerating API Docs
-
-```bash
-python docs/generate_docs.py
-```
-
-## Output
-
-Under default runtime, JobHunter merges its aggregated datasets across all scrapers into a flat file at `data/all_jobs_merged.csv`, grouped closely by Company Name, and sorted internally by Semantic Fit Score mapping to your criteria in `user_info/profile.md`. 
+`.env` era già versionato: aggiungerlo a `.gitignore` non lo rimuove dalla cronologia. Questo intervento non ha modificato segreti o riscritto la storia Git.
