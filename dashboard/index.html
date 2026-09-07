@@ -15,6 +15,7 @@
         <p>Raccogli opportunità. Scegli aziende.</p>
       </div>
       <nav aria-label="Navigazione principale">
+        <button data-view="queue">La mia coda</button>
         <button data-view="companies" aria-current="page">Aziende</button
         ><button data-view="sources">Fonti</button
         ><button data-view="profile">Profilo</button>
@@ -22,6 +23,14 @@
     </header>
     <div id="message" role="status" aria-live="polite"></div>
     <main>
+      <section id="queue-view" hidden>
+        <h2>La mia coda</h2>
+        <p>Dieci aziende da valutare. La coda resta salvata; una decisione libera spazio per la successiva.</p>
+        <button id="refresh-queue">Aggiorna coda</button>
+        <div id="queue-items"></div>
+        <h3>Le tue decisioni</h3><p id="queue-metrics"></p>
+        <h3>Preferenze proposte</h3><p>Le proposte derivano da scelte ripetute. Si applicano solo dopo la tua conferma.</p><div id="queue-proposals"></div>
+      </section>
       <section id="companies-view">
         <form id="filters" class="filters">
           <label

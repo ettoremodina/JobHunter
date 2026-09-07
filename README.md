@@ -1,6 +1,6 @@
 # JobHunter
 
-Archivio locale di aziende e opportunità, utilizzabile da Codex, CLI e dashboard. Una scheda per azienda, con ruoli, sedi, salari e link associati. L'analisi avviene nella chat: nessun modello o chiave API richiesti.
+Archivio locale di aziende e opportunità, utilizzabile da Codex, CLI e dashboard. Una scheda per azienda, con ruoli, sedi, salari e link associati. La selezione avviene nella chat. Ollama è opzionale per impaginazione e categorie; nessuna chiave API richiesta.
 
 ## Avvio rapido
 

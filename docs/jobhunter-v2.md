@@ -4,7 +4,7 @@
 
 `main.py` avvia `jobhunter.cli`. Il nucleo è `workspace.py`, la raccolta è `collection.py`, il server è `dashboard.py` e gli asset sono in `dashboard/`. Il codice e la documentazione legacy sono stati rimossi. Il flusso è raccolta → mapping e normalizzazione → raggruppamento aziendale → categoria → ricerca e confronto in chat → feedback → consultazione ed export.
 
-Nessun LLM viene chiamato dal programma. Codex legge il profilo e i dati con la CLI, ragiona nella chat e può salvare una valutazione strutturata. La stessa operazione `assess` è il punto d'ingresso per un futuro produttore API, locale o cloud; nessuna infrastruttura API speculativa è stata aggiunta.
+Il percorso normale non chiama LLM. I comandi espliciti `enrich` possono usare Ollama locale per impaginazione e categorie. Codex legge il profilo e i dati con la CLI, ragiona nella chat e può salvare una valutazione strutturata. La stessa operazione `assess` è il punto d'ingresso per un futuro produttore API, locale o cloud; nessuna infrastruttura API speculativa è stata aggiunta.
 
 ## Avvio
 
@@ -110,3 +110,56 @@ La chat consulta `show` ed eventuali fonti online prima di assegnare la categori
 La tabella abbrevia le località anche quando la fonte le concatena in un unico campo. Il dettaglio di ogni ruolo permette di espandere il testo completo, senza dividere alla cieca città, regioni e paesi. Le descrizioni mostrano paragrafi, intestazioni ed elenchi Markdown comuni, eliminando gli escape di punteggiatura. Il testo originale resta invariato nel database. Il rendering usa nodi di testo sicuri e non interpreta HTML esterno.
 
 Sono stati rimossi vecchio frontend, orchestrazione, filtri e scoring locali, scraper sostituiti, script esplorativi, documentazione generata e review superate. I vecchi appunti della root e i file eliminati sono recuperabili da `data/maintenance/legacy-before-cleanup.zip`, copia locale esclusa da Git. `data/` e `user_context/` conservano i dati e le preferenze storiche; `import-legacy` resta uno strumento di importazione supportato.
+
+## Filtri dal portfolio
+
+`user_context/portfolio-evidence.md` conserva integralmente l'allegato; `user_context/search-profile.md` distingue fatti e preferenze. `config/role_filters.json` contiene le regole iniziali. `shortlist --limit 20` restituisce aziende con ruoli potenzialmente pertinenti e conteggi degli esclusi e dei ruoli da verificare. `show` espone la motivazione sul singolo ruolo, visibile anche in dashboard.
+
+Engineering e development sono mantenuti, come chiarito dall'utente. Seniority, management e marketing/commerciale vengono verificati sul titolo, non sul testo dell'azienda o su riferimenti a colleghi senior. Sono suggerimenti, non feedback salvati. Tutti i dati rimangono ricercabili. Queste regole non interpretano ancora requisiti in anni nel corpo dell'annuncio, titoli in tutte le lingue o vincoli geografici: la chat verifica i candidati.
+
+## Pass opzionali Ollama
+
+```powershell
+python main.py shortlist --limit 20
+python main.py enrich description --limit 3
+python main.py enrich category --limit 3
+```
+
+Ollama deve essere avviato, ad esempio con `ollama serve`. Modello e limiti sono in `config/local_llm.json`; `--model` seleziona un modello già disponibile. Nessun download automatico e nessuna chiamata durante ricerca, apertura dashboard o scraping. L'endpoint deve essere loopback. Il default usa il modello già presente `llama3.2:3b`. I batch hanno limiti espliciti; input troppo lunghi vengono saltati interamente, mai troncati in silenzio. `--force` ripete anche risultati in cache.
+
+I prompt sono separati in `config/prompts/description.txt` e `category.txt`. API verificata sulla [documentazione Ollama](https://docs.ollama.com/api/chat).
+
+La pulizia elimina markup HTML e Markdown comune con un parser deterministico. Il modello restituisce solo gruppi di ID delle righe, classificati come titolo, paragrafo o elenco. Il validatore richiede ogni riga esattamente una volta e nell'ordine originale; il programma ricostruisce il testo, senza accettare riscritture generate. Questo evita omissioni o alterazioni LLM di salari, negazioni e requisiti. La qualità dell'impaginazione resta da verificare; il preprocessing non è un parser Markdown completo.
+
+La categorizzazione riceve solo fatti aziendali e tassonomia, senza profilo candidato o titoli dei ruoli. Deve citare un frammento letterale dei fatti. La verifica della citazione non dimostra che la conclusione sia corretta: l'interfaccia la indica come suggerimento locale. Le assegnazioni della chat hanno precedenza. Dopo variazioni ai fatti aziendali, il prossimo import torna alle regole finché il pass locale non viene ripetuto.
+
+La tabella `enrichments` mantiene output, modello, data e impronte di input/prompt/configurazione. Il testo originale non cambia; una versione formattata obsoleta non viene mostrata. Errori e output invalidi sono registrati nei run, senza sostituire gli originali. Il comando restituisce il numero di successi, errori, cache e input saltati. Un modello offline non impedisce l'uso dell'archivio.
+
+## Coda personale e feedback
+
+`queue` prepara dieci aziende e conserva la sessione in SQLite. L'ordine dipende da mansioni, categoria di interesse, esperienza obbligatoria e freschezza. Le motivazioni restano visibili; non è una probabilità di assunzione. Gli elementi già in coda mantengono il posto. Salvataggio, scarto e rinvio liberano lo spazio. Un'azienda scartata resta esclusa; una già valutata può riapparire per un nuovo ruolo pertinente, requisiti modificati o un promemoria scaduto. Cambiare solo la formattazione non genera una novità.
+
+`config/role_filters.json` contiene soglia iniziale di due anni obbligatori, interessi, pesi e dimensione della coda. I requisiti preferenziali non causano esclusione. L'estrazione conserva le frasi di evidenza e tratta come ignoti i vincoli ambigui. Copre espressioni comuni inglesi/italiane, non tutte le lingue e costruzioni. La località è un dato da verificare, senza presumere autorizzazioni al lavoro dell'utente.
+
+```powershell
+python main.py queue
+python main.py feedback ID discarded --opportunity ROLE_ID --reason too_senior
+python main.py feedback ID review --reason not_now --until 2026-10-01
+python main.py proposals
+python main.py proposals RULE_ID --state accepted
+python main.py proposals RULE_ID --state disabled
+python main.py metrics
+python main.py research-brief ID
+```
+
+Motivi condivisi: interesse, seniority, management, commerciale, settore, località, mansioni/tecnologie, non ora, altro. Il feedback sui ruoli non scarta l'azienda. Dopo tre aziende distinte scartate per settore, viene proposta un'esclusione di categoria. Solo l'accettazione la attiva. Altri motivi sono misurati, senza trasformarli automaticamente in regole vaghe.
+
+`metrics` mostra aziende proposte, decisioni e motivi; la frazione salvata considera solo aziende decise. `research-brief` prepara domande e query da usare nella chat con ricerca online; le evidenze vengono salvate tramite `evidence`. La dashboard espone la stessa coda, le decisioni strutturate, il brief e le preferenze proposte.
+
+## Raccolta ampia e run ufficiale
+
+`python main.py collect-all` attraversa tutte le combinazioni configurate di query, paese e board. Airtable acquisisce l'intera risposta pubblica. Climatebase percorre l'URL configurato fino allo stallo o ai limiti di sicurezza, registrando la discovery. inClimate rimane sospesa per paywall.
+
+`config/sweep.json` limita pagine, timeout e concorrenza. JobSpy usa processi isolati e salva le pagine completate anche prima di un timeout. Gli annunci LinkedIn sono acquisiti inizialmente come listing; i dettagli si verificano sulle aziende selezionate. Ogni query registra stop, errore, import e scarti. Non viene dichiarata copertura completa di LinkedIn/Indeed: i motori di ricerca e le restrizioni della fonte possono limitare i risultati. Il report distingue questo limite da una riuscita tecnica.
+
+La run ufficiale parte da `data/` vuota. Portfolio, profili e configurazioni personali restano in `user_context/` e `config/`. Gli output storici e i database di prova non vengono reimportati. La verifica LLM avviene su un campione esplicito; non su ogni record senza limite.

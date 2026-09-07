@@ -190,7 +190,7 @@ async function show(id) {
     el("span", labels[company.status], `badge ${company.status}`),
   );
   panel.append(el("p", "Categoria: " + company.category));
-  panel.append(el("p", (company.category_method === "chat" ? "Assegnata dalla chat. " : company.category_method === "rules" ? "Suggerita da regole. " : "") + company.category_reason, "muted"));
+  panel.append(el("p", (company.category_method === "chat" ? "Assegnata dalla chat. " : company.category_method === "local_llm" ? "Suggerita dal modello locale. " : company.category_method === "rules" ? "Suggerita da regole. " : "") + company.category_reason, "muted"));
   if (company.sectors) panel.append(el("p", "Settori dalla fonte: " + company.sectors, "muted"));
   if (company.website) {
     const website = el("p");
@@ -222,6 +222,16 @@ async function show(id) {
   select.value = company.status;
   statusLabel.append(select);
   const noteLabel = el("label", "Motivo o nota");
+  const reasonLabel = el("label", "Motivo della decisione");
+  const reason = el("select");
+  reason.id = "feedback-reason";
+  for (const [value, text] of Object.entries(config.feedback_reasons)) {
+    const option = el("option", text); option.value = value; reason.append(option);
+  }
+  reason.value = "other";
+  reasonLabel.append(reason);
+  const untilLabel = el("label", "Riproponi dal giorno (per Non ora)");
+  const until = el("input"); until.type = "date"; until.id = "feedback-until"; untilLabel.append(until);
   const note = el("textarea");
   note.rows = 2;
   note.id = "detail-note";
@@ -230,7 +240,7 @@ async function show(id) {
   const save = el("button", "Salva decisione", "primary");
   save.type = "submit";
   actions.append(save);
-  form.append(statusLabel, noteLabel, actions);
+  form.append(statusLabel, reasonLabel, untilLabel, noteLabel, actions);
   form.addEventListener(
     "submit",
     guarded(async (e) => {
@@ -239,6 +249,8 @@ async function show(id) {
         company_id: id,
         status: select.value,
         note: note.value,
+        reason: reason.value,
+        until_date: until.value,
       });
       message("Decisione salvata.");
       await show(id);
@@ -313,9 +325,31 @@ async function show(id) {
     const details = el("details");
     details.append(
       el("summary", "Leggi descrizione"),
-      description(job.description),
+      description(job.formatted_description || job.description),
     );
     block.append(details);
+    if (job.formatted_description) {
+      const original = el("details");
+      original.append(el("summary", "Testo originale · impaginazione con " + job.formatting_model), el("p", job.description));
+      block.append(original);
+    }
+    if (job.selection) block.append(el("p", "Filtro iniziale: " + ({excluded: "ruolo escluso dalla shortlist", potential: "potenzialmente pertinente", review: "da verificare"}[job.selection.status]) + " · " + job.selection.reasons.join(", "), "muted"));
+    if (job.selection?.requirements) {
+      const facts = job.selection.requirements;
+      for (const quote of [...facts.evidence, ...facts.eligibility_quotes]) block.append(el("blockquote", quote));
+    }
+    const roleReason = el("select"); roleReason.setAttribute("aria-label", "Motivo sul ruolo " + job.title);
+    for (const [value, text] of Object.entries(config.feedback_reasons)) {
+      if (value === "not_now") continue;
+      const option = el("option", text); option.value = value; roleReason.append(option);
+    }
+    roleReason.value = "too_senior";
+    const discardRole = el("button", "Scarta solo questo ruolo");
+    discardRole.addEventListener("click", guarded(async () => {
+      await api("/api/feedback", {company_id: id, opportunity_id: job.id, status: "discarded", reason: roleReason.value, note: "Decisione sul singolo ruolo"});
+      message("Ruolo scartato; azienda conservata."); await show(id);
+    }));
+    block.append(roleReason, discardRole);
     const reject = el("button", "Segna solo questo ruolo da verificare");
     reject.addEventListener(
       "click",
@@ -339,7 +373,7 @@ async function show(id) {
     for (const event of company.feedback) {
       const row = el(
         "div",
-        `${date(event.created_at)} · ${event.opportunity_id ? "Ruolo" : "Azienda"} · ${labels[event.status]} · ${event.note || "Senza nota"}`,
+        `${date(event.created_at)} · ${event.opportunity_id ? "Ruolo" : "Azienda"} · ${labels[event.status]} · ${config.feedback_reasons[event.reason] || ""} · ${event.until_date || ""} · ${event.note || "Senza nota"}`,
         "feedback-entry",
       );
       if (event.undone_at) row.append(el("small", " · Annullata"));
@@ -462,6 +496,45 @@ async function exportCSV() {
   setTimeout(() => URL.revokeObjectURL(address), 1000);
   message(`${items.length} aziende esportate.`);
 }
+/** Resume the persisted queue and expose explicit preference acceptance and outcome counts. */
+async function loadQueue() {
+  $("queue-items").textContent = "Preparazione della coda…";
+  const [data, stats, proposals] = await Promise.all([api("/api/queue"), api("/api/metrics"), api("/api/proposals")]);
+  $("queue-items").replaceChildren();
+  if (!data.items.length) $("queue-items").append(el("p", "Nessuna azienda da proporre con i criteri attuali. Consulta l'archivio o aggiorna le fonti."));
+  for (const company of data.items) {
+    const row = el("article", undefined, "opportunity");
+    const open = el("button", company.name);
+    open.addEventListener("click", guarded(async () => {
+      document.querySelector('[data-view="companies"]').click(); await show(company.id);
+    }));
+    row.append(open, el("p", company.category + " · " + company.role_count + " ruoli da valutare"));
+    row.append(el("p", company.roles[0].change));
+    row.append(el("p", company.roles[0].why.join(". ")));
+    for (const role of company.roles) row.append(el("p", role.title));
+    const research = el("button", "Prepara approfondimento in chat");
+    research.addEventListener("click", guarded(async () => {
+      const brief = await api("/api/research/" + company.id);
+      const text = JSON.stringify(brief, null, 2);
+      const area = el("textarea"); area.value = text; area.rows = 8; area.readOnly = true; area.setAttribute("aria-label", "Brief da copiare nella chat");
+      row.append(area); area.focus(); area.select(); research.disabled = true;
+    }));
+    row.append(research); $("queue-items").append(row);
+  }
+  $("queue-metrics").textContent = `${stats.shown_companies} aziende proposte · ${stats.saved_or_contacted} interessanti o contattate · ${stats.discarded} scartate. ` + (stats.save_fraction_decided === null ? "Servono decisioni per misurare l'utilità." : `${Math.round(stats.save_fraction_decided*100)}% delle aziende decise è interessante.`);
+  $("queue-proposals").replaceChildren();
+  if (!proposals.items.length) $("queue-proposals").append(el("p", "Non ci sono ancora preferenze ricorrenti da proporre."));
+  for (const proposal of proposals.items) {
+    const row = el("p", "Escludere dalla coda il settore " + proposal.category + " · " + proposal.state + " ");
+    for (const [state, label] of (proposal.state === "accepted" ? [["disabled", "Disattiva"]] : [["accepted", "Accetta"], ["dismissed", "Ignora"]])) {
+      const button = el("button", label);
+      button.addEventListener("click", guarded(async () => {await api("/api/proposal", {id: proposal.id, state}); await loadQueue();}));
+      row.append(button);
+    }
+    $("queue-proposals").append(row);
+  }
+}
+
 async function init() {
   config = await api("/api/bootstrap");
   token = config.token;
@@ -482,10 +555,11 @@ async function init() {
         for (const node of document.querySelectorAll("[data-view]"))
           node.removeAttribute("aria-current");
         button.setAttribute("aria-current", "page");
-        for (const name of ["companies", "sources", "profile"])
+        for (const name of ["companies", "sources", "profile", "queue"])
           $(name + "-view").hidden = name !== button.dataset.view;
         if (button.dataset.view === "sources") await sources();
         if (button.dataset.view === "profile") await profile();
+        if (button.dataset.view === "queue") await loadQueue();
       }),
     ),
   );
@@ -520,6 +594,7 @@ async function init() {
     }),
   );
   $("export").addEventListener("click", guarded(exportCSV));
+  $("refresh-queue").addEventListener("click", guarded(loadQueue));
   $("preference-form").addEventListener(
     "submit",
     guarded(async (e) => {

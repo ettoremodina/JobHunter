@@ -1,0 +1,9 @@
+{
+  "jobspy_page_size": 100,
+  "jobspy_max_pages": 10,
+  "jobspy_workers": 2,
+  "jobspy_query_timeout_seconds": 180,
+  "browser_max_pages": 200,
+  "browser_max_jobs": 10000,
+  "llm_validation_batch": 10
+}

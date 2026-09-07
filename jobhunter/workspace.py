@@ -139,6 +139,14 @@ class Archive:
         CREATE INDEX IF NOT EXISTS feedback_company ON feedback(company_id,id);
         CREATE TABLE IF NOT EXISTS categories(company_id TEXT PRIMARY KEY REFERENCES companies(id),
           category TEXT NOT NULL, method TEXT NOT NULL, reason TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS enrichments(task TEXT NOT NULL, record_id TEXT NOT NULL, source_hash TEXT NOT NULL,
+          cache_key TEXT NOT NULL, data TEXT NOT NULL, model TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(task,record_id));
+        CREATE TABLE IF NOT EXISTS feedback_detail(event_id INTEGER PRIMARY KEY REFERENCES feedback(id), reason TEXT NOT NULL,
+          until_date TEXT, role_snapshot TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS personal_queue(company_id TEXT PRIMARY KEY REFERENCES companies(id), priority REAL NOT NULL,
+          payload TEXT NOT NULL, created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS impressions(company_id TEXT PRIMARY KEY REFERENCES companies(id), first_shown TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS preference_rules(id TEXT PRIMARY KEY, category TEXT NOT NULL, state TEXT NOT NULL, updated_at TEXT NOT NULL);
         """)
 
     def close(self):
@@ -252,6 +260,10 @@ class Archive:
         count = 0
         with self.db:
             for company in self.db.execute("SELECT * FROM companies WHERE id NOT IN (SELECT company_id FROM categories WHERE method='chat')").fetchall():
+                from jobhunter.enrichment import company_input
+                enriched = self.db.execute("SELECT source_hash FROM enrichments WHERE task='category' AND record_id=?", (company["id"],)).fetchone()
+                if enriched and enriched[0] == identity(json.dumps(company_input(self, company["id"]), sort_keys=True, ensure_ascii=False)):
+                    continue
                 matches = {}
                 # Sector labels take precedence; job titles cannot identify a company's industry.
                 for field in ("sectors", "description"):
@@ -275,6 +287,8 @@ class Archive:
         profile = ROOT / "user_context/profile.md"
         if profile.exists():
             hashes.append(identity(profile.read_text(encoding="utf-8")))
+        for path in (ROOT / "user_context/search-profile.md", ROOT / "config/role_filters.json"):
+            hashes.append(identity(path.read_text(encoding="utf-8")))
         return identity("|".join(hashes))
 
     def show(self, cid):
@@ -287,28 +301,47 @@ class Archive:
         result["opportunities"] = []
         for row in self.db.execute("SELECT * FROM opportunities WHERE company_id=? ORDER BY last_seen DESC,id", (cid,)):
             job = json.loads(row["data"])
+            from jobhunter.selection import evaluate
+            job["selection"] = evaluate(job)
+            enriched = self.db.execute("SELECT * FROM enrichments WHERE task='description' AND record_id=?", (row["id"],)).fetchone()
+            if enriched and enriched["source_hash"] == identity(json.dumps(job["description"], sort_keys=True, ensure_ascii=False)):
+                job["formatted_description"] = json.loads(enriched["data"])["text"]
+                job["formatting_model"] = enriched["model"]
             job.update(id=row["id"], first_seen_at=row["first_seen"], last_seen_at=row["last_seen"])
             job["sources"] = [dict(x) for x in self.db.execute("SELECT source,source_url,observed_at FROM observations WHERE opportunity_id=?", (row["id"],))]
             result["opportunities"].append(job)
-        result["feedback"] = [dict(r) for r in self.db.execute("SELECT * FROM feedback WHERE company_id=? ORDER BY id DESC", (cid,))]
+        result["feedback"] = [dict(r) for r in self.db.execute("SELECT f.*,d.reason,d.until_date FROM feedback f LEFT JOIN feedback_detail d ON d.event_id=f.id WHERE f.company_id=? ORDER BY f.id DESC", (cid,))]
         result["status"] = next((f["status"] for f in result["feedback"] if not f["undone_at"] and not f["opportunity_id"]), "new")
         result["evidence"] = [dict(r) for r in self.db.execute("SELECT * FROM evidence WHERE company_id=? ORDER BY observed_at DESC", (cid,))]
         assessment = self.db.execute("SELECT * FROM assessments WHERE company_id=?", (cid,)).fetchone()
         result["assessment"] = None if not assessment else {**json.loads(assessment["data"]), "created_at": assessment["created_at"], "stale": assessment["basis"] != self.basis(cid)}
         return result
 
-    def feedback(self, cid, status, note="", opportunity_id=None):
+    def feedback(self, cid, status, note="", opportunity_id=None, reason="other", until_date=None):
         """Record an explicit company or opportunity decision; identical retries are harmless."""
         self.show(cid)
+        from jobhunter.selection import feedback_reasons, role_snapshot
+        snapshot = json.dumps(role_snapshot(self, cid))
+        if reason not in feedback_reasons():
+            raise ValueError("Unknown feedback reason")
+        if until_date:
+            from datetime import date
+            if date.fromisoformat(until_date) <= date.today():
+                raise ValueError("Choose a future reminder date")
+        if reason == "not_now" and not until_date:
+            raise ValueError("A reminder date is required for not_now")
         if status not in STATUSES or not isinstance(note, str) or len(note) > 20000:
             raise ValueError("Invalid status or note")
         if opportunity_id and not self.db.execute("SELECT 1 FROM opportunities WHERE id=? AND company_id=?", (opportunity_id, cid)).fetchone():
             raise ValueError("Opportunity does not belong to company")
         with self.db:
             previous = self.db.execute("SELECT * FROM feedback WHERE company_id=? AND opportunity_id IS ? AND undone_at IS NULL ORDER BY id DESC LIMIT 1", (cid, opportunity_id)).fetchone()
-            if previous and previous["status"] == status and previous["note"] == note:
+            detail = self.db.execute("SELECT reason,until_date,role_snapshot FROM feedback_detail WHERE event_id=?", (previous["id"],)).fetchone() if previous else None
+            if previous and previous["status"] == status and previous["note"] == note and (detail is None and reason == "other" and not until_date or detail is not None and detail["reason"] == reason and detail["until_date"] == until_date and detail["role_snapshot"] == snapshot):
                 return {"event_id": previous["id"], "duplicate": True}
             cursor = self.db.execute("INSERT INTO feedback(company_id,opportunity_id,status,note,created_at) VALUES(?,?,?,?,?)", (cid, opportunity_id, status, note, now()))
+            self.db.execute("INSERT INTO feedback_detail VALUES(?,?,?,?)", (cursor.lastrowid, reason, until_date, snapshot))
+            self.db.execute("DELETE FROM personal_queue WHERE company_id=?", (cid,))
         return {"event_id": cursor.lastrowid}
 
     def undo(self, event_id):
@@ -317,6 +350,7 @@ class Archive:
             cursor = self.db.execute("UPDATE feedback SET undone_at=COALESCE(undone_at,?) WHERE id=?", (now(), event_id))
             if not cursor.rowcount:
                 raise ValueError("Feedback event not found")
+            self.db.execute("DELETE FROM personal_queue")
         return {"undone": event_id}
 
     def assess(self, cid, data):

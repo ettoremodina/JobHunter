@@ -36,6 +36,21 @@ def parser():
     search.add_argument("--offset", type=int, default=0)
     sub.add_parser("show", help="Company with opportunities and provenance").add_argument("id")
     sub.add_parser("categories", help="List the shared category vocabulary")
+    sub.add_parser("collect-all", help="Broad acquisition of all configured source scopes with coverage report")
+    sub.add_parser("queue", help="Resume the personal company queue")
+    sub.add_parser("metrics", help="Decision coverage and reasons")
+    sub.add_parser("research-brief", help="Prepare focused online research in chat").add_argument("id")
+    proposal = sub.add_parser("proposals", help="List or explicitly accept/dismiss/disable learned preferences")
+    proposal.add_argument("id", nargs="?")
+    proposal.add_argument("--state", choices=("accepted", "dismissed", "disabled"))
+    shortlist = sub.add_parser("shortlist", help="Company groups with initial role-filter explanations")
+    shortlist.add_argument("--limit", type=int, default=30)
+    shortlist.add_argument("--offset", type=int, default=0)
+    enrich = sub.add_parser("enrich", help="Explicit bounded local Ollama pass; preserves source records")
+    enrich.add_argument("task", choices=("description", "category"))
+    enrich.add_argument("--limit", type=int)
+    enrich.add_argument("--model")
+    enrich.add_argument("--force", action="store_true")
     classify = sub.add_parser("categorize", help="Refresh automatic categories, or assign one company from chat")
     classify.add_argument("id", nargs="?")
     classify.add_argument("--category")
@@ -45,6 +60,8 @@ def parser():
     feedback.add_argument("status", choices=STATUSES)
     feedback.add_argument("--note", default="")
     feedback.add_argument("--opportunity")
+    feedback.add_argument("--reason", default="other")
+    feedback.add_argument("--until", help="YYYY-MM-DD reminder date")
     sub.add_parser("undo", help="Undo a feedback event").add_argument("event_id", type=int)
     assessment = sub.add_parser("assess", help="Import a chat assessment JSON")
     assessment.add_argument("id")
@@ -73,6 +90,21 @@ def parser():
 def execute(args, archive, cfg):
     """Dispatch one operation without implicit scraping or preference edits."""
     command = args.command
+    if command == "collect-all":
+        from jobhunter.sweep import sweep
+        return sweep(archive, cfg)
+    if command in ("queue", "metrics", "proposals", "research-brief"):
+        from jobhunter.selection import queue, metrics, proposals, research_brief
+        if command == "queue": return queue(archive)
+        if command == "metrics": return metrics(archive)
+        if command == "proposals": return proposals(archive, args.id, args.state)
+        return research_brief(archive, args.id)
+    if command == "shortlist":
+        from jobhunter.selection import shortlist
+        return shortlist(archive, args.limit, args.offset)
+    if command == "enrich":
+        from jobhunter.enrichment import run
+        return run(archive, args.task, args.limit, args.force, args.model)
     if command in ("init", "stats"):
         return archive.stats()
     if command == "sources":
@@ -106,7 +138,7 @@ def execute(args, archive, cfg):
     if command == "show":
         return archive.show(args.id)
     if command == "feedback":
-        return archive.feedback(args.id, args.status, args.note, args.opportunity)
+        return archive.feedback(args.id, args.status, args.note, args.opportunity, args.reason, args.until)
     if command == "undo":
         return archive.undo(args.event_id)
     if command == "assess":
@@ -121,7 +153,7 @@ def execute(args, archive, cfg):
         if args.add:
             archive.preference(args.add)
         path = ROOT / cfg["profile"]
-        return {"profile": path.read_text(encoding="utf-8") if path.exists() else "", "preferences": [dict(r) for r in archive.db.execute("SELECT * FROM preferences ORDER BY id")]}
+        return {"profile": path.read_text(encoding="utf-8") if path.exists() else "", "search_profile": (ROOT / "user_context/search-profile.md").read_text(encoding="utf-8"), "preferences": [dict(r) for r in archive.db.execute("SELECT * FROM preferences ORDER BY id")]}
     if command == "export":
         items, offset = [], 0
         while True:
@@ -167,7 +199,7 @@ def main():
         result = execute(args, archive, cfg)
         if result is not None:
             print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 2 if isinstance(result, dict) and result.get("status") in ("failed", "partial", "access_required") else 0
+        return 2 if isinstance(result, dict) and (result.get("status") in ("failed", "partial", "access_required") or result.get("failed")) else 0
     except (ValueError, OSError, KeyError) as exc:
         logger.error("%s", exc)
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))
