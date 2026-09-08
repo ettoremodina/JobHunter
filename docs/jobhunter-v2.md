@@ -22,6 +22,72 @@ Se `.venv` esiste già, usarla senza ricrearla. Il server ascolta soltanto su lo
 
 ## CLI e dati
 
+### Monitor della pipeline
+
+La tab **Pipeline** legge `/api/pipeline` e mostra raccolta, normalizzazione,
+descrizioni, classificazione aziende, impaginazione opzionale, filtri, statistiche,
+coda e decisioni. **Aggiorna stato** rilegge i dati, senza avviare queste fasi.
+`jobhunter/pipeline.py` aggrega l'archivio e riusa il monitor dei report per distinguere
+un workflow terminato da un processo fermo senza report finale.
+
+Copertura e date hanno significati distinti. Le categorie mancanti distinguono le
+aziende mai esaminate da quelle esaminate ma senza informazioni sufficienti.
+Filtri e impaginazioni superati da modifiche ai contenuti vengono contati a parte;
+i filtri verificano anche le regole e il codice di estrazione attuali. Le categorie
+mostrano le assegnazioni salvate, senza certificare la loro attualità online.
+L'impaginazione è un comando separato, non un passaggio automatico di `collect-all`.
+
+Le date descrivono l'ultimo dato o esito salvato per fase, non il completamento di
+tutto l'archivio. `pipeline_updates` registra i futuri calcoli di filtri e statistiche;
+le date storiche assenti restano non registrate. Le statistiche registrano il
+completamento anche quando richieste su un sottoinsieme. Gli originali, le note e
+le decisioni non vengono modificati dal monitor.
+
+### Ricerca e paginazione
+
+Località, fonte e compatibilità devono corrispondere allo stesso annuncio. La riga
+aziendale mostra località, titoli e conteggio dei soli annunci che soddisfano questi
+filtri; il dettaglio conserva tutti gli annunci. La località è quella dichiarata
+dalla fonte per il ruolo, non una sede aziendale verificata. La ricerca testuale
+generale cerca anche nelle descrizioni e non sostituisce il campo località.
+
+Gli esiti di compatibilità sono salvati nella tabella derivata `search_eligibility`.
+La tabella contiene anche requisiti, motivazioni e priorità, condivisi da metriche,
+coda, domande di revisione, dettaglio aziendale, shortlist e controlli di qualità.
+Queste viste non rieseguono l'estrazione delle descrizioni già valutate. La migrazione
+dal vecchio indice dei soli stati richiede un primo ricalcolo; un riavvio ordinario
+riusa gli esiti salvati. Il fingerprint del codice copre soltanto le funzioni che
+estraggono e valutano i requisiti, non modifiche alla coda o alla classificazione.
+La paginazione riusa questi esiti tra connessioni e riavvii. Una modifica al contenuto
+di un annuncio ne causa il ricalcolo; modifiche alle regole o al codice di estrazione
+invalidano gli esiti precedenti. Il primo caricamento senza esiti validi deve ancora
+analizzare le descrizioni. Nessuna chiamata online o a modelli avviene nella ricerca.
+I dati originali e le decisioni dell'utente restano nelle rispettive tabelle.
+
+Il server occupa la porta in modo esclusivo anche su Windows. Un secondo `serve`
+sulla stessa porta fallisce con un messaggio esplicito, evitando due versioni del
+dashboard attive sullo stesso indirizzo. Chiudere il server esistente prima di
+riavviarlo; ricaricare il browser non riavvia il processo Python.
+
+### Classificazione dalle descrizioni dei ruoli
+
+`jobhunter/company_evidence.py` raccoglie dichiarazioni esplicite dell'attività
+aziendale da tutti gli annunci salvati dell'azienda. Basta un ruolo informativo;
+gli altri possono avere descrizioni mancanti. Ogni estratto conserva URL e ID
+dell'annuncio. Campi aziendali e settore esplicito hanno precedenza, gli estratti
+sono il ripiego delle regole e vengono forniti anche al classificatore locale.
+
+La selezione degli estratti è conservativa: non usa titoli, requisiti del candidato,
+ricerche di personale o dichiarazioni generiche di valori come prova del settore.
+Attività contraddittorie restano da classificare. L'estrazione non comprende tutte
+le formulazioni possibili; una descrizione presente può ancora non fornire una
+prova sufficiente. Le assegnazioni manuali restano protette.
+L'importazione aggiorna le categorie delle sole aziende coinvolte, evitando di
+riclassificare l'intero archivio a ogni batch. `categorize` senza argomenti mantiene
+la possibilità di riesaminare tutto l'archivio.
+Il recupero descrizioni aggiorna le categorie delle aziende modificate al termine
+del batch, anche quando avviato fuori dal workflow completo.
+
 ```powershell
 python main.py search --query energy --location Italy --limit 20
 python main.py show ID

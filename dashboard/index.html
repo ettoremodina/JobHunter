@@ -17,7 +17,7 @@
       <nav aria-label="Navigazione principale">
         <button data-view="queue">La mia coda</button>
         <button data-view="companies" aria-current="page">Aziende</button
-        ><button data-view="analytics">Metriche</button><button data-view="profile">Profilo</button>
+        ><button data-view="analytics">Metriche</button><button data-view="pipeline">Pipeline</button><button data-view="profile">Profilo</button>
       </nav>
     </header>
     <div id="message" role="status" aria-live="polite"></div>
@@ -48,10 +48,11 @@
               type="search"
               placeholder="Es. energy, optimization, Python" /></label
           ><label
-            >Località<input
+            >Località dell'annuncio<input
               id="location"
               type="search"
-              placeholder="Es. Italy" /></label
+              placeholder="Es. Milano"
+              aria-describedby="location-help" /><small id="location-help">Località dichiarata nell'annuncio, non sede aziendale verificata. Usa questo campo per la città.</small></label
           ><label
             >Stato<select id="status">
               <option value="">Tutti</option>
@@ -112,6 +113,14 @@
         <div class="toolbar"><label>Annunci da analizzare<select id="analytics-scope"><option value="">Tutto l'archivio</option><option value="potential">Potenzialmente compatibili</option><option value="review">Da verificare</option><option value="excluded">Esclusi dai filtri</option></select></label><button id="refresh-analytics">Aggiorna metriche</button></div>
         <p id="analytics-status" role="status" aria-live="polite"></p>
         <div id="analytics-content"></div>
+      </section>
+      <section id="pipeline-view" hidden>
+        <div class="toolbar"><h2>Pipeline dell'archivio</h2><button id="refresh-pipeline">Aggiorna stato</button></div>
+        <p>Segui i dati dalla raccolta alle decisioni. La copertura riguarda l'archivio attuale; una data recente non significa che tutti i record siano stati elaborati.</p>
+        <p id="pipeline-status" role="status" aria-live="polite"></p>
+        <div id="pipeline-workflow"></div>
+        <ol id="pipeline-steps" aria-label="Fasi della pipeline"></ol>
+        <details class="queue-help"><summary>Ultime esecuzioni registrate</summary><div id="pipeline-runs"></div></details>
       </section>
       <section id="sources-view" hidden>
         <h2>Fonti e raccolta</h2>

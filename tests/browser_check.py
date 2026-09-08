@@ -120,6 +120,41 @@ def main():
                 page.set_viewport_size({"width": 390, "height": 844})
                 page.screenshot(path=str(destination / "mobile.png"), full_page=True)
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+                # Check pagination and city filtering together through real HTTP requests.
+                archive = Archive(database)
+                archive.ingest([
+                    {"company_name": f"Search QA {n:02}", "title": "Data Scientist", "location": "Milano", "source_url": f"https://example.org/search/{n}"}
+                    for n in range(31)
+                ] + [
+                    {"company_name": "Search QA Mixed", "title": "Senior engineer", "location": "Milano", "source_url": "https://example.org/search/senior"},
+                    {"company_name": "Search QA Mixed", "title": "Data Scientist", "location": "Roma", "source_url": "https://example.org/search/rome"},
+                ], "qa")
+                archive.close()
+                page.locator("#query").fill("Search QA")
+                page.locator("#location").fill("Milano")
+                page.locator("#eligibility").select_option("potential")
+                page.get_by_role("button", name="Cerca", exact=True).click()
+                expect(page.locator("#count")).to_have_text("31 aziende")
+                expect(page.locator("#rows .company-link")).to_have_count(30)
+                expect(page.get_by_role("button", name="Search QA Mixed", exact=True)).to_have_count(0)
+                page.locator("#next").click()
+                expect(page.locator("#rows .company-link")).to_have_count(1)
+                expect(page.locator("#page")).to_have_text("31–31 di 31")
+                expect(page.locator("#next")).to_be_disabled()
+                expect(page.locator("#rows tr td").nth(2)).to_have_text("Milano")
+                page.locator("#previous").click()
+                expect(page.locator("#rows .company-link")).to_have_count(30)
+                assert not errors, errors
+                page.get_by_role("button", name="Pipeline", exact=True).click()
+                expect(page.locator("#pipeline-steps > li")).to_have_count(9)
+                expect(page.locator("#pipeline-status")).to_contain_text("annunci")
+                expect(page.locator("#pipeline-steps")).to_contain_text("Classificazione aziende")
+                page.screenshot(path=str(destination / "pipeline-mobile.png"), full_page=True)
+                assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+                page.set_viewport_size({"width": 1440, "height": 1050})
+                page.screenshot(path=str(destination / "pipeline-desktop.png"), full_page=True)
+                page.get_by_role("button", name="Aggiorna stato", exact=True).click()
+                expect(page.locator("#refresh-pipeline")).to_be_enabled()
                 assert not errors, errors
                 browser.close()
             print(json.dumps({"status": "passed", "page_errors": errors, "screenshots": str(destination)}))

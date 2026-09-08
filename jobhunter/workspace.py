@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import ast
 import json
 import logging
 import re
 import sqlite3
+import threading
 import unicodedata
 from contextlib import closing
 from datetime import datetime, timezone
@@ -16,6 +18,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 STATUSES = ("new", "review", "saved", "discarded", "contacted")
+_SEARCH_INDEX_LOCK = threading.Lock()
 
 
 def now():
@@ -31,6 +34,17 @@ def categories():
 def settings(path=None):
     """Load the explicit application configuration without reading secrets."""
     return json.loads(Path(path or ROOT / "config/app.json").read_text(encoding="utf-8"))
+
+
+def search_rules_hash(rules):
+    """Invalidate decisions only for changed rules or actual extraction functions."""
+    selected = {'selection.py': {'evaluate', 'requirements'}, 'languages.py': {'language_requirements'},
+                'enrichment.py': {'lines', 'TextExtractor'}}
+    code = []
+    for name, functions in selected.items():
+        tree = ast.parse((ROOT / 'jobhunter' / name).read_text(encoding='utf-8'))
+        code.extend(ast.dump(node) for node in tree.body if getattr(node, 'name', None) in functions)
+    return identity(json.dumps(rules, sort_keys=True) + ''.join(code))
 
 
 def clean(value):
@@ -137,6 +151,9 @@ class Archive:
           status TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS preferences(id INTEGER PRIMARY KEY AUTOINCREMENT, note TEXT NOT NULL, created_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS opportunity_company ON opportunities(company_id);
+        CREATE TABLE IF NOT EXISTS search_eligibility(opportunity_id TEXT PRIMARY KEY REFERENCES opportunities(id) ON DELETE CASCADE,
+          content_hash TEXT NOT NULL, rules_hash TEXT NOT NULL, status TEXT NOT NULL, decision TEXT);
+        CREATE TABLE IF NOT EXISTS pipeline_updates(step TEXT PRIMARY KEY, updated_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS feedback_company ON feedback(company_id,id);
         CREATE TABLE IF NOT EXISTS categories(company_id TEXT PRIMARY KEY REFERENCES companies(id),
           category TEXT NOT NULL, method TEXT NOT NULL, reason TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -152,6 +169,8 @@ class Archive:
           status TEXT NOT NULL, checked_at TEXT NOT NULL, last_success_at TEXT, retry_after TEXT,
           parser_version TEXT NOT NULL, source_url TEXT NOT NULL, error TEXT NOT NULL);
         """)
+        if 'decision' not in {r[1] for r in self.db.execute('PRAGMA table_info(search_eligibility)')}:
+            self.db.execute('ALTER TABLE search_eligibility ADD COLUMN decision TEXT')
 
     def close(self):
         """Release the database connection."""
@@ -201,6 +220,7 @@ class Archive:
         """Import source records transactionally; return counts and rejected row reasons."""
         stamp = observed or now()
         result = {"received": len(rows), "inserted": 0, "updated": 0, "unchanged": 0, "rejected": []}
+        affected = set()
         with self.db:
             for index, raw in enumerate(rows):
                 try:
@@ -209,6 +229,7 @@ class Archive:
                     result["rejected"].append({"row": index + 1, "reason": str(exc)})
                     continue
                 cid = self.company(item["company_name"], item["website_url"], stamp)
+                affected.add(cid)
                 oid = identity(cid + "|" + item["application_url"])
                 encoded = json.dumps(item, ensure_ascii=False, sort_keys=True)
                 digest = identity(encoded)
@@ -234,7 +255,7 @@ class Archive:
                 self.db.execute("UPDATE companies SET description=CASE WHEN ?!='' THEN ? ELSE description END, sectors=CASE WHEN ?!='' THEN ? ELSE sectors END, last_seen=MAX(last_seen,?) WHERE id=?",
                                 (item["company_description"], item["company_description"], item["sectors"], item["sectors"], stamp, cid))
         logger.info("Imported %s: %s records, %s rejected", source, len(rows), len(result["rejected"]))
-        self.categorize()
+        self.categorize(company_ids=affected)
         return result
 
     def save_description(self, oid, description, provenance, replace=False):
@@ -259,32 +280,65 @@ class Archive:
         self.db.execute("INSERT INTO description_attempts VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(opportunity_id) DO UPDATE SET status=excluded.status,checked_at=excluded.checked_at,last_success_at=COALESCE(excluded.last_success_at,description_attempts.last_success_at),retry_after=excluded.retry_after,parser_version=excluded.parser_version,source_url=excluded.source_url,error=excluded.error",
                         (oid, status, stamp, stamp if status == "available" else None, retry_after, parser_version, source_url, error))
 
+    def refresh_search_eligibility(self):
+        """Cache role statuses in SQLite; invalidate on content, rules or evaluator changes."""
+        from jobhunter.selection import evaluate, filters
+        rules = filters()
+        rules_hash = search_rules_hash(rules)
+        # Serialize cache rebuilds across dashboard requests; unchanged reads stay inexpensive.
+        with _SEARCH_INDEX_LOCK:
+            rows = self.db.execute("""SELECT o.id,o.content_hash FROM opportunities o
+                LEFT JOIN search_eligibility e ON e.opportunity_id=o.id
+                WHERE e.decision IS NULL OR e.content_hash!=o.content_hash OR e.rules_hash!=?""", (rules_hash,)).fetchall()
+            updates = []
+            for row in rows:
+                data = self.db.execute('SELECT data FROM opportunities WHERE id=? AND content_hash=?', (row['id'], row['content_hash'])).fetchone()
+                if data is None:
+                    continue
+                decision = evaluate(json.loads(data[0]), rules)
+                updates.append((rules_hash, decision['status'], json.dumps(decision), row['id'], row['content_hash']))
+            if updates:
+                with self.db:
+                    self.db.executemany('''INSERT OR REPLACE INTO search_eligibility
+                        (opportunity_id,content_hash,rules_hash,status,decision)
+                        SELECT id,content_hash,?,?,? FROM opportunities WHERE id=? AND content_hash=?''', updates)
+                    self.db.execute("INSERT OR REPLACE INTO pipeline_updates VALUES('filters',?)", (now(),))
+
+    def evaluations(self, cid=None):
+        """Reuse full persisted decisions for queue, review, details and role snapshots."""
+        self.refresh_search_eligibility()
+        sql = 'SELECT e.opportunity_id,e.decision FROM search_eligibility e JOIN opportunities o ON o.id=e.opportunity_id'
+        rows = self.db.execute(sql + (' WHERE o.company_id=?' if cid is not None else ''), (cid,) if cid is not None else ())
+        return {r[0]: json.loads(r[1]) for r in rows}
+
     def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility=""):
-        """Search companies with opportunity text and return one paginated row per company."""
+        """Paginate companies, requiring role filters to match the same saved opportunity."""
         if status and status not in STATUSES:
             raise ValueError("Unknown status")
         conditions, args = [], []
+        role_conditions, role_args = [], []
         if eligibility:
-            from jobhunter.selection import evaluate, filters
             if eligibility not in ("potential", "review", "excluded"):
                 raise ValueError("Unknown eligibility scope")
-            rules = filters()
-            # ponytail: scan current roles per request; materialize eligibility if measured latency becomes excessive.
-            matching = {row["company_id"] for row in self.db.execute("SELECT company_id,data FROM opportunities") if evaluate(json.loads(row["data"]), rules)["status"] == eligibility}
-            conditions.append("c.id IN (SELECT value FROM json_each(?))")
-            args.append(json.dumps(sorted(matching)))
+            self.refresh_search_eligibility()
+            role_conditions.append("EXISTS(SELECT 1 FROM search_eligibility e WHERE e.opportunity_id=o.id AND e.status=?)")
+            role_args.append(eligibility)
+        if location.strip():
+            role_conditions.append("json_extract(o.data,'$.locations') LIKE ? ESCAPE '\\'")
+            role_args.append('%' + location.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%')
+        if source:
+            role_conditions.append("EXISTS(SELECT 1 FROM observations s WHERE s.opportunity_id=o.id AND s.source=?)")
+            role_args.append(source)
+        role_where = ' AND ' + ' AND '.join(role_conditions) if role_conditions else ''
+        if role_conditions:
+            conditions.append('EXISTS(SELECT 1 FROM opportunities o WHERE o.company_id=c.id' + role_where + ')')
+            args.extend(role_args)
         if category:
             conditions.append("COALESCE((SELECT category FROM categories WHERE company_id=c.id),'Da classificare')=?")
             args.append(category)
-        for value, expression in [(query, "(c.name || ' ' || c.description || ' ' || c.sectors LIKE ? OR EXISTS(SELECT 1 FROM opportunities o WHERE o.company_id=c.id AND o.data LIKE ?))"),
-                                   (location, "EXISTS(SELECT 1 FROM opportunities o WHERE o.company_id=c.id AND json_extract(o.data,'$.locations') LIKE ?)"),
-                                   (source, "EXISTS(SELECT 1 FROM opportunities o JOIN observations s ON s.opportunity_id=o.id WHERE o.company_id=c.id AND s.source=?)")]:
-            if value:
-                conditions.append(expression)
-                if "LIKE" in expression:
-                    args.extend(["%" + value + "%"] * expression.count("?"))
-                else:
-                    args.append(value)
+        if query.strip():
+            conditions.append("(c.name || ' ' || c.description || ' ' || c.sectors LIKE ? OR EXISTS(SELECT 1 FROM opportunities o WHERE o.company_id=c.id AND o.data LIKE ?" + role_where + '))')
+            args.extend(['%' + query.strip() + '%'] * 2 + role_args)
         status_sql = "COALESCE((SELECT f.status FROM feedback f WHERE f.company_id=c.id AND f.opportunity_id IS NULL AND f.undone_at IS NULL ORDER BY f.id DESC LIMIT 1),'new')"
         if status:
             conditions.append(status_sql + "=?")
@@ -295,9 +349,8 @@ class Archive:
         items = [dict(r) for r in self.db.execute(sql, args + [min(max(int(limit), 1), 500), max(int(offset), 0)])]
         for item in items:
             item.update(self.category(item["id"]))
-            jobs = [json.loads(r[0]) for r in self.db.execute("SELECT data FROM opportunities WHERE company_id=?", (item["id"],))]
-            if eligibility:
-                jobs = [j for j in jobs if evaluate(j, rules)["status"] == eligibility]
+            jobs = [json.loads(r[0]) for r in self.db.execute("SELECT o.data FROM opportunities o WHERE o.company_id=?" + role_where, [item["id"], *role_args])]
+            if role_conditions:
                 item["archive_opportunity_count"] = item["opportunity_count"]
                 item["opportunity_count"] = len(jobs)
             item["locations"] = sorted({x for j in jobs for x in j["locations"]})
@@ -309,7 +362,7 @@ class Archive:
         row = self.db.execute("SELECT category,method AS category_method,reason AS category_reason FROM categories WHERE company_id=?", (cid,)).fetchone()
         return dict(row) if row else {"category": "Da classificare", "category_method": "unknown", "category_reason": "Dati aziendali insufficienti"}
 
-    def categorize(self, cid=None, category=None, reason=""):
+    def categorize(self, cid=None, category=None, reason="", company_ids=None):
         """Refresh rule suggestions or save a chat classification that imports preserve."""
         rules = categories()
         if cid is not None:
@@ -323,7 +376,9 @@ class Archive:
             return self.category(cid)
         count = 0
         with self.db:
-            for company in self.db.execute("SELECT * FROM companies WHERE id NOT IN (SELECT company_id FROM categories WHERE method='chat')").fetchall():
+            scope = " AND id IN (SELECT value FROM json_each(?))" if company_ids is not None else ''
+            for company in self.db.execute("SELECT * FROM companies WHERE id NOT IN (SELECT company_id FROM categories WHERE method='chat')" + scope,
+                                           (json.dumps(sorted(company_ids)),) if company_ids is not None else ()).fetchall():
                 from jobhunter.enrichment import company_input
                 enriched = self.db.execute("SELECT source_hash FROM enrichments WHERE task='category' AND record_id=?", (company["id"],)).fetchone()
                 if enriched and enriched[0] == identity(json.dumps(company_input(self, company["id"]), sort_keys=True, ensure_ascii=False)):
@@ -335,8 +390,21 @@ class Archive:
                     matches = {label: term for label, terms in rules.items() for term in terms if re.search(r"(?<!\w)" + re.escape(term) + r"(?!\w)", value)}
                     if matches:
                         break
+                evidence_matches = {}
+                if not matches:
+                    from jobhunter.company_evidence import job_facts
+                    for fact in job_facts(self, company['id'], company['name']):
+                        for candidate, terms in rules.items():
+                            # Broad values and employee perks do not establish an employer's sector.
+                            if any(re.search(r'(?<!\w)' + re.escape(term) + r'(?!\w)', fact['text'], re.I)
+                                   for term in terms if term not in {'sustainability', 'environmental', 'training', 'efficiency & reduction'}):
+                                evidence_matches.setdefault(candidate, fact)
+                    matches = {candidate: fact['text'] for candidate, fact in evidence_matches.items()}
+                    field = 'Descrizione annuncio'
                 label = next(iter(matches)) if len(matches) == 1 else "Da classificare"
                 reason = f"{field}: {matches[label]}" if len(matches) == 1 else "Più settori possibili: " + ", ".join(matches) if matches else "Dati aziendali insufficienti"
+                if len(matches) == 1 and label in evidence_matches:
+                    reason += ' | ' + evidence_matches[label]['source_url']
                 method = "rules" if len(matches) == 1 else "unknown"
                 self.db.execute("INSERT INTO categories VALUES(?,?,?,?,?) ON CONFLICT(company_id) DO UPDATE SET category=excluded.category,method=excluded.method,reason=excluded.reason,updated_at=excluded.updated_at WHERE category!=excluded.category OR method!=excluded.method OR reason!=excluded.reason", (company["id"], label, method, reason, now()))
                 count += label != "Da classificare"
@@ -363,10 +431,10 @@ class Archive:
         result = dict(company)
         result.update(self.category(cid))
         result["opportunities"] = []
+        decisions = self.evaluations(cid)
         for row in self.db.execute("SELECT * FROM opportunities WHERE company_id=? ORDER BY last_seen DESC,id", (cid,)):
             job = json.loads(row["data"])
-            from jobhunter.selection import evaluate
-            job["selection"] = evaluate(job)
+            job["selection"] = decisions[row['id']]
             check = self.db.execute("SELECT status,checked_at,last_success_at,retry_after FROM description_attempts WHERE opportunity_id=?", (row["id"],)).fetchone()
             job["description_check"] = dict(check) if check else None
             enriched = self.db.execute("SELECT * FROM enrichments WHERE task='description' AND record_id=?", (row["id"],)).fetchone()

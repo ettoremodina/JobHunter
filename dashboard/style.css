@@ -435,3 +435,22 @@ footer {
 #analytics-view { max-width: 1400px; margin: auto; }
 #analytics-scope { display: block; }
 nav { flex-wrap: wrap; }
+
+/* Pipeline: ordered stages with coverage and timestamps kept together. */
+#pipeline-view { max-width: 1200px; margin: auto; overflow-wrap: anywhere; }
+#pipeline-view > p, .pipeline-note { max-width: 75ch; }
+#pipeline-view .toolbar { flex-wrap: wrap; }
+#pipeline-view .toolbar h2 { margin: 0; }
+#pipeline-workflow { margin: 24px 0; padding: 16px 0; border-top: 1px solid #d6dbe2; border-bottom: 1px solid #d6dbe2; }
+#pipeline-steps { margin: 0; padding-left: 28px; }
+.pipeline-step { padding: 24px 0 24px 12px; border-bottom: 1px solid #d6dbe2; }
+.pipeline-step::marker { font-weight: 600; color: #164f91; }
+.pipeline-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.pipeline-heading h3 { margin: 0; font-size: 1.1rem; }
+.pipeline-note { margin: 12px 0; }
+.pipeline-evidence { font-variant-numeric: tabular-nums; }
+.pipeline-evidence p { margin: 6px 0 0; }
+.pipeline-evidence .muted { margin-top: 14px; }
+@media (min-width: 800px) {
+  .pipeline-columns { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 40px; }
+}

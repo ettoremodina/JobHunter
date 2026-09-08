@@ -124,10 +124,23 @@ function description(text) {
   }
   return block;
 }
+/** Fetch one page while preventing repeated pagination clicks during the request. */
 async function load() {
   const request = ++requestNumber;
   $("count").textContent = "Caricamento…";
-  const data = await api("/api/companies?" + params());
+  $("previous").disabled = true;
+  $("next").disabled = true;
+  let data;
+  try {
+    data = await api("/api/companies?" + params());
+  } catch (error) {
+    if (request === requestNumber) {
+      $("count").textContent = "Ricerca non riuscita. Riprova con Cerca.";
+      $("previous").disabled = offset === 0;
+      $("next").disabled = offset + config.page_size >= total;
+    }
+    throw error;
+  }
   if (request !== requestNumber) return;
   total = data.total;
   $("rows").replaceChildren();
@@ -553,7 +566,10 @@ function renderReviewQuestions(data) {
 /** Resume the persisted queue and expose explicit preference acceptance and outcome counts. */
 async function loadQueue() {
   $("queue-items").textContent = "Preparazione della coda…";
-  const [data, stats, proposals, review] = await Promise.all([api("/api/queue"), api("/api/metrics"), api("/api/proposals"), api("/api/review-questions")]);
+  const [data, stats, proposals, review] = await Promise.all([api("/api/queue"), api("/api/metrics"), api("/api/proposals"), api("/api/review-questions")]).catch(error => {
+    $("queue-items").textContent = "Coda non disponibile. Riprova con Ricarica coda salvata.";
+    throw error;
+  });
   renderReviewQuestions(review);
   $("queue-items").replaceChildren();
   if (!data.items.length) $("queue-items").append(el("p", "Nessuna azienda da proporre con i criteri attuali. Consulta l'archivio o aggiorna le fonti."));
@@ -631,12 +647,13 @@ async function init() {
         for (const node of document.querySelectorAll("[data-view]"))
           node.removeAttribute("aria-current");
         button.setAttribute("aria-current", "page");
-        for (const name of ["companies", "sources", "profile", "queue", "analytics"])
+        for (const name of ["companies", "sources", "profile", "queue", "analytics", "pipeline"])
           $(name + "-view").hidden = name !== button.dataset.view;
         if (button.dataset.view === "sources") await sources();
         if (button.dataset.view === "profile") await profile();
         if (button.dataset.view === "queue") await loadQueue();
         if (button.dataset.view === "analytics") await loadAnalytics();
+        if (button.dataset.view === "pipeline") await loadPipeline();
       }),
     ),
   );
@@ -673,6 +690,7 @@ async function init() {
   $("export").addEventListener("click", guarded(exportCSV));
   $("refresh-queue").addEventListener("click", guarded(loadQueue));
   $("refresh-analytics").addEventListener("click", guarded(loadAnalytics));
+  $("refresh-pipeline").addEventListener("click", guarded(loadPipeline));
   $("analytics-scope").addEventListener("change", guarded(loadAnalytics));
   $("preference-form").addEventListener(
     "submit",
@@ -736,5 +754,64 @@ async function loadAnalytics() {
   } catch (error) {
     if (request === analyticsRequest) $("analytics-status").textContent = "Metriche non disponibili. Riprova con Aggiorna metriche.";
     throw error;
+  }
+}
+
+/** Show exact local time and elapsed age without inventing missing history. */
+function pipelineDate(value) {
+  if (!value) return 'Data non registrata';
+  const stamp = new Date(value);
+  if (Number.isNaN(stamp.getTime())) return 'Data non disponibile';
+  const hours = Math.max(0, Math.floor((Date.now() - stamp.getTime()) / 3600000));
+  const age = hours >= 24 ? `${Math.floor(hours / 24)} giorni fa` : hours ? `${hours} ore fa` : "nell'ultima ora";
+  return `${stamp.toLocaleString('it-IT')} · ${age}`;
+}
+
+/** Read pipeline evidence without starting collection, filtering or model work. */
+async function loadPipeline() {
+  const button = $('refresh-pipeline');
+  if (button.disabled) return;
+  button.disabled = true;
+  $('pipeline-status').textContent = 'Lettura dello stato della pipeline…';
+  try {
+    const data = await api('/api/pipeline');
+    $('pipeline-status').textContent = `${data.opportunities.toLocaleString('it-IT')} annunci · ${data.companies.toLocaleString('it-IT')} aziende · Stato letto alle ${new Date(data.generated_at).toLocaleTimeString('it-IT')}`;
+    const workflow = $('pipeline-workflow');
+    workflow.replaceChildren(el('h3', 'Ultimo workflow rilevato'));
+    const states = {running: 'In esecuzione', not_running: 'Processo fermo, completamento non registrato', unconfirmed: 'Attività non confermata', success: 'Terminato', partial: 'Terminato con risultati parziali', failed: 'Fallito', not_found: 'Nessun report disponibile', unavailable: 'Report non disponibile'};
+    workflow.append(el('p', [states[data.workflow.status] || data.workflow.status, data.workflow.phase_label].filter(Boolean).join(' · ')));
+    if (data.workflow.started_at) workflow.append(el('p', 'Avviato: ' + pipelineDate(data.workflow.started_at), 'muted'));
+    for (const warning of data.workflow.warnings || []) {
+      if (warning.startsWith('Errore recupero dettagli:')) {
+        const detail = el('details');
+        detail.append(el('summary', 'Dettaglio dell’errore di recupero'), el('p', warning));
+        workflow.append(detail);
+      } else workflow.append(el('p', warning, 'error'));
+    }
+    if (data.oldest_observation) workflow.append(el('p', 'Osservazione più vecchia ancora in archivio: ' + pipelineDate(data.oldest_observation), 'muted'));
+    const list = $('pipeline-steps');
+    list.replaceChildren();
+    for (const step of data.steps) {
+      const row = el('li', undefined, 'pipeline-step');
+      const content = el('div');
+      const heading = el('div', undefined, 'pipeline-heading');
+      heading.append(el('h3', step.title));
+      if (step.total !== null) heading.append(el('span', {complete: 'Copertura completa', partial: 'Copertura parziale', missing: 'Da elaborare', stale: 'Da aggiornare', empty: 'Nessun dato'}[step.state], 'badge'));
+      content.append(heading, el('p', step.note, 'pipeline-note'));
+      const numbers = el('div', undefined, 'pipeline-evidence');
+      numbers.append(el('strong', step.total === null ? `${step.done.toLocaleString('it-IT')} ${step.unit}` : `${step.done.toLocaleString('it-IT')} / ${step.total.toLocaleString('it-IT')} ${step.unit}`));
+      if (step.pending) numbers.append(el('p', `${step.pending.toLocaleString('it-IT')} senza esito valido` + (step.stale ? `, di cui ${step.stale.toLocaleString('it-IT')} da aggiornare` : '')));
+      numbers.append(el('p', 'Ultimo aggiornamento', 'muted'), el('p', pipelineDate(step.updated_at)));
+      const layout = el('div', undefined, 'pipeline-columns');
+      layout.append(content, numbers); row.append(layout); list.append(row);
+    }
+    $('pipeline-runs').replaceChildren();
+    if (!data.runs.length) $('pipeline-runs').append(el('p', 'Nessuna esecuzione registrata. I dati importati possono comunque essere presenti.'));
+    for (const run of data.runs) $('pipeline-runs').append(el('p', `${run.source}${run.task ? ' · ' + run.task : ''} · ${states[run.status] || run.status} · ${pipelineDate(run.created_at)}`));
+  } catch (error) {
+    $('pipeline-status').textContent = 'Stato non disponibile. Riprova con Aggiorna stato. Gli eventuali dati sotto sono della lettura precedente.';
+    throw error;
+  } finally {
+    button.disabled = false;
   }
 }
