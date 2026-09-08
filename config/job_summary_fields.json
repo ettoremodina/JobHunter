@@ -1,0 +1,16 @@
+{
+  "responsibilities": "Attività concrete",
+  "required_skills": "Competenze obbligatorie",
+  "preferred_skills": "Competenze preferenziali",
+  "required_experience": "Esperienza obbligatoria",
+  "preferred_experience": "Esperienza preferenziale",
+  "education": "Titolo di studio",
+  "languages": "Lingue",
+  "location": "Sede",
+  "work_mode": "Presenza, ibrido o remoto",
+  "contract": "Contratto e orario",
+  "salary": "Retribuzione",
+  "visa": "Visto e permesso di lavoro",
+  "travel": "Trasferte",
+  "other_conditions": "Altre condizioni"
+}

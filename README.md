@@ -6,6 +6,8 @@ Archivio locale di aziende e opportunità, utilizzabile da Codex, CLI e dashboar
 
 ## Avvio rapido
 
+Per una nuova persona seguire [Inizializzazione guidata e configurazioni](docs/jobhunter-onboarding.md), richiamata dalla skill `$jobhunter`. Questa copia di lavoro contiene anche dati e preferenze personali versionati: un clone ordinario non è una distribuzione senza dati. La guida distingue il percorso nuovo utente dall'importazione dell'archivio storico mostrata sotto.
+
 Python 3.11+. La CLI e la dashboard usano solo la standard library.
 
 ```powershell
@@ -41,6 +43,8 @@ python main.py --help
 ```
 
 ## Documentazione e test
+
+[LLM remoto: GLM via API, configurazione chiave e pilot](docs/remote-llm.md). I comandi `python main.py llm ...` sono anteprime senza chiamate; `--execute` avvia esplicitamente le richieste remote. Gli originali restano conservati.
 
 [Guida operativa, schema e manutenzione](docs/jobhunter-v2.md)
 

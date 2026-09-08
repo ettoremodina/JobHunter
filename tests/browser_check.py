@@ -5,11 +5,13 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from playwright.sync_api import sync_playwright, expect
 from jobhunter.workspace import Archive, ROOT, settings
 from jobhunter.dashboard import create_server
+from jobhunter import remote_llm
 
 
 def main():
@@ -24,6 +26,14 @@ def main():
         long_location = ", ".join(f"City {n}, Region, DE" for n in range(70))
         archive.ingest([{"company_name": "Energy Lab", "title": "Junior optimization engineer", "original_url": "https://example.org/job/1", "locations": [long_location], "company_industry": "Clean Energy", "description": r"**DESCRIPTION** -------- Build energy systems \- safely. * Analyze data * Improve models"}], "qa")
         archive.assess(cid, {"reasoning": "Energy work is relevant. Check experience requirements.", "missing_information": ["Remote eligibility"]})
+        remote_cfg = json.loads((ROOT/'config/remote_llm.json').read_text())
+        remote_cfg.update(output_directory=str(Path(directory)/'remote'), request_delay_seconds=0)
+        remote_path = Path(directory)/'remote.json'
+        remote_path.write_text(json.dumps(remote_cfg))
+        field_labels = json.loads((ROOT/remote_cfg['job_fields_path']).read_text(encoding='utf-8'))
+        summary = {'summary': 'Analisi dati e miglioramento dei modelli.', 'facts': [{'section': 'responsibilities', 'text': 'Analisi dati', 'quote': 'Analyze data'}], 'fields': {key: ([0] if key == 'responsibilities' else None) for key in field_labels}, 'missing_information': []}
+        with patch('jobhunter.remote_llm.api_key', return_value='dummy'), patch('jobhunter.remote_llm.request', return_value=(summary, {}, [])):
+            assert remote_llm.run(archive, 'job-summary', execute=True, config_path=remote_path)['processed'] == 1
         archive.close()
         cfg = settings()
         server = create_server(database, cfg, 0)
@@ -49,6 +59,9 @@ def main():
                 expect(page.get_by_role("button", name="Nessun ruolo adatto adesso", exact=True)).to_be_visible()
                 assert page.get_by_role("link", name="Sito aziendale").count() == 1
                 assert page.get_by_role("heading", name="Senior engineer", exact=True).count() == 1
+                expect(page.get_by_text('Analisi dati e miglioramento dei modelli.', exact=True)).to_be_visible()
+                expect(page.locator('#detail dt').filter(has_text='Competenze obbligatorie')).to_have_count(1)
+                assert page.locator('#detail dd').filter(has_text='Non indicato').count() == len(field_labels)-1
                 assert page.locator("img").count() == 0
                 expect(page.get_by_role("columnheader", name="Categoria", exact=True)).to_be_visible()
                 assert len(page.locator("#rows tr").filter(has=page.get_by_role("button", name="Energy Lab", exact=True)).locator("td").nth(2).inner_text()) <= 90

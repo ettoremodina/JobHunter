@@ -214,9 +214,20 @@ async function show(id) {
   panel.append(
     el(
       "p",
-      company.description || "Descrizione aziendale da approfondire in chat.",
+      company.remote_summary?.summary || company.description || "Descrizione aziendale da approfondire in chat.",
     ),
   );
+  if (company.remote_summary?.summary) {
+    const original = el("details");
+    original.append(el("summary", "Fonti della sintesi aziendale"));
+    if (company.description) original.append(description(company.description));
+    for (const fact of company.remote_summary.facts) {
+      const p = el("p", fact.quote + " ");
+      if (fact.url) p.append(link(fact.url, "Fonte web"));
+      original.append(p);
+    }
+    panel.append(original);
+  }
   panel.append(
     el(
       "p",
@@ -307,6 +318,7 @@ async function show(id) {
   panel.append(el("h3", "Opportunità associate"));
   for (const job of company.opportunities) {
     const block = el("article", undefined, "opportunity");
+    block.id = "job-" + job.id;
     block.append(
       el("h3", job.title),
       locationDetails(job.locations),
@@ -346,6 +358,28 @@ async function show(id) {
       );
       p.append(link(source.source_url, "Fonte"));
       block.append(p);
+    }
+    if (job.possible_duplicates?.length) {
+      const duplicates = el("p", "Possibile doppione: ");
+      for (const id of job.possible_duplicates) {
+        const anchor = el("a", "confronta annuncio ");
+        anchor.href = "#job-" + id;
+        duplicates.append(anchor);
+      }
+      block.append(duplicates);
+    }
+    if (job.remote_summary) {
+      block.append(el("p", job.remote_summary.summary));
+      const fields = el("dl");
+      for (const [key, label] of Object.entries(company.job_field_labels)) {
+        const indices = job.remote_summary.fields[key];
+        fields.append(el("dt", label));
+        const value = el("dd", indices ? indices.map(i => job.remote_summary.facts[i].text).join("; ") : "Non indicato");
+        if (indices) value.title = indices.map(i => job.remote_summary.facts[i].quote).join("\n");
+        fields.append(value);
+      }
+      block.append(fields);
+      for (const missing of job.remote_summary.missing_information) block.append(el("p", "Da verificare: " + missing, "muted"));
     }
     const details = el("details");
     details.append(

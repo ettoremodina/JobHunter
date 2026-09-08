@@ -1,0 +1,36 @@
+{
+  "provider": "openrouter",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "model": "z-ai/glm-5.3-flash",
+  "api_key_env": "JOBHUNTER_API_KEY",
+  "secrets_file": ".env.local",
+  "timeout_seconds": 120,
+  "request_delay_seconds": 1,
+  "default_limit": 3,
+  "max_batch": 50,
+  "max_input_chars": 80000,
+  "max_response_bytes": 2000000,
+  "output_directory": "data/remote-llm",
+  "profile_path": "user_context/llm-selection-profile.md",
+  "schema_version": "2",
+  "job_fields_path": "config/job_summary_fields.json",
+  "duplicates": {"enabled": true, "minimum_description_chars": 200},
+  "web_search": {
+    "enabled": true,
+    "engine": "exa",
+    "max_uses": 1,
+    "max_results": 3,
+    "max_total_results": 3,
+    "max_characters": 3000
+  },
+  "parameters": {
+    "reasoning": {"effort": "low", "exclude": true},
+    "max_tokens": 4096
+  },
+  "prompts": {
+    "selection": "config/prompts/remote-selection.txt",
+    "job-summary": "config/prompts/remote-job-summary.txt",
+    "company-summary": "config/prompts/remote-company-summary.txt",
+    "company-research": "config/prompts/remote-company-research.txt"
+  }
+}

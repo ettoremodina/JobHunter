@@ -83,6 +83,13 @@ def parser():
     enrich.add_argument("--model")
     enrich.add_argument("--force", action="store_true")
     enrich.add_argument("--missing-only", action="store_true", help="Only uncategorized companies with company-level evidence")
+    remote = sub.add_parser("llm", help="Preview or explicitly execute remote selection and concise summaries")
+    from jobhunter.remote_llm import TASKS
+    remote.add_argument("task", choices=TASKS)
+    remote.add_argument("--limit", type=int)
+    remote.add_argument("--record-id", help="Opportunity ID for jobs, company ID for company summary")
+    remote.add_argument("--llm-config", help="Remote model configuration JSON")
+    remote.add_argument("--execute", action="store_true", help="Send selected source text to the configured paid API")
     classify = sub.add_parser("categorize", help="Refresh automatic categories, or assign one company from chat")
     classify.add_argument("id", nargs="?")
     classify.add_argument("--category")
@@ -122,6 +129,9 @@ def parser():
 def execute(args, archive, cfg):
     """Dispatch one operation without implicit scraping or preference edits."""
     command = args.command
+    if command == "llm":
+        from jobhunter.remote_llm import run
+        return run(archive, args.task, args.limit, args.execute, args.llm_config, args.record_id)
     if command == "analytics":
         from jobhunter.analytics import summary
         return summary(archive, args.eligibility)

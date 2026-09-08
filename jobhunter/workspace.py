@@ -449,6 +449,8 @@ class Archive:
         result["evidence"] = [dict(r) for r in self.db.execute("SELECT * FROM evidence WHERE company_id=? ORDER BY observed_at DESC", (cid,))]
         assessment = self.db.execute("SELECT * FROM assessments WHERE company_id=?", (cid,)).fetchone()
         result["assessment"] = None if not assessment else {**json.loads(assessment["data"]), "created_at": assessment["created_at"], "stale": assessment["basis"] != self.basis(cid)}
+        from jobhunter.remote_llm import presentation
+        presentation(self, result)
         return result
 
     def feedback(self, cid, status, note="", opportunity_id=None, reason="other", until_date=None):
