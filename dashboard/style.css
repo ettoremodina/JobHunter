@@ -103,7 +103,7 @@ label {
   font-weight: 600;
   font-size: 0.9rem;
 }
-.filters label:first-child {
+.filters label:has(#query) {
   flex: 2;
   min-width: 250px;
 }
@@ -320,6 +320,7 @@ footer {
   color: #536171;
   font-size: 0.85rem;
 }
+.maintenance-link { display: block; padding: 0; margin-bottom: 12px; border: 0; background: transparent; color: #536171; font-size: inherit; text-decoration: underline; }
 .skip {
   position: absolute;
   top: -100px;
@@ -395,3 +396,42 @@ footer {
     flex-wrap: wrap;
   }
 }
+
+/* Queue: stable company rows, readable roles and explicit handoff to chat. */
+#queue-view { max-width: 1120px; margin: 0 auto; }
+.queue-heading { flex-wrap: wrap; }
+.queue-heading h2 { margin: 0; }
+.queue-intro { max-width: 75ch; }
+.queue-help { padding: 14px 0; border-bottom: 1px solid #d6dbe2; }
+.queue-help summary { cursor: pointer; font-weight: 600; }
+.queue-help p { max-width: 75ch; }
+#queue-summary { margin: 24px 0 12px; color: #536171; }
+#queue-items { background: white; border: 1px solid #d6dbe2; }
+.queue-company { padding: 24px; overflow-wrap: anywhere; }
+.queue-company + .queue-company { border-top: 1px solid #d6dbe2; }
+.queue-company-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.queue-company h3 { font-size: 1.2rem; margin: 0; }
+.queue-company-heading p { margin: 4px 0 0; }
+.queue-company-heading button { flex-shrink: 0; }
+.queue-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin: 20px 0; }
+.queue-columns h4 { margin: 0 0 8px; font-size: 1rem; }
+.queue-columns p { margin: 6px 0; }
+.queue-columns ul { padding-left: 20px; margin: 8px 0; }
+.queue-columns li + li { margin-top: 6px; }
+.queue-chat-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.queue-company > label { margin-top: 16px; }
+.source small { font-weight: 400; max-width: 36ch; }
+@media (max-width: 650px) {
+  .queue-company { padding: 16px; }
+  .queue-columns { grid-template-columns: 1fr; gap: 20px; }
+  .queue-company-heading { flex-wrap: wrap; }
+}
+
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 28px; align-items: start; }
+.metric-section { min-width: 0; }
+.metric-section table { width: 100%; min-width: 0; table-layout: auto; }
+.metric-section th, .metric-section td { width: auto; }
+.metric-section td:not(:first-child), .metric-section th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#analytics-view { max-width: 1400px; margin: auto; }
+#analytics-scope { display: block; }
+nav { flex-wrap: wrap; }

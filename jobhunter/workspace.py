@@ -8,6 +8,7 @@ import logging
 import re
 import sqlite3
 import unicodedata
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -76,7 +77,7 @@ def normalize(row, source):
     link = url(row.get("source_url") or row.get("original_url") or row.get("job_url") or row.get("url") or row.get("Apply to Job") or row.get("Job Posting URL"))
     if not name or not title or not link:
         raise ValueError("company_name, title and a single HTTP source URL are required")
-    locations = row.get("locations") or [row.get("location") or row.get("Job Location") or row.get("Country")]
+    locations = row.get("locations") or [row.get("location") or row.get("Location") or row.get("Job Location"), row.get("Country")]
     if not isinstance(locations, list):
         locations = [locations]
     salary = row.get("salary") or {}
@@ -87,18 +88,18 @@ def normalize(row, source):
         "company_name": name, "title": title, "source_url": link,
         "application_url": url(row.get("application_url") or row.get("job_url_direct")) or link,
         "website_url": url(row.get("website_url") or row.get("company_url_direct")),
-        "company_profile_url": url(row.get("company_url")),
+        "company_profile_url": url(row.get("company_url") or row.get("ℹ️ Company info")),
         "company_description": clean(row.get("company_description") or row.get("company_info")),
         "sectors": clean(row.get("sectors") or row.get("company_vertical") or row.get("Company Vertical") or row.get("company_industry")),
         "locations": list(dict.fromkeys(filter(None, map(clean, locations)))),
-        "remote_policy": clean(row.get("remote_policy") or row.get("work_model")) or ("remote" if remote is True or str(remote).lower() == "true" else None),
+        "remote_policy": clean(row.get("remote_policy") or row.get("work_model") or row.get("Remote")) or ("remote" if remote is True or str(remote).lower() == "true" else None),
         "eligible_countries": row.get("eligible_countries") or [],
-        "employment_type": clean(row.get("employment_type") or row.get("job_type")) or None,
+        "employment_type": clean(row.get("employment_type") or row.get("job_type") or row.get("Commitment (Beta)")) or None,
         "seniority": clean(row.get("seniority") or row.get("job_level")) or None,
         "salary": {"min": number(salary.get("min", row.get("min_amount"))), "max": number(salary.get("max", row.get("max_amount"))),
                    "currency": clean(salary.get("currency") or row.get("currency")) or None,
                    "period": clean(salary.get("period") or row.get("interval")) or None,
-                   "raw_text": clean(salary.get("raw_text")) or None},
+                   "raw_text": clean(salary.get("raw_text") or row.get("💰  Salary Range (Beta)")) or None},
         "description": str(row.get("description") or "").strip(),
         "posted_at": clean(row.get("posted_at") or row.get("date_posted") or row.get("date_first_listed") or row.get("Date first listed")) or None,
         "source": source,
@@ -147,11 +148,35 @@ class Archive:
           payload TEXT NOT NULL, created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS impressions(company_id TEXT PRIMARY KEY REFERENCES companies(id), first_shown TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS preference_rules(id TEXT PRIMARY KEY, category TEXT NOT NULL, state TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS description_attempts(opportunity_id TEXT PRIMARY KEY REFERENCES opportunities(id) ON DELETE CASCADE,
+          status TEXT NOT NULL, checked_at TEXT NOT NULL, last_success_at TEXT, retry_after TEXT,
+          parser_version TEXT NOT NULL, source_url TEXT NOT NULL, error TEXT NOT NULL);
         """)
 
     def close(self):
         """Release the database connection."""
         self.db.close()
+
+    def reset_collection(self):
+        """Back up SQLite consistently, then remove acquired data except personally referenced records."""
+        backup = self.path.parent / "backups" / (now().replace(":", "").replace("+", "_") + "-before-rebuild.sqlite3")
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(backup)) as destination:
+            self.db.backup(destination)
+        with self.db:
+            self.db.execute("DELETE FROM personal_queue")
+            self.db.execute("DELETE FROM enrichments")
+            self.db.execute("DELETE FROM categories WHERE method!='chat'")
+            self.db.execute("DELETE FROM observations WHERE opportunity_id NOT IN (SELECT opportunity_id FROM feedback WHERE opportunity_id IS NOT NULL)")
+            self.db.execute("DELETE FROM opportunities WHERE id NOT IN (SELECT opportunity_id FROM feedback WHERE opportunity_id IS NOT NULL) AND company_id NOT IN (SELECT company_id FROM assessments)")
+            # Assessments may refer to roles by ID inside their structured JSON.
+            protected = "SELECT company_id FROM feedback UNION SELECT company_id FROM assessments UNION SELECT company_id FROM evidence UNION SELECT company_id FROM opportunities UNION SELECT company_id FROM categories WHERE method='chat'"
+            self.db.execute(f"DELETE FROM impressions WHERE company_id NOT IN ({protected})")
+            self.db.execute(f"DELETE FROM companies WHERE id NOT IN ({protected})")
+        report = {"backup": str(backup), "retained_companies": self.db.execute("SELECT count(*) FROM companies").fetchone()[0], "retained_opportunities": self.db.execute("SELECT count(*) FROM opportunities").fetchone()[0]}
+        self.run("collection_reset", "success", report)
+        logger.info("Collection reset: %s", report)
+        return report
 
     def company(self, name, website="", observed=None):
         """Resolve a name conservatively, keeping known conflicting domains separate."""
@@ -194,25 +219,60 @@ class Archive:
                 elif old:
                     # Keep richer content when another board only provides a listing stub.
                     prior = json.loads(old["data"])
-                    if len(prior.get("description", "")) > len(item["description"]) and prior["source"] != source:
+                    if prior.get("description") and (not item["description"] or len(prior["description"]) > len(item["description"]) and prior["source"] != source):
                         item["description"] = prior["description"]
+                        if prior.get("description_provenance"):
+                            item["description_provenance"] = prior["description_provenance"]
                     encoded = json.dumps(item, ensure_ascii=False, sort_keys=True)
                     digest = identity(encoded)
                 result["inserted" if old is None else "unchanged" if old["content_hash"] == digest else "updated"] += 1
                 self.db.execute("INSERT INTO opportunities VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data, content_hash=excluded.content_hash, last_seen=MAX(opportunities.last_seen,excluded.last_seen)",
                                 (oid, cid, encoded, digest, stamp, stamp))
                 self.db.execute("INSERT INTO observations VALUES(?,?,?,?) ON CONFLICT DO UPDATE SET observed_at=MAX(observations.observed_at,excluded.observed_at)", (oid, source, normalize(raw, source)["source_url"], stamp))
+                if normalize(raw, source)["description"]:
+                    self.record_description_attempt(oid, "available", item["source_url"], observed=stamp)
                 self.db.execute("UPDATE companies SET description=CASE WHEN ?!='' THEN ? ELSE description END, sectors=CASE WHEN ?!='' THEN ? ELSE sectors END, last_seen=MAX(last_seen,?) WHERE id=?",
                                 (item["company_description"], item["company_description"], item["sectors"], item["sectors"], stamp, cid))
         logger.info("Imported %s: %s records, %s rejected", source, len(rows), len(result["rejected"]))
         self.categorize()
         return result
 
-    def search(self, query="", status="", source="", location="", limit=30, offset=0, category=""):
+    def save_description(self, oid, description, provenance, replace=False):
+        """Fill an empty description, invalidating derived content without renewing listing dates."""
+        from jobhunter.descriptions import has_description
+        row = self.db.execute("SELECT data FROM opportunities WHERE id=?", (oid,)).fetchone()
+        if not row or not description.strip():
+            raise ValueError("Known opportunity and nonempty description required")
+        job = json.loads(row[0])
+        if has_description(job.get("description")) and not replace:
+            return False
+        job.update(description=description, description_provenance=provenance)
+        encoded = json.dumps(job, ensure_ascii=False, sort_keys=True)
+        with self.db:
+            self.db.execute("UPDATE opportunities SET data=?,content_hash=? WHERE id=?", (encoded, identity(encoded), oid))
+        logger.info("Saved recovered description for %s", oid)
+        return True
+
+    def record_description_attempt(self, oid, status, source_url, error="", retry_after=None, observed=None, parser_version="source"):
+        """Remember fetch outcomes without claiming that a missing page means a closed position."""
+        stamp = observed or now()
+        self.db.execute("INSERT INTO description_attempts VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(opportunity_id) DO UPDATE SET status=excluded.status,checked_at=excluded.checked_at,last_success_at=COALESCE(excluded.last_success_at,description_attempts.last_success_at),retry_after=excluded.retry_after,parser_version=excluded.parser_version,source_url=excluded.source_url,error=excluded.error",
+                        (oid, status, stamp, stamp if status == "available" else None, retry_after, parser_version, source_url, error))
+
+    def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility=""):
         """Search companies with opportunity text and return one paginated row per company."""
         if status and status not in STATUSES:
             raise ValueError("Unknown status")
         conditions, args = [], []
+        if eligibility:
+            from jobhunter.selection import evaluate, filters
+            if eligibility not in ("potential", "review", "excluded"):
+                raise ValueError("Unknown eligibility scope")
+            rules = filters()
+            # ponytail: scan current roles per request; materialize eligibility if measured latency becomes excessive.
+            matching = {row["company_id"] for row in self.db.execute("SELECT company_id,data FROM opportunities") if evaluate(json.loads(row["data"]), rules)["status"] == eligibility}
+            conditions.append("c.id IN (SELECT value FROM json_each(?))")
+            args.append(json.dumps(sorted(matching)))
         if category:
             conditions.append("COALESCE((SELECT category FROM categories WHERE company_id=c.id),'Da classificare')=?")
             args.append(category)
@@ -236,6 +296,10 @@ class Archive:
         for item in items:
             item.update(self.category(item["id"]))
             jobs = [json.loads(r[0]) for r in self.db.execute("SELECT data FROM opportunities WHERE company_id=?", (item["id"],))]
+            if eligibility:
+                jobs = [j for j in jobs if evaluate(j, rules)["status"] == eligibility]
+                item["archive_opportunity_count"] = item["opportunity_count"]
+                item["opportunity_count"] = len(jobs)
             item["locations"] = sorted({x for j in jobs for x in j["locations"]})
             item["titles"] = list(dict.fromkeys(j["title"] for j in jobs))[:5]
         return {"total": total, "items": items}
@@ -303,6 +367,8 @@ class Archive:
             job = json.loads(row["data"])
             from jobhunter.selection import evaluate
             job["selection"] = evaluate(job)
+            check = self.db.execute("SELECT status,checked_at,last_success_at,retry_after FROM description_attempts WHERE opportunity_id=?", (row["id"],)).fetchone()
+            job["description_check"] = dict(check) if check else None
             enriched = self.db.execute("SELECT * FROM enrichments WHERE task='description' AND record_id=?", (row["id"],)).fetchone()
             if enriched and enriched["source_hash"] == identity(json.dumps(job["description"], sort_keys=True, ensure_ascii=False)):
                 job["formatted_description"] = json.loads(enriched["data"])["text"]
@@ -324,6 +390,12 @@ class Archive:
         snapshot = json.dumps(role_snapshot(self, cid))
         if reason not in feedback_reasons():
             raise ValueError("Unknown feedback reason")
+        if reason in ("company_not_interested", "no_current_roles") and opportunity_id:
+            raise ValueError("This reason applies to the company, not a single role")
+        if reason == "company_not_interested" and status != "discarded":
+            raise ValueError("A company rejection requires discarded status")
+        if reason == "no_current_roles" and status not in ("review", "discarded"):
+            raise ValueError("No current roles requires review or discarded status")
         if until_date:
             from datetime import date
             if date.fromisoformat(until_date) <= date.today():
@@ -396,4 +468,5 @@ class Archive:
         """Return archive counts and recent collection health."""
         return {"companies": self.db.execute("SELECT count(*) FROM companies").fetchone()[0],
                 "opportunities": self.db.execute("SELECT count(*) FROM opportunities").fetchone()[0],
+                "first_import_at": self.db.execute("SELECT min(first_seen) FROM opportunities").fetchone()[0],
                 "runs": [dict(r) for r in self.db.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 30")]}

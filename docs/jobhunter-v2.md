@@ -39,7 +39,7 @@ Le opzioni globali `--db` e `--config` precedono il comando. Output operativo in
 
 `import-legacy` legge solo gli `structured_results.json` per fonte, mai le stringhe aggregate del vecchio merge. La data iniziale dell'import è il timestamp del file, quindi indica l'età dello snapshot e non una data certa di pubblicazione. I grezzi originali e le preferenze restano intatti. Le righe mancanti di azienda, titolo o URL valido vengono riportate come rifiutate nell'esito. Non sono cancellate dal sorgente.
 
-SQLite mantiene aziende, opportunità, osservazioni per fonte, feedback, valutazioni, evidenze, preferenze aggiuntive e resoconti di acquisizione. Le vecchie blacklist, rating e linee guida non sono convertiti implicitamente: rimangono in `user_context/` e possono essere riesaminati nella chat.
+SQLite mantiene aziende, opportunità, osservazioni per fonte, feedback, valutazioni, evidenze, preferenze aggiuntive e resoconti di acquisizione. I vecchi JSON di aziende, blacklist e memoria LLM sono stati eliminati su richiesta dell'utente durante il reset ufficiale. Portfolio, profili e configurazioni sono conservati.
 
 ## Contratto e identità
 
@@ -58,7 +58,7 @@ Gli stati personali sono `new`, `review`, `saved`, `discarded`, `contacted`. Il 
 `config/app.json` controlla database, directory grezzi, limiti, timeout, pausa fra richieste, TTL, fonti e porta. Ogni fonte usa anche il proprio YAML. La raccolta scrive una directory nuova con `raw.json`, `report.json` e, per browser, copie delle pagine. Solo i record validi entrano nell'archivio. Le osservazioni precedenti non vengono eliminate per un errore o un run parziale.
 
 - JobSpy: query e località dal YAML, `hours_old` propagato, limite globale applicato anche se la libreria restituisce risultati per più board. La libreria governa i propri timeout e retry: il limite dei risultati non è un limite rigido alla durata di una chiamata.
-- Airtable: usa il pubblico embed e risolve colonne, scelte e righe collegate. Gli header dell'embed sono usati per la richiesta corrente. L'elenco può essere acquisito interamente a monte anche se l'import è limitato. Le descrizioni estese non sono recuperate automaticamente per migliaia di annunci: la scheda segnala i campi assenti e Codex può approfondire le aziende selezionate.
+- Airtable: usa il pubblico embed e risolve colonne, scelte e righe collegate. Gli header dell'embed sono usati per la richiesta corrente. L'elenco può essere acquisito interamente a monte anche se l'import è limitato. L'embed non contiene le descrizioni: `collect-all` visita i dettagli ClimateTechList degli annunci unici dopo l'import. Il mapping conserva località completa e paese, remoto, contratto e salario testuale senza dedurre importi o periodi.
 - Climatebase: browser condiviso per discovery limitata, fetch diretto JSON-LD dei dettagli e rendering come fallback. Se manca un `JobPosting` valido, segnala il ruolo come fallito invece di inventare un parser generico. L'elenco è un campione; non c'è una garanzia di copertura dell'intera board.
 - inClimate: sospesa per paywall dichiarato dall'utente. Nessuna acquisizione viene tentata.
 
@@ -129,7 +129,7 @@ Ollama deve essere avviato, ad esempio con `ollama serve`. Modello e limiti sono
 
 I prompt sono separati in `config/prompts/description.txt` e `category.txt`. API verificata sulla [documentazione Ollama](https://docs.ollama.com/api/chat).
 
-La pulizia elimina markup HTML e Markdown comune con un parser deterministico. Il modello restituisce solo gruppi di ID delle righe, classificati come titolo, paragrafo o elenco. Il validatore richiede ogni riga esattamente una volta e nell'ordine originale; il programma ricostruisce il testo, senza accettare riscritture generate. Questo evita omissioni o alterazioni LLM di salari, negazioni e requisiti. La qualità dell'impaginazione resta da verificare; il preprocessing non è un parser Markdown completo.
+La pulizia elimina markup HTML e Markdown comune con un parser deterministico. Il modello restituisce una classificazione per ogni riga: titolo, paragrafo o elenco. Il validatore richiede esattamente tante etichette quante sono le righe; il programma ricostruisce il testo nell'ordine originale, senza accettare riscritture generate. Questo evita omissioni o alterazioni LLM di salari, negazioni e requisiti. La qualità dell'impaginazione resta da verificare; il preprocessing non è un parser Markdown completo.
 
 La categorizzazione riceve solo fatti aziendali e tassonomia, senza profilo candidato o titoli dei ruoli. Deve citare un frammento letterale dei fatti. La verifica della citazione non dimostra che la conclusione sia corretta: l'interfaccia la indica come suggerimento locale. Le assegnazioni della chat hanno precedenza. Dopo variazioni ai fatti aziendali, il prossimo import torna alle regole finché il pass locale non viene ripetuto.
 
@@ -160,6 +160,32 @@ Motivi condivisi: interesse, seniority, management, commerciale, settore, locali
 
 `python main.py collect-all` attraversa tutte le combinazioni configurate di query, paese e board. Airtable acquisisce l'intera risposta pubblica. Climatebase percorre l'URL configurato fino allo stallo o ai limiti di sicurezza, registrando la discovery. inClimate rimane sospesa per paywall.
 
-`config/sweep.json` limita pagine, timeout e concorrenza. JobSpy usa processi isolati e salva le pagine completate anche prima di un timeout. Gli annunci LinkedIn sono acquisiti inizialmente come listing; i dettagli si verificano sulle aziende selezionate. Ogni query registra stop, errore, import e scarti. Non viene dichiarata copertura completa di LinkedIn/Indeed: i motori di ricerca e le restrizioni della fonte possono limitare i risultati. Il report distingue questo limite da una riuscita tecnica.
+`config/sweep.json` limita pagine, timeout e concorrenza. JobSpy usa processi isolati e salva le pagine completate anche prima di un timeout. Gli annunci LinkedIn sono acquisiti inizialmente come listing per non scaricare più volte gli stessi dettagli tra query. Con `description_followup_all: true`, il recupero successivo visita ogni annuncio unico senza descrizione su un host supportato dopo aver escluso i titoli chiaramente non compatibili. I casi ambigui restano candidati. Ogni query registra stop, errore, import e scarti. Non viene dichiarata copertura completa di LinkedIn/Indeed: i motori di ricerca e le restrizioni della fonte possono limitare i risultati. Il report distingue questo limite da una riuscita tecnica.
 
-La run ufficiale parte da `data/` vuota. Portfolio, profili e configurazioni personali restano in `user_context/` e `config/`. Gli output storici e i database di prova non vengono reimportati. La verifica LLM avviene su un campione esplicito; non su ogni record senza limite.
+Per rifare la raccolta usare `python main.py collect-all --fresh`. Prima del reset crea un backup SQLite consistente in `data/backups/`. Conserva profili, configurazioni, snapshot, preferenze, feedback, evidenze, valutazioni e categorie manuali; mantiene i record necessari ai riferimenti personali. Azzera dati acquisiti non referenziati, arricchimenti automatici e coda. Gli snapshot storici non vengono reimportati. Al termine ricalcola categorie a regole, filtri su tutte le descrizioni disponibili, statistiche e coda. Il pass non chiama Ollama; `enrich` rimane un comando esplicito.
+
+`python main.py fetch-descriptions --all` riprende il recupero dei testi ancora mancanti e compatibili con il filtro sul listing, senza ripetere la raccolta iniziale. Il vecchio batch limitato resta disponibile con `--limit`. Le richieste conservano la pausa configurata e si fermano per host al primo 403/429 o blocco esplicito, senza canali alternativi. Il report conta richieste, testi salvati, host bloccati, annunci non visitati, host non supportati e descrizioni ancora mancanti. Un recupero completo con testi mancanti ha esito `partial`. `description-coverage` misura la copertura per fonte. I grezzi di ogni dettaglio restano in `data/descriptions/`.
+
+Anche `collect SOURCE --limit N` recupera le descrizioni mancanti, limitandosi agli annunci importati in quella raccolta. La versione adapter 2.1 invalida le vecchie cache di soli listing. Il parser scarta il placeholder promozionale osservato nel JSON-LD ClimateTechList. Se manca testo utile segue il link esplicito `Apply to Job Posting`, cerca JSON-LD sul sito del datore di lavoro e supporta il contenitore microdata osservato su SmartRecruiters. Non considera descrizione il testo generico della pagina e non segue link alternativi dopo un blocco di accesso.
+
+Il collector browser interrompe la fonte al primo HTTP 403/429 o pagina esplicita di accesso negato/rate limit. Registra i link rimasti senza tentare un canale alternativo. Climatebase parte dalla directory senza filtro iniziale e usa una pausa di tre secondi tra i dettagli. Lo stallo della navigazione resta un limite di copertura, non una prova di esaurimento.
+
+## Lettura della dashboard
+
+In Fonti, il numero iniziale 10 è la quantità richiesta per la prossima raccolta manuale, con massimo configurato di 100. Non limita l'archivio e non descrive la run `collect-all`. La pagina mostra separatamente conteggi attuali e data del primo inserimento delle opportunità; quest'ultima non è la data originale di pubblicazione degli annunci.
+
+La mia coda usa filtri e priorità locali, senza chiamare ChatGPT o Ollama. Ogni azienda mostra i ruoli e i motivi riferiti al primo ruolo. Apri e valuta porta al dettaglio con feedback; Prepara testo per la chat genera un testo leggibile da copiare manualmente in Codex, senza inviarlo. Ricarica coda salvata conserva la sessione e riempie gli spazi liberi, senza estrarre una nuova lista casuale.
+
+
+## Recupero concorrente e benchmark
+
+`python main.py fetch-descriptions --limit 50 --workers 4` recupera un batch di dettagli con quattro worker. `--all` rimuove il limite di batch, ma mantiene il filtro dal listing. Il testo già presente viene riutilizzato. La valutazione iniziale legge il titolo con descrizione vuota; un caso incerto non viene escluso. Il filtro completo continua a usare i testi recuperati.
+
+I worker eseguono rete, parsing e salvataggio dei grezzi. Il thread chiamante scrive in SQLite, senza condividere la connessione tra worker. Il report viene sostituito atomicamente e contiene durata, richieste HTTP, successi, errori, worker e host bloccati. La pausa configurata di tre secondi si applica a ciascun worker: aumentare i worker aumenta anche il ritmo aggregato delle richieste. Un blocco condiviso impedisce nuove richieste all'host dopo 403, 429, 999 o un blocco esplicito; le richieste già partite possono terminare.
+
+`python main.py benchmark-descriptions --batch-size 50 --workers 1 4 8` confronta batch distinti e bilanciati per host. Il manifest conserva gli ID scelti con seed riproducibile; i testi ottenuti restano nell'archivio. Il confronto misura descrizioni salvate al minuto rispetto al batch seriale, oltre a tempi CPU, latenza mediana/p95, errori e richieste effettive. Si ferma prima dei batch successivi se una fonte segnala un blocco. Pagine diverse possono avere costi diversi: i risultati sono un primo confronto, non un benchmark sulle stesse pagine o una garanzia di carico sostenuto.
+
+I report e manifest sono in `data/benchmarks/`. Non viene applicato un limite complessivo di due ore. Il benchmark termina dopo i batch richiesti e non avvia automaticamente l'intero recupero residuo.
+# Aggiornamento delle preferenze e della qualità
+
+Il comportamento aggiornato di filtri linguistici, priorità professionali, coda di chiarimento, memoria dei tentativi e calibrazione manuale è descritto in [Preferenze e qualità della selezione](product-quality-2026-09-08.md).

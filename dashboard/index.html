@@ -17,22 +17,31 @@
       <nav aria-label="Navigazione principale">
         <button data-view="queue">La mia coda</button>
         <button data-view="companies" aria-current="page">Aziende</button
-        ><button data-view="sources">Fonti</button
-        ><button data-view="profile">Profilo</button>
+        ><button data-view="analytics">Metriche</button><button data-view="profile">Profilo</button>
       </nav>
     </header>
     <div id="message" role="status" aria-live="polite"></div>
     <main>
       <section id="queue-view" hidden>
-        <h2>La mia coda</h2>
-        <p>Dieci aziende da valutare. La coda resta salvata; una decisione libera spazio per la successiva.</p>
-        <button id="refresh-queue">Aggiorna coda</button>
-        <div id="queue-items"></div>
-        <h3>Le tue decisioni</h3><p id="queue-metrics"></p>
-        <h3>Preferenze proposte</h3><p>Le proposte derivano da scelte ripetute. Si applicano solo dopo la tua conferma.</p><div id="queue-proposals"></div>
+        <div class="toolbar queue-heading"><h2>La mia coda</h2><button id="refresh-queue">Ricarica coda salvata</button></div>
+        <p class="queue-intro">Una selezione dall'archivio, costruita sul PC con i tuoi filtri. Questa pagina non chiama ChatGPT né Ollama.</p>
+        <details class="queue-help"><summary>Come usarla con la chat</summary><p>Apri un'azienda per verificare i ruoli e registrare una decisione. Oppure prepara il testo da copiare nella chat di Codex per un approfondimento. Nulla viene inviato automaticamente.</p><p>La coda mantiene le aziende già proposte. Una decisione libera spazio; al prossimo caricamento entrano altre aziende. Ricaricare non estrae dieci nomi nuovi.</p></details>
+        <p id="queue-summary" role="status"></p>
+        <h3>Aziende prioritarie</h3>
+        <p>Dati, machine learning, modellazione e ottimizzazione hanno precedenza. Gli altri ruoli compatibili restano disponibili.</p>
+        <div id="queue-items" aria-label="Aziende da valutare"></div>
+        <section aria-labelledby="uncertainty-heading">
+          <h3 id="uncertainty-heading">Da chiarire insieme</h3>
+          <p>Una tua risposta può orientare la selezione di altri annunci simili. I conteggi indicano i casi interessati, non esclusioni automatiche.</p>
+          <div id="queue-questions" aria-live="polite"></div>
+          <details class="queue-help"><summary>Informazioni da cercare nelle fonti</summary><p>Qui la preferenza è nota: servono fatti sul singolo annuncio.</p><div id="queue-evidence"></div></details>
+        </section>
+        <details class="queue-help"><summary>Le tue decisioni e preferenze</summary><h3>Le tue decisioni</h3><p id="queue-metrics"></p>
+        <h3>Preferenze proposte</h3><p>Derivano da scelte ripetute. Si applicano solo dopo la tua conferma.</p><div id="queue-proposals"></div></details>
       </section>
       <section id="companies-view">
         <form id="filters" class="filters">
+          <label>Mostra<select id="eligibility"><option value="potential">Ruoli compatibili con i filtri</option><option value="review">Ruoli da verificare</option><option value="">Tutto l'archivio</option><option value="excluded">Ruoli esclusi dai filtri</option></select></label>
           <label
             >Cerca azienda, attività o ruolo<input
               id="query"
@@ -67,8 +76,8 @@
               <button id="export">Esporta risultati CSV</button>
             </div>
             <p class="hint">
-              Una riga per azienda. Apri i dettagli per ruoli, sedi, salari e
-              fonti.
+              Una riga per azienda. Conteggi e sedi riguardano la selezione scelta.
+              Il dettaglio conserva tutti i ruoli, anche quelli esclusi.
             </p>
             <div class="table-scroll">
               <table>
@@ -98,12 +107,20 @@
           </aside>
         </div>
       </section>
+      <section id="analytics-view" hidden>
+        <h2>Metriche dell'archivio</h2>
+        <div class="toolbar"><label>Annunci da analizzare<select id="analytics-scope"><option value="">Tutto l'archivio</option><option value="potential">Potenzialmente compatibili</option><option value="review">Da verificare</option><option value="excluded">Esclusi dai filtri</option></select></label><button id="refresh-analytics">Aggiorna metriche</button></div>
+        <p id="analytics-status" role="status" aria-live="polite"></p>
+        <div id="analytics-content"></div>
+      </section>
       <section id="sources-view" hidden>
         <h2>Fonti e raccolta</h2>
         <p>
-          Gli aggiornamenti sono limitati al numero richiesto. Una raccolta
-          parziale non implica che altri annunci siano chiusi.
+          I controlli qui sotto avviano una raccolta manuale limitata per fonte.
+          Il numero indicato vale per la prossima raccolta, non per l'archivio
+          né per la run ampia avviata dalla CLI con <code>collect-all</code>.
         </p>
+        <p id="archive-provenance"></p>
         <div id="source-list"></div>
         <h3>Ultime acquisizioni</h3>
         <p id="collection-state" role="status"></p>
@@ -131,6 +148,7 @@
       </section>
     </main>
     <footer>
+      <button data-view="sources" class="maintenance-link">Fonti e test di raccolta</button>
       Archivio locale · Le date indicano osservazioni, non disponibilità
       garantita. Verifica il ruolo sulla fonte prima di candidarti.
     </footer>

@@ -5,5 +5,7 @@
   "jobspy_query_timeout_seconds": 180,
   "browser_max_pages": 200,
   "browser_max_jobs": 10000,
+  "description_followup_limit": 20,
+  "description_followup_all": true,
   "llm_validation_batch": 10
 }

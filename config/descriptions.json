@@ -1,0 +1,18 @@
+{
+  "default_limit": 10,
+  "max_limit": 50,
+  "timeout_seconds": 25,
+  "request_delay_seconds": 3,
+  "allowed_hosts": [
+    "www.linkedin.com",
+    "linkedin.com",
+    "www.climatetechlist.com",
+    "climatetechlist.com"
+  ],
+  "output_directory": "data/descriptions",
+  "workers": 8,
+  "max_workers": 16,
+  "refresh_after_days": 30,
+  "retry_after_hours": 24,
+  "missing_page_retry_days": 7
+}

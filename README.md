@@ -1,5 +1,7 @@
 # JobHunter
 
+[Apri la guida HTML navigabile](docs/guide/index.html): workflow e feedback, fonti, mappa del codice e note operative. Funziona anche offline; rigenerazione con `python docs/build_guide.py`.
+
 Archivio locale di aziende e opportunità, utilizzabile da Codex, CLI e dashboard. Una scheda per azienda, con ruoli, sedi, salari e link associati. La selezione avviene nella chat. Ollama è opzionale per impaginazione e categorie; nessuna chiave API richiesta.
 
 ## Avvio rapido
@@ -41,6 +43,10 @@ python main.py --help
 ## Documentazione e test
 
 [Guida operativa, schema e manutenzione](docs/jobhunter-v2.md)
+
+[Filtri automatici, domande in chat e recupero descrizioni](docs/review-chat-and-descriptions.md)
+
+[Metriche e qualità dei dati](docs/metrics.md)
 
 ```powershell
 python -B -m unittest discover -s tests -v

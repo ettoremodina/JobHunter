@@ -76,6 +76,7 @@ function params(start = offset, size = config.page_size) {
     source: $("source").value,
     location: $("location").value,
     category: $("category").value,
+    eligibility: $("eligibility").value,
     offset: start,
     limit: size,
   });
@@ -258,6 +259,17 @@ async function show(id) {
     }),
   );
   panel.append(form);
+  const companyChoices = el("div", undefined, "actions");
+  for (const [text, status, reason] of [["Azienda non interessante", "discarded", "company_not_interested"], ["Nessun ruolo adatto adesso", "review", "no_current_roles"]]) {
+    const button = el("button", text);
+    button.addEventListener("click", guarded(async () => {
+      await api("/api/feedback", {company_id: id, status, reason, note: note.value});
+      message(reason === "no_current_roles" ? "Azienda rimandata: può tornare con nuovi ruoli o requisiti cambiati." : "Azienda esclusa dalle proposte. Puoi annullare la decisione nello storico.");
+      await show(id); await load();
+    }));
+    companyChoices.append(button);
+  }
+  panel.append(companyChoices);
   if (company.assessment) {
     panel.append(el("h3", "Valutazione dalla chat"));
     if (company.assessment.stale)
@@ -334,8 +346,14 @@ async function show(id) {
       block.append(original);
     }
     if (job.selection) block.append(el("p", "Filtro iniziale: " + ({excluded: "ruolo escluso dalla shortlist", potential: "potenzialmente pertinente", review: "da verificare"}[job.selection.status]) + " · " + job.selection.reasons.join(", "), "muted"));
+    if (job.selection?.verification) {
+      const verification = job.selection.verification;
+      block.append(el("p", `Informazioni: ${verification.description ? "descrizione disponibile" : "descrizione mancante"} · ${verification.experience_determined ? "esperienza obbligatoria determinata" : "esperienza da verificare"} · apertura da verificare`, "muted"));
+    }
     if (job.selection?.requirements) {
       const facts = job.selection.requirements;
+      if (facts.languages?.evidence.length) block.append(el("p", "Requisiti linguistici: " + facts.languages.evidence.join(" · ")));
+      if (job.description_check) block.append(el("p", "Ultimo tentativo di recupero: " + date(job.description_check.checked_at) + " · " + ({available: "testo disponibile", blocked: "fonte temporaneamente bloccata", missing_page: "pagina non trovata", unsupported_parser: "testo non estraibile", temporary_error: "errore temporaneo"}[job.description_check.status] || "da verificare"), "muted"));
       for (const quote of [...facts.evidence, ...facts.eligibility_quotes]) block.append(el("blockquote", quote));
     }
     const roleReason = el("select"); roleReason.setAttribute("aria-label", "Motivo sul ruolo " + job.title);
@@ -398,6 +416,7 @@ async function show(id) {
 }
 async function sources() {
   const stats = await api("/api/stats");
+  $("archive-provenance").textContent = `${stats.companies.toLocaleString("it-IT")} aziende e ${stats.opportunities.toLocaleString("it-IT")} opportunità in archivio.` + (stats.first_import_at ? ` Primo inserimento: ${date(stats.first_import_at)}.` : " Archivio vuoto.");
   $("source-list").replaceChildren();
   for (const [name, source] of Object.entries(config.sources)) {
     const row = el("div", undefined, "source");
@@ -408,14 +427,15 @@ async function sources() {
     );
     row.append(text);
     const controls = el("div", undefined, "actions");
-    const label = el("label", "Limite annunci");
+    const label = el("label", "Annunci da acquisire in questo avvio");
     const input = el("input");
     input.type = "number";
     input.min = "1";
     input.max = String(config.max_jobs);
     input.value = String(Math.min(10, config.max_jobs));
-    label.append(input);
-    const run = el("button", "Aggiorna");
+    input.disabled = !source.enabled;
+    label.append(input, el("small", `Massimo ${config.max_jobs} da questa pagina; non modifica i dati già salvati.`));
+    const run = el("button", "Avvia raccolta limitata");
     run.disabled = !source.enabled || stats.collection.running;
     run.addEventListener(
       "click",
@@ -496,30 +516,86 @@ async function exportCSV() {
   setTimeout(() => URL.revokeObjectURL(address), 1000);
   message(`${items.length} aziende esportate.`);
 }
+/** Separate reusable preference questions from facts that require source verification. */
+function renderReviewQuestions(data) {
+  $("queue-questions").replaceChildren();
+  $("queue-evidence").replaceChildren();
+  if (!data.questions.length) $("queue-questions").append(el("p", "Nessuna nuova domanda sulle preferenze. Restano disponibili le verifiche sulle fonti."));
+  for (const group of [...data.questions, ...(data.evidence_tasks || [])]) {
+    const article = el("article", undefined, "queue-company");
+    article.append(el("h4", group.title), el("p", group.question), el("p", `${group.companies} aziende · ${group.opportunities} annunci interessati`, "muted"));
+    const list = el("ul");
+    for (const example of group.examples) {
+      const item = el("li");
+      const button = el("button", `${example.company} · ${example.title}`);
+      button.addEventListener("click", guarded(async () => {
+        document.querySelector('[data-view="companies"]').click();
+        await show(example.company_id);
+        $("detail").scrollIntoView({block: "start"});
+      }));
+      item.append(button); list.append(item);
+    }
+    article.append(list);
+    if (group.kind === "preference") {
+      const prepare = el("button", "Prepara domanda per la chat");
+      prepare.addEventListener("click", () => {
+        const label = el("label", "Domanda e casi da copiare nella chat");
+        const area = el("textarea"); area.rows = 6; area.readOnly = true;
+        area.value = `Aiutami a chiarire questa preferenza: ${group.question}\nGruppo: ${group.id}. Riguarda ${group.opportunities} annunci in ${group.companies} aziende.\nEsempi:\n${group.examples.map(e => `${e.company}: ${e.title} (${e.id})`).join("\n")}\nDopo la mia risposta, mostra l'impatto della regola prima di applicarla. I fatti mancanti vanno verificati sulla fonte.`;
+        label.append(area); article.append(label); area.focus(); area.select(); prepare.disabled = true;
+      });
+      article.append(prepare);
+    }
+    $(group.kind === "preference" ? "queue-questions" : "queue-evidence").append(article);
+  }
+}
+
 /** Resume the persisted queue and expose explicit preference acceptance and outcome counts. */
 async function loadQueue() {
   $("queue-items").textContent = "Preparazione della coda…";
-  const [data, stats, proposals] = await Promise.all([api("/api/queue"), api("/api/metrics"), api("/api/proposals")]);
+  const [data, stats, proposals, review] = await Promise.all([api("/api/queue"), api("/api/metrics"), api("/api/proposals"), api("/api/review-questions")]);
+  renderReviewQuestions(review);
   $("queue-items").replaceChildren();
   if (!data.items.length) $("queue-items").append(el("p", "Nessuna azienda da proporre con i criteri attuali. Consulta l'archivio o aggiorna le fonti."));
+  $("queue-summary").textContent = `${data.items.length} aziende in questa sessione · ${data.total_eligible.toLocaleString("it-IT")} candidate secondo i filtri. Requisiti e apertura degli annunci vanno verificati.`;
   for (const company of data.items) {
-    const row = el("article", undefined, "opportunity");
-    const open = el("button", company.name);
+    const row = el("article", undefined, "queue-company");
+    const heading = el("div", undefined, "queue-company-heading");
+    const title = el("div");
+    title.append(el("h3", company.name), el("p", company.category, "muted"));
+    const open = el("button", "Apri e valuta", "primary");
+    open.setAttribute("aria-label", "Apri e valuta " + company.name);
     open.addEventListener("click", guarded(async () => {
       document.querySelector('[data-view="companies"]').click(); await show(company.id);
+      $("detail").scrollIntoView({block: "start"});
+      $("detail").setAttribute("tabindex", "-1"); $("detail").focus({preventScroll: true});
     }));
-    row.append(open, el("p", company.category + " · " + company.role_count + " ruoli da valutare"));
-    row.append(el("p", company.roles[0].change));
-    row.append(el("p", company.roles[0].why.join(". ")));
-    for (const role of company.roles) row.append(el("p", role.title));
-    const research = el("button", "Prepara approfondimento in chat");
+    heading.append(title, open); row.append(heading);
+    const columns = el("div", undefined, "queue-columns");
+    const roles = el("section");
+    roles.append(el("h4", `Ruoli da esplorare · ${company.role_count}`));
+    const list = el("ul");
+    for (const role of company.roles) list.append(el("li", role.title));
+    roles.append(list);
+    if (company.role_count > company.roles.length) roles.append(el("p", `Altri ${company.role_count - company.roles.length} ruoli nel dettaglio.`, "muted"));
+    const why = el("section");
+    why.append(el("h4", "Perché compare"), el("p", company.roles[0].change, "muted"));
+    const reasons = el("ul");
+    for (const reason of company.roles[0].why) reasons.append(el("li", reason));
+    why.append(reasons, el("small", "Motivi riferiti al primo ruolo. Verifica gli altri nel dettaglio."));
+    columns.append(roles, why); row.append(columns);
+    const research = el("button", "Prepara testo per la chat");
     research.addEventListener("click", guarded(async () => {
       const brief = await api("/api/research/" + company.id);
-      const text = JSON.stringify(brief, null, 2);
-      const area = el("textarea"); area.value = text; area.rows = 8; area.readOnly = true; area.setAttribute("aria-label", "Brief da copiare nella chat");
-      row.append(area); area.focus(); area.select(); research.disabled = true;
+      const text = `Usa la skill jobhunter per approfondire ${brief.name} (ID ${company.id}).\nVerifica online i ruoli ancora aperti e la coerenza con il mio profilo. Distingui fatti verificati e informazioni mancanti.\n\nDomande:\n${brief.questions.map(q => "- " + q).join("\n")}\n\nLink da verificare:\n${[brief.website, ...brief.opportunities.map(o => o.url)].filter(Boolean).join("\n")}`;
+      const label = el("label", "Testo da copiare nella chat di Codex");
+      const area = el("textarea"); area.value = text; area.rows = 8; area.readOnly = true;
+      area.setAttribute("aria-label", "Brief da copiare nella chat");
+      label.append(area); row.append(label); area.focus(); area.select(); research.disabled = true;
     }));
-    row.append(research); $("queue-items").append(row);
+    const actions = el("div", undefined, "queue-chat-actions");
+    actions.append(research, el("small", "Prepara un testo. Non invia messaggi e non avvia un modello."));
+    row.append(actions); $("queue-items").append(row);
   }
   $("queue-metrics").textContent = `${stats.shown_companies} aziende proposte · ${stats.saved_or_contacted} interessanti o contattate · ${stats.discarded} scartate. ` + (stats.save_fraction_decided === null ? "Servono decisioni per misurare l'utilità." : `${Math.round(stats.save_fraction_decided*100)}% delle aziende decise è interessante.`);
   $("queue-proposals").replaceChildren();
@@ -555,11 +631,12 @@ async function init() {
         for (const node of document.querySelectorAll("[data-view]"))
           node.removeAttribute("aria-current");
         button.setAttribute("aria-current", "page");
-        for (const name of ["companies", "sources", "profile", "queue"])
+        for (const name of ["companies", "sources", "profile", "queue", "analytics"])
           $(name + "-view").hidden = name !== button.dataset.view;
         if (button.dataset.view === "sources") await sources();
         if (button.dataset.view === "profile") await profile();
         if (button.dataset.view === "queue") await loadQueue();
+        if (button.dataset.view === "analytics") await loadAnalytics();
       }),
     ),
   );
@@ -595,6 +672,8 @@ async function init() {
   );
   $("export").addEventListener("click", guarded(exportCSV));
   $("refresh-queue").addEventListener("click", guarded(loadQueue));
+  $("refresh-analytics").addEventListener("click", guarded(loadAnalytics));
+  $("analytics-scope").addEventListener("change", guarded(loadAnalytics));
   $("preference-form").addEventListener(
     "submit",
     guarded(async (e) => {
@@ -608,3 +687,54 @@ async function init() {
   await load();
 }
 init().catch((error) => message(error.message, true));
+
+/** Render comparable counts with a shared denominator and no chart dependency. */
+function metricTable(title, rows, total) {
+  const section = el("section", undefined, "metric-section");
+  section.append(el("h3", title));
+  const table = el("table");
+  const head = el("thead"), header = el("tr");
+  for (const text of ["Gruppo", "Annunci", "% del totale"]) header.append(el("th", text));
+  head.append(header); table.append(head);
+  const body = el("tbody");
+  for (const row of rows) {
+    const tr = el("tr");
+    tr.append(el("td", row.label), el("td", row.count.toLocaleString("it-IT")), el("td", (total ? row.count * 100 / total : 0).toLocaleString("it-IT", {maximumFractionDigits: 1}) + "%"));
+    body.append(tr);
+  }
+  table.append(body); section.append(table);
+  return section;
+}
+let analyticsRequest = 0;
+/** Refresh read-only distributions; stale responses cannot replace a newer scope. */
+async function loadAnalytics() {
+  const request = ++analyticsRequest;
+  $("analytics-status").textContent = "Calcolo delle metriche in corso…";
+  $("analytics-content").replaceChildren();
+  try {
+    const data = await api("/api/analytics?" + new URLSearchParams({eligibility: $("analytics-scope").value}));
+    if (request !== analyticsRequest) return;
+    $("analytics-status").textContent = `${data.total.toLocaleString("it-IT")} annunci · ${data.companies.toLocaleString("it-IT")} aziende · Aggiornato alle ${new Date(data.generated_at).toLocaleTimeString("it-IT")}`;
+    const content = $("analytics-content");
+    if (!data.total) { content.append(el("p", "Nessun annuncio in questa selezione.")); return; }
+    const health = [
+      {label: "Con categoria aziendale assegnata", count: data.health.categorized},
+      {label: "Categoria da classificare", count: data.total - data.health.categorized},
+      {label: "Con descrizione", count: data.health.with_description},
+      {label: "Descrizione mancante", count: data.total - data.health.with_description},
+      {label: "Paese non determinato", count: data.total - data.health.country_known},
+      {label: "Salario mancante", count: data.total - data.health.with_salary},
+      {label: "Data pubblicazione mancante", count: data.total - data.health.with_posted_date}
+    ];
+    content.append(el("p", "I conteggi riguardano annunci univoci. La categoria è il settore dell'azienda, non la mansione. Un campo presente non ne garantisce la correttezza o l'attualità.", "hint"));
+    const grid = el("div", undefined, "metrics-grid");
+    grid.append(metricTable("Completezza dei dati", health, data.total), metricTable("Esito dei filtri locali", data.selection.map(row => ({...row, label: {potential: "Potenzialmente compatibili", review: "Da verificare", excluded: "Esclusi"}[row.label]})), data.total), metricTable("Categorie aziendali", data.categories, data.total));
+    content.append(grid, el("h3", "Distribuzione geografica"), el("p", "Ogni annuncio conta una volta per paese e continente: le percentuali possono superare il 100%. Si riconoscono nomi e codici espliciti; città isolate e sigle ambigue restano non determinate. Remoto non significa disponibile in tutto il mondo.", "hint"));
+    const geography = el("div", undefined, "metrics-grid");
+    geography.append(metricTable("Continenti", data.continents, data.total), metricTable("Paesi", data.countries, data.total));
+    content.append(geography);
+  } catch (error) {
+    if (request === analyticsRequest) $("analytics-status").textContent = "Metriche non disponibili. Riprova con Aggiorna metriche.";
+    throw error;
+  }
+}

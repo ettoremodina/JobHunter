@@ -1,0 +1,10 @@
+{
+  "model": "gpt-5.6-luna",
+  "reasoning_effort": "low",
+  "sample_size": 500,
+  "training_size": 400,
+  "seed": 20260908,
+  "batch_size": 50,
+  "timeout_seconds": 600,
+  "output_directory": "data/calibration/2026-09-08-luna"
+}

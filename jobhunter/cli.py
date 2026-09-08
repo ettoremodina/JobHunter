@@ -23,6 +23,11 @@ def parser():
     p.add_argument("--db", help="SQLite database override")
     p.add_argument("--config", help="Application JSON configuration override")
     sub = p.add_subparsers(dest="command", required=True)
+    status = sub.add_parser("status", help="Read workflow progress from another terminal without opening SQLite")
+    status.add_argument("--watch", action="store_true", help="Refresh until Ctrl+C; does not stop the worker")
+    status.add_argument("--interval", type=int, default=5, help="Refresh interval in seconds, from 1 to 3600")
+    status.add_argument("--run", help="Explicit workflow/detail report path or directory")
+    status.add_argument("--json", action="store_true", help="Machine-readable snapshot; JSON lines with --watch")
     for command, help_text in [("init", "Initialize archive"), ("stats", "Counts and collection outcomes"), ("sources", "Source access and health"), ("import-legacy", "Import per-source snapshots, preserving originals")]:
         sub.add_parser(command, help=help_text)
     imp = sub.add_parser("import", help="Import unaggregated JSON or CSV")
@@ -34,11 +39,37 @@ def parser():
     search.add_argument("--status", choices=STATUSES, default="")
     search.add_argument("--limit", type=int, default=30)
     search.add_argument("--offset", type=int, default=0)
+    search.add_argument("--eligibility", choices=("potential", "review", "excluded"), default="", help="Only roles matching the current profile-filter outcome")
     sub.add_parser("show", help="Company with opportunities and provenance").add_argument("id")
     sub.add_parser("categories", help="List the shared category vocabulary")
-    sub.add_parser("collect-all", help="Broad acquisition of all configured source scopes with coverage report")
+    sweep = sub.add_parser("collect-all", help="Broad acquisition including descriptions, categories and selection")
+    sweep.add_argument("--fresh", action="store_true", help="Back up SQLite and reset acquired data while preserving personal records")
+    sweep.add_argument("--resume-after-listings", action="store_true", help="Reuse archived listings and continue details, categories and selection")
     sub.add_parser("queue", help="Resume the personal company queue")
     sub.add_parser("metrics", help="Decision coverage and reasons")
+    analytics = sub.add_parser("analytics", help="Archive distributions and data completeness; no network or LLM")
+    analytics.add_argument("--eligibility", choices=("potential", "review", "excluded"), default="")
+    sub.add_parser("description-coverage", help="Missing descriptions by source and board")
+    sub.add_parser("reparse-descriptions", help="Restore source structure from saved HTML, without network requests")
+    sub.add_parser("data-quality", help="Source usefulness, fetch outcomes and possible duplicates")
+    review_sample = sub.add_parser("prepare-review", help="Create a manual calibration sample without model calls")
+    review_sample.add_argument("--limit", type=int, default=20)
+    sub.add_parser("score-review", help="Evaluate human labels separately for development and holdout").add_argument("path")
+    descriptions = sub.add_parser("fetch-descriptions", help="Recover a bounded batch of missing public descriptions")
+    descriptions.add_argument("--limit", type=int)
+    descriptions.add_argument("--source")
+    descriptions.add_argument("--refresh-stale", action="store_true", help="Refresh cached descriptions older than configured age")
+    descriptions.add_argument("--force", action="store_true", help="Retry failed jobs; active host cooldowns still apply")
+    descriptions.add_argument("--workers", type=int, help="Concurrent detail workers")
+    benchmark = sub.add_parser("benchmark-descriptions", help="Compare disjoint detail batches; persist texts and stop on source blocks")
+    benchmark.add_argument("--batch-size", type=int, default=50)
+    benchmark.add_argument("--workers", type=int, nargs="+", default=[1, 4, 8])
+    descriptions.add_argument("--all", action="store_true", help="Fetch every eligible missing description after listing screening")
+    interview = sub.add_parser("review-questions", help="Prepare grouped questions for uncertain roles in chat")
+    interview.add_argument("--limit", type=int)
+    rule = sub.add_parser("review-rule", help="Preview a user preference rule; persist only with --apply")
+    rule.add_argument("path")
+    rule.add_argument("--apply", action="store_true")
     sub.add_parser("research-brief", help="Prepare focused online research in chat").add_argument("id")
     proposal = sub.add_parser("proposals", help="List or explicitly accept/dismiss/disable learned preferences")
     proposal.add_argument("id", nargs="?")
@@ -51,6 +82,7 @@ def parser():
     enrich.add_argument("--limit", type=int)
     enrich.add_argument("--model")
     enrich.add_argument("--force", action="store_true")
+    enrich.add_argument("--missing-only", action="store_true", help="Only uncategorized companies with company-level evidence")
     classify = sub.add_parser("categorize", help="Refresh automatic categories, or assign one company from chat")
     classify.add_argument("id", nargs="?")
     classify.add_argument("--category")
@@ -90,9 +122,16 @@ def parser():
 def execute(args, archive, cfg):
     """Dispatch one operation without implicit scraping or preference edits."""
     command = args.command
+    if command == "analytics":
+        from jobhunter.analytics import summary
+        return summary(archive, args.eligibility)
     if command == "collect-all":
         from jobhunter.sweep import sweep
-        return sweep(archive, cfg)
+        if args.fresh and args.resume_after_listings:
+            raise ValueError("Choose either --fresh or --resume-after-listings")
+        if args.fresh:
+            archive.reset_collection()
+        return sweep(archive, cfg, resume_after_listings=args.resume_after_listings)
     if command in ("queue", "metrics", "proposals", "research-brief"):
         from jobhunter.selection import queue, metrics, proposals, research_brief
         if command == "queue": return queue(archive)
@@ -104,11 +143,32 @@ def execute(args, archive, cfg):
         return shortlist(archive, args.limit, args.offset)
     if command == "enrich":
         from jobhunter.enrichment import run
-        return run(archive, args.task, args.limit, args.force, args.model)
+        return run(archive, args.task, args.limit, args.force, args.model, args.missing_only)
     if command in ("init", "stats"):
         return archive.stats()
     if command == "sources":
         return {"sources": cfg["sources"], "recent_runs": archive.stats()["runs"]}
+    if command == "description-coverage":
+        from jobhunter.descriptions import coverage
+        return coverage(archive)
+    if command in ("reparse-descriptions", "data-quality", "prepare-review", "score-review"):
+        from jobhunter.maintenance import reparse, quality, prepare_review, score_review
+        if command == "reparse-descriptions": return reparse(archive)
+        if command == "data-quality": return quality(archive)
+        if command == "prepare-review": return prepare_review(archive, args.limit)
+        return score_review(args.path)
+    if command == "fetch-descriptions":
+        from jobhunter.descriptions import recover
+        return recover(archive, args.limit, args.source, args.all, workers=args.workers, refresh_stale=args.refresh_stale, force=args.force)
+    if command == "benchmark-descriptions":
+        from jobhunter.benchmark import run
+        return run(archive, args.batch_size, args.workers)
+    if command == "review-questions":
+        from jobhunter.interview import questions
+        return questions(archive, args.limit)
+    if command == "review-rule":
+        from jobhunter.interview import review_rule
+        return review_rule(archive, read_json(args.path), args.apply)
     if command == "import":
         path = Path(args.path)
         if path.suffix.lower() == ".csv":
@@ -128,7 +188,7 @@ def execute(args, archive, cfg):
             reports.append(report)
         return reports
     if command == "search":
-        return archive.search(args.query, args.status, args.source, args.location, args.limit, args.offset, args.category)
+        return archive.search(args.query, args.status, args.source, args.location, args.limit, args.offset, args.category, args.eligibility)
     if command == "categories":
         return {"categories": [*categories(), "Da classificare"]}
     if command == "categorize":
@@ -195,11 +255,15 @@ def main():
     archive = None
     try:
         cfg = settings(args.config)
+        if args.command == "status":
+            from jobhunter.progress import monitor
+            monitor(ROOT, cfg, args.run, args.watch, args.interval, args.json)
+            return 0
         archive = Archive(args.db or ROOT / cfg["database"])
         result = execute(args, archive, cfg)
         if result is not None:
             print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 2 if isinstance(result, dict) and (result.get("status") in ("failed", "partial", "access_required") or result.get("failed")) else 0
+        return 2 if isinstance(result, dict) and (result.get("status") in ("failed", "partial", "access_required", "blocked") or result.get("failed")) else 0
     except (ValueError, OSError, KeyError) as exc:
         logger.error("%s", exc)
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))
