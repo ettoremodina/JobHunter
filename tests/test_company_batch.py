@@ -162,6 +162,35 @@ class BatchTests(unittest.TestCase):
             finally:
                 arc.close()
 
+    def test_local_exclusions_skip_the_call_except_for_a_bounded_audit(self):
+        """Locally excluded roles must not be paid for, beyond the explicit audit allowance."""
+        with tempfile.TemporaryDirectory() as folder:
+            arc = Archive(Path(folder)/'db.sqlite3')
+            try:
+                arc.ingest([{'company_name': 'Example', 'title': 'Data Scientist', 'source_url': 'https://example.org/'+str(i), 'description': 'Build models.'} for i in range(4)], 'test')
+                ids = [r[0] for r in arc.db.execute('SELECT id FROM opportunities')]
+                cfg = json.loads(Path('config/remote_llm.json').read_text())
+                cfg['output_directory'] = folder
+                original = json.loads
+                def config_read(value, *args, **kwargs):
+                    """Redirect reports to the disposable test directory and cap the audit at one role."""
+                    result = original(value, *args, **kwargs)
+                    if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY':
+                        return cfg
+                    if isinstance(result, dict) and 'remote_audit_excluded' in result:
+                        return {**result, 'remote_audit_excluded': 1}
+                    return result
+                def response(config, prompt, payload, key):
+                    """Judge exactly the roles the caller chose to submit."""
+                    return {'company': None, 'jobs': {oid: {'selection': {'decision': 'exclude', 'rationale': 'Test', 'evidence': [oid[:2] + '-S0'], 'missing_information': []}, 'summary': None} for oid in payload['jobs']}}, {'total_tokens': 10}, []
+                with patch('json.loads', side_effect=config_read), patch.object(arc, 'evaluations', return_value={oid: {'status': 'excluded'} for oid in ids}),                      patch('jobhunter.remote_llm.api_key', return_value='test'), patch('jobhunter.remote_llm.request', side_effect=response) as request,                      patch('jobhunter.company_batch.time.sleep'):
+                    report = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
+                self.assertEqual(request.call_count, 1)
+                self.assertEqual(report['counts']['local_excluded'], 3)
+                self.assertEqual(report['counts']['submitted_jobs'], 1)
+            finally:
+                arc.close()
+
     def test_missing_company_evidence_never_generates_empty_enum(self):
         """A company with role listings but no business facts must still have a valid request schema."""
         cfg = json.loads(Path('config/remote_llm.json').read_text())

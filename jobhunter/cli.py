@@ -28,7 +28,7 @@ def parser():
     status.add_argument("--interval", type=int, default=5, help="Refresh interval in seconds, from 1 to 3600")
     status.add_argument("--run", help="Explicit workflow/detail report path or directory")
     status.add_argument("--json", action="store_true", help="Machine-readable snapshot; JSON lines with --watch")
-    for command, help_text in [("init", "Initialize archive"), ("stats", "Counts and collection outcomes"), ("sources", "Source access and health"), ("import-legacy", "Import per-source snapshots, preserving originals")]:
+    for command, help_text in [("init", "Initialize archive"), ("stats", "Counts and collection outcomes"), ("sources", "Source access and health")]:
         sub.add_parser(command, help=help_text)
     imp = sub.add_parser("import", help="Import unaggregated JSON or CSV")
     imp.add_argument("path")
@@ -189,14 +189,6 @@ def execute(args, archive, cfg):
         if not isinstance(rows, list):
             raise ValueError("Import must be a list of unaggregated records")
         return archive.ingest(rows, args.source, datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat())
-    if command == "import-legacy":
-        reports = []
-        for path in sorted((ROOT / "data/runs/scrape").glob("*/structured_results.json")):
-            stamp = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
-            report = archive.ingest(read_json(path), path.parent.name, stamp)
-            report["source"] = path.parent.name
-            reports.append(report)
-        return reports
     if command == "search":
         return archive.search(args.query, args.status, args.source, args.location, args.limit, args.offset, args.category, args.eligibility)
     if command == "categories":

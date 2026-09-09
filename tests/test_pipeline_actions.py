@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from jobhunter.workspace import Archive, settings
-from jobhunter.pipeline_actions import controls, parameters, legacy_remote_companies as remote_companies, start, stop, execute, configuration
+from jobhunter.pipeline_actions import controls, parameters, start, stop, execute, configuration
 
 
 class ActionTests(unittest.TestCase):
@@ -28,24 +28,12 @@ class ActionTests(unittest.TestCase):
         self.archive.close()
         self.tmp.cleanup()
 
-    def test_validation_and_cohort(self):
-        """Reject command injection and count companies rather than requests or jobs."""
-        for step, values in [('shell', {}), ('filters', {'command': 'anything'}), ('remote', {'company_limit': True}), ('remote', {'mode': 'anything'})]:
+    def test_validation_rejects_unknown_steps_and_out_of_range_values(self):
+        """Reject command injection, unknown steps and values outside the configured limits."""
+        for step, values in [('shell', {}), ('rewrite', {'limit': 1}), ('filters', {'command': 'anything'}),
+                             ('remote', {'company_limit': True}), ('remote', {'mode': 'anything'})]:
             with self.assertRaises(ValueError):
                 parameters(step, values, self.archive, self.cfg)
-        calls = []
-
-        def mocked_run(archive, task, **kwargs):
-            """Record task scope while returning a valid offline preview report."""
-            calls.append((task, kwargs))
-            return {'status': 'success', 'selected': 1, 'processed': 0, 'cached': 0, 'skipped': 0, 'items': [], 'failed': []}
-
-        with patch('jobhunter.remote_llm.run', side_effect=mocked_run):
-            result = remote_companies(self.archive, {'all_companies': True, 'company_limit': 1, 'mode': 'preview'}, lambda d: None)
-        self.assertEqual(result['total_companies'], 2)
-        self.assertEqual(len(calls), 8)  # two companies, three jobs with two tasks each
-        self.assertTrue(all(c[1]['include_excluded'] for c in calls))
-        self.assertTrue(all(not c[1]['execute'] for c in calls))
 
     def test_pipeline_collection_defers_details_and_local_categories(self):
         """The operational order must defer network details and classification, not just relabel cards."""
@@ -83,53 +71,6 @@ class ActionTests(unittest.TestCase):
         self.archive.db.execute("UPDATE opportunities SET content_hash='changed'")
         self.archive.db.commit()
         self.assertTrue(controls(self.archive, self.cfg)['actions']['filters']['needs_update'])
-
-    def test_selection_precedes_enrichment_and_exclusions_skip_summaries(self):
-        """Only surviving jobs incur summary work; company summary runs once after selection."""
-        calls = []
-        report = {'status': 'success', 'selected': 1, 'processed': 1, 'cached': 0, 'skipped': 0, 'items': [], 'failed': []}
-        ids = [r[0] for r in self.archive.db.execute('SELECT id FROM opportunities ORDER BY id')]
-        survivor = ids[0]
-        def mocked(archive, task, **kwargs):
-            """Record ordered calls without performing inference."""
-            calls.append((task, kwargs['record_id']))
-            return report
-        def decision(archive, task, oid, config):
-            """Keep one role and exclude the rest of the fixed fixture."""
-            return {'decision': 'keep' if oid == survivor else 'exclude'}
-        with patch('jobhunter.remote_llm.run', side_effect=mocked), patch('jobhunter.remote_llm.current_result', side_effect=decision):
-            result = remote_companies(self.archive, {'all_companies': True, 'company_limit': 2, 'mode': 'execute'}, lambda d: None)
-        self.assertEqual([oid for task, oid in calls if task == 'job-summary'], [survivor])
-        self.assertEqual(sum(task == 'company-summary' for task, oid in calls), 1)
-        self.assertLess(calls.index(('selection', survivor)), next(i for i,c in enumerate(calls) if c[0] == 'company-summary'))
-        self.assertEqual(result['counts']['remote_excluded'], 2)
-
-    def test_local_exclusions_have_only_a_bounded_audit(self):
-        """Exclude locally before API work and spend only the explicit audit allowance."""
-        ids = [r[0] for r in self.archive.db.execute('SELECT id FROM opportunities')]
-        report = {'status': 'success', 'selected': 1, 'processed': 1, 'cached': 0, 'skipped': 0, 'items': [], 'failed': []}
-        with patch.object(self.archive, 'evaluations', return_value={oid: {'status': 'excluded'} for oid in ids}), \
-             patch('jobhunter.pipeline_actions.configuration', return_value={'remote_audit_excluded': 1}), \
-             patch('jobhunter.remote_llm.run', return_value=report) as run, \
-             patch('jobhunter.remote_llm.current_result', return_value={'decision': 'exclude'}):
-            result = remote_companies(self.archive, {'all_companies': True, 'company_limit': 2, 'mode': 'execute'}, lambda d: None)
-        run.assert_called_once()
-        self.assertEqual(run.call_args.args[1], 'selection')
-        self.assertEqual(result['counts']['local_excluded'], 2)
-        self.assertEqual(result['counts']['audit_jobs'], 1)
-
-    def test_remote_rejections_continue_but_transport_stops(self):
-        """Count billed rejected outputs across a cohort, but stop on provider failures."""
-        for validation_error in (True, False):
-            report = {'status': 'partial', 'selected': 1, 'processed': 0, 'cached': 0,
-                      'skipped': 0, 'items': [{'usage': {'total_tokens': 10}}],
-                      'failed': [{'error': 'test', 'validation_error': validation_error}]}
-            with patch('jobhunter.remote_llm.run', return_value=report) as run:
-                result = remote_companies(self.archive, {'all_companies': True, 'company_limit': 2, 'mode': 'execute'}, lambda d: None)
-            self.assertEqual(result['status'], 'partial')
-            self.assertEqual(run.call_count, 3 if validation_error else 1)
-            self.assertEqual(result['completed_companies'], 2 if validation_error else 0)
-            self.assertEqual(result['usage']['total_tokens'], 30 if validation_error else 10)
 
     def test_sequence_stops_at_partial_and_keeps_stage_result(self):
         """A partial upstream result must prevent later API work."""

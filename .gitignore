@@ -1,13 +1,13 @@
-*.log
+# Segreti: mai versionati.
 .env
 .env.local
-data/remote-llm/
+
+# Dati locali: archivio SQLite, snapshot HTML, report, backup, benchmark.
+# Restano sul disco, non su GitHub. Il backup e' una tua copia, non il repo.
+data/
+
+*.log
 .venv/
 __pycache__/
 *.pyc
 .pytest_cache/
-data/*.sqlite3*
-data/collection/
-data/qa/
-
-data/maintenance/
