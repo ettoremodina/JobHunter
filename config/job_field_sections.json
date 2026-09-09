@@ -1,0 +1,16 @@
+{
+  "responsibilities": "responsibilities",
+  "required_skills": "requirements",
+  "preferred_skills": "requirements",
+  "required_experience": "requirements",
+  "preferred_experience": "requirements",
+  "education": "requirements",
+  "languages": "requirements",
+  "location": "conditions",
+  "work_mode": "conditions",
+  "contract": "conditions",
+  "salary": "conditions",
+  "visa": "conditions",
+  "travel": "conditions",
+  "other_conditions": "conditions"
+}

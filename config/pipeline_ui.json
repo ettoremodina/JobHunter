@@ -1,0 +1,55 @@
+{
+  "poll_seconds": 30,
+  "remote_company_limit": 100,
+  "remote_max_companies": 10000,
+  "sequence": [
+    "collection",
+    "filters",
+    "descriptions",
+    "remote",
+    "queue"
+  ],
+  "actions": {
+    "collection": {
+      "label": "Raccogli annunci",
+      "note": "Raccolta limitata per fonte. Le nuove righe vengono normalizzate e raggruppate automaticamente.",
+      "fields": [
+        "source",
+        "limit"
+      ]
+    },
+    "descriptions": {
+      "label": "Recupera descrizioni",
+      "note": "Riprende i dati mancanti. I blocchi della fonte e i tempi di attesa vengono rispettati anche con Riprova.",
+      "fields": [
+        "source",
+        "limit",
+        "workers",
+        "all",
+        "refresh_stale",
+        "force"
+      ]
+    },
+    "filters": {
+      "label": "Aggiorna filtri locali",
+      "note": "Ricalcola gli esiti con contenuti e preferenze correnti. Non modifica le regole.",
+      "fields": []
+    },
+    "remote": {
+      "label": "Seleziona e arricchisci con Qwen",
+      "note": "Qwen valuta in una sola chiamata tutti gli annunci rimasti di un'azienda e, se servono, la scheda dei ruoli e quella aziendale. Controlla anche un campione di esclusi locali. Le chiamate contemporanee riducono il tempo totale, non il costo. Anteprima: nessuna chiamata.",
+      "fields": [
+        "company_limit",
+        "all_companies",
+        "workers",
+        "mode"
+      ]
+    },
+    "queue": {
+      "label": "Aggiorna coda",
+      "note": "Prepara la coda per la revisione in chat. Usa ancora i filtri locali, non applica i giudizi remoti.",
+      "fields": []
+    }
+  },
+  "remote_audit_excluded": 5
+}

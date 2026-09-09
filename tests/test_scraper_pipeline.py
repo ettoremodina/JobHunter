@@ -16,7 +16,7 @@ class ScraperPipelineTests(unittest.TestCase):
     """A bounded refresh fetches only its jobs; a full sweep also screens excluded titles."""
 
     def test_bounded_and_full_collection_recover_before_selection(self):
-        """Exercise both public collectors through real ingestion, recovery, categorization and filters."""
+        """Exercise both public collectors through real ingestion, recovery and filters, leaving classification for downstream enrichment."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'config').mkdir()
@@ -36,7 +36,7 @@ class ScraperPipelineTests(unittest.TestCase):
                     bounded = collect(archive, cfg, 'airtable', limit=1, force=True)
                 self.assertEqual(bounded['descriptions']['saved'], 1)
                 self.assertEqual(fetch.call_count, 1)
-                self.assertEqual(archive.search(query='New')['items'][0]['category'], 'Energia')
+                self.assertEqual(archive.search(query='New')['items'][0]['category'], 'Da classificare')
                 with patch('jobhunter.sweep.ROOT', root), patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.sweep.airtable_rows', return_value=[old, fresh]), patch('jobhunter.descriptions.fetch', return_value=html) as fetch:
                     complete = sweep(archive, cfg)
                 report = json.loads(Path(complete['report']).read_text(encoding='utf-8'))

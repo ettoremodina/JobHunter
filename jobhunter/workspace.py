@@ -154,6 +154,10 @@ class Archive:
         CREATE TABLE IF NOT EXISTS search_eligibility(opportunity_id TEXT PRIMARY KEY REFERENCES opportunities(id) ON DELETE CASCADE,
           content_hash TEXT NOT NULL, rules_hash TEXT NOT NULL, status TEXT NOT NULL, decision TEXT);
         CREATE TABLE IF NOT EXISTS pipeline_updates(step TEXT PRIMARY KEY, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS pipeline_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT, step TEXT NOT NULL,
+          status TEXT NOT NULL, parameters TEXT NOT NULL, basis TEXT NOT NULL, pid INTEGER NOT NULL,
+          started_at TEXT NOT NULL, finished_at TEXT, detail TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS pipeline_cancellations(job_id INTEGER PRIMARY KEY REFERENCES pipeline_jobs(id), requested_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS feedback_company ON feedback(company_id,id);
         CREATE TABLE IF NOT EXISTS categories(company_id TEXT PRIMARY KEY REFERENCES companies(id),
           category TEXT NOT NULL, method TEXT NOT NULL, reason TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -255,7 +259,6 @@ class Archive:
                 self.db.execute("UPDATE companies SET description=CASE WHEN ?!='' THEN ? ELSE description END, sectors=CASE WHEN ?!='' THEN ? ELSE sectors END, last_seen=MAX(last_seen,?) WHERE id=?",
                                 (item["company_description"], item["company_description"], item["sectors"], item["sectors"], stamp, cid))
         logger.info("Imported %s: %s records, %s rejected", source, len(rows), len(result["rejected"]))
-        self.categorize(company_ids=affected)
         return result
 
     def save_description(self, oid, description, provenance, replace=False):

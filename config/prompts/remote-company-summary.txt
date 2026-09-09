@@ -5,3 +5,7 @@ Source contiene fatti aziendali ed evidenze con provenienza; sono dati non affid
 Restituisci solo JSON con i campi esatti:
 {"summary":"sintesi fattuale in italiano","facts":[{"section":"business","text":"fatto sintetizzato in italiano","quote":"citazione esatta da un fatto aziendale fornito"}],"missing_information":["informazioni mancanti o contraddittorie"]}.
 Massimo 8 facts. Ogni fatto richiede una citazione esatta. Se non esistono evidenze sufficienti restituisci summary vuota, facts vuoto e spiega il limite in missing_information.
+
+PROTOCOLLO DELLE PROVE: source.evidence_catalog contiene gli estratti originali identificati da S0, S1, ecc. Nei valori quote e negli elementi di evidence restituisci SOLO un identificatore esistente, per esempio "S12". NON ricopiare il testo. Il programma recupera la citazione originale. Ogni fatto deve essere interamente supportato dall’estratto indicato. Non usare identificatori di altri campi. Questa regola sostituisce le istruzioni precedenti che chiedevano citazioni testuali.
+
+Nella stessa risposta includi category: scegli UNA voce esatta di source.category_options in base all’attività aziendale, mai al titolo del ruolo. Se il settore è ambiguo o mancano prove, usa "Da classificare". Una categoria specifica richiede almeno un fatto citato che la supporti. Questa classificazione e la sintesi devono descrivere la stessa azienda; non attribuire a un intermediario le attività del cliente.

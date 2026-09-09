@@ -1,0 +1,51 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "enum": [
+              "business"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "section",
+          "text",
+          "quote"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 8
+    },
+    "missing_information": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "category": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "summary",
+    "facts",
+    "missing_information",
+    "category"
+  ],
+  "additionalProperties": false
+}

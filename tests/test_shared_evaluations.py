@@ -52,6 +52,7 @@ class SharedEvaluationTests(unittest.TestCase):
                       {'company_name': 'Example', 'title': 'Engineer', 'source_url': 'https://example.org/2'}], 'test')
             cid = a.search()['items'][0]['id']
             self.assertTrue(any('We manufacture solar panels.' in fact for fact in company_input(a, cid)['facts']))
+            a.categorize()
             self.assertEqual(a.category(cid)['category'], 'Energia')
 
     def test_unrelated_code_does_not_invalidate_decisions(self):

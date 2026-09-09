@@ -94,6 +94,8 @@ class WorkflowTests(unittest.TestCase):
     def test_shared_categories_preserve_chat_assignments(self):
         """Rules use company facts across sources, while chat corrections survive imports."""
         self.archive.ingest([dict(self.rows[0], company_industry="Clean Energy")], "jobspy")
+        self.assertEqual(self.archive.db.execute("SELECT count(*) FROM categories").fetchone()[0], 0)
+        self.archive.categorize()
         cid = self.archive.search(category="Energia")["items"][0]["id"]
         self.assertEqual(self.archive.show(cid)["category_method"], "rules")
         self.archive.categorize(cid, "Industria e materiali", "Company manufactures components")
@@ -133,6 +135,13 @@ class WorkflowTests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as ctx:
                 urllib.request.urlopen(urllib.request.Request(base + "/api/feedback", body))
             self.assertEqual(ctx.exception.code, 403)
+            body_action = json.dumps({'step': 'filters', 'parameters': {}}).encode()
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                urllib.request.urlopen(urllib.request.Request(base + '/api/pipeline/start', body_action))
+            self.assertEqual(ctx.exception.code, 403)
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                urllib.request.urlopen(urllib.request.Request(base + '/api/pipeline/start', json.dumps({'step': 'shell', 'parameters': {}}).encode(), {'X-JobHunter-Token': token, 'Content-Type': 'application/json'}))
+            self.assertEqual(ctx.exception.code, 400)
             request = urllib.request.Request(base + "/api/feedback", body, {"X-JobHunter-Token": token, "Content-Type": "application/json"})
             with urllib.request.urlopen(request) as response:
                 self.assertIn("event_id", json.load(response))

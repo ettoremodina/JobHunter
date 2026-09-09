@@ -315,8 +315,19 @@ async function show(id) {
       panel.append(p);
     }
   }
+  const scope = $("eligibility").value;
+  const visible = scope ? company.opportunities.filter(job => job.selection?.status === scope) : company.opportunities;
+  const hidden = company.opportunities.length - visible.length;
   panel.append(el("h3", "Opportunità associate"));
-  for (const job of company.opportunities) {
+  if (hidden) {
+    const label = {potential: "compatibili con i filtri", review: "da verificare", excluded: "esclusi dai filtri"}[scope];
+    const note = el("p", `${visible.length} di ${company.opportunities.length} ruoli: sono mostrati solo quelli ${label}. `, "muted");
+    const showAll = el("button", "Mostra tutti i ruoli");
+    showAll.addEventListener("click", guarded(async () => { $("eligibility").value = ""; offset = 0; await show(id); }));
+    note.append(showAll);
+    panel.append(note);
+  }
+  for (const job of visible) {
     const block = el("article", undefined, "opportunity");
     block.id = "job-" + job.id;
     block.append(
@@ -725,6 +736,13 @@ async function init() {
   $("refresh-queue").addEventListener("click", guarded(loadQueue));
   $("refresh-analytics").addEventListener("click", guarded(loadAnalytics));
   $("refresh-pipeline").addEventListener("click", guarded(loadPipeline));
+  $('pipeline-close').addEventListener('click', () => $('pipeline-dialog').close());
+  $('pipeline-form').addEventListener('submit', launchPipeline);
+  $('pipeline-stop').addEventListener('click', () => stopPipeline(pipelineData?.controls.active?.id));
+  $('pipeline-go-feedback').addEventListener('click', () => {
+    $('pipeline-dialog').close();
+    document.querySelector('[data-view="queue"]').click();
+  });
   $("analytics-scope").addEventListener("change", guarded(loadAnalytics));
   $("preference-form").addEventListener(
     "submit",
@@ -738,7 +756,9 @@ async function init() {
   );
   await load();
 }
-init().catch((error) => message(error.message, true));
+init().then(() => {
+  if (new URLSearchParams(location.search).get('view') === 'pipeline') document.querySelector('[data-view="pipeline"]').click();
+}).catch((error) => message(error.message, true));
 
 /** Render comparable counts with a shared denominator and no chart dependency. */
 function metricTable(title, rows, total) {
@@ -801,6 +821,9 @@ function pipelineDate(value) {
   return `${stamp.toLocaleString('it-IT')} · ${age}`;
 }
 
+let pipelineData = null, pipelineStep = null, pipelineTimer = null;
+const pipelineStates = {running: 'In esecuzione', success: 'Terminato', partial: 'Parziale: controlla e riprova', failed: 'Errore: da riprovare', interrupted: 'Interrotto: da riprendere'};
+
 /** Read pipeline evidence without starting collection, filtering or model work. */
 async function loadPipeline() {
   const button = $('refresh-pipeline');
@@ -809,6 +832,7 @@ async function loadPipeline() {
   $('pipeline-status').textContent = 'Lettura dello stato della pipeline…';
   try {
     const data = await api('/api/pipeline');
+    pipelineData = data;
     $('pipeline-status').textContent = `${data.opportunities.toLocaleString('it-IT')} annunci · ${data.companies.toLocaleString('it-IT')} aziende · Stato letto alle ${new Date(data.generated_at).toLocaleTimeString('it-IT')}`;
     const workflow = $('pipeline-workflow');
     workflow.replaceChildren(el('h3', 'Ultimo workflow rilevato'));
@@ -825,21 +849,56 @@ async function loadPipeline() {
     if (data.oldest_observation) workflow.append(el('p', 'Osservazione più vecchia ancora in archivio: ' + pipelineDate(data.oldest_observation), 'muted'));
     const list = $('pipeline-steps');
     list.replaceChildren();
-    for (const step of data.steps) {
+    for (const [index, step] of data.steps.filter(s => !['analytics', 'categories'].includes(s.id)).entries()) {
       const row = el('li', undefined, 'pipeline-step');
-      const content = el('div');
-      const heading = el('div', undefined, 'pipeline-heading');
-      heading.append(el('h3', step.title));
-      if (step.total !== null) heading.append(el('span', {complete: 'Copertura completa', partial: 'Copertura parziale', missing: 'Da elaborare', stale: 'Da aggiornare', empty: 'Nessun dato'}[step.state], 'badge'));
-      content.append(heading, el('p', step.note, 'pipeline-note'));
-      const numbers = el('div', undefined, 'pipeline-evidence');
-      numbers.append(el('strong', step.total === null ? `${step.done.toLocaleString('it-IT')} ${step.unit}` : `${step.done.toLocaleString('it-IT')} / ${step.total.toLocaleString('it-IT')} ${step.unit}`));
-      if (step.pending) numbers.append(el('p', `${step.pending.toLocaleString('it-IT')} senza esito valido` + (step.stale ? `, di cui ${step.stale.toLocaleString('it-IT')} da aggiornare` : '')));
-      numbers.append(el('p', 'Ultimo aggiornamento', 'muted'), el('p', pipelineDate(step.updated_at)));
-      const layout = el('div', undefined, 'pipeline-columns');
-      layout.append(content, numbers); row.append(layout); list.append(row);
+      const action = data.controls.actions[step.id];
+      const active = data.controls.active;
+      const running = active && (active.step === step.id || active.detail.phase === step.id || step.id === 'normalization' && (active.step === 'collection' || active.detail.phase === 'collection'));
+      const stale = action?.needs_update || step.stale;
+      const last = action?.last_run;
+      const retry = last && ['partial', 'failed', 'interrupted'].includes(last.status);
+      row.dataset.state = running ? 'running' : retry ? 'retry' : stale ? 'stale' : step.state;
+      const card = el('button', undefined, 'pipeline-card');
+      card.type = 'button';
+      if (running) card.setAttribute('aria-current', 'step');
+      card.setAttribute('aria-label', 'Apri ' + step.title);
+      card.append(el('span', `${index + 1}. ${step.title}`, 'pipeline-title'));
+      const state = running ? active.cancel_requested ? 'Arresto richiesto' : 'In esecuzione' : retry ? pipelineStates[last.status] : stale ? 'Dati cambiati: da aggiornare' : last?.parameters.mode === 'preview' ? 'Anteprima disponibile' : step.total === null ? 'Su richiesta' : {complete: 'Copertura completa', partial: 'Copertura parziale', missing: 'Da elaborare', empty: 'Nessun dato'}[step.state] || 'Su richiesta';
+      card.append(el('span', state, 'pipeline-state'));
+      card.append(stepMeasure(step));
+      if (running) {
+        const text = liveText(active.detail, active.started_at);
+        if (text) card.append(el('span', text, 'pipeline-live-count'));
+        const live = progressOf(active.detail);
+        if (live?.total) {
+          const bar = el('progress'); bar.max = live.total; bar.value = live.done;
+          bar.setAttribute('aria-label', live.label); card.append(bar);
+        }
+      }
+      const stamp = action?.last_success || step.updated_at;
+      card.append(el('span', stamp ? 'Ultima esecuzione: ' + pipelineDate(stamp) : 'Mai eseguito da questo pannello', 'pipeline-time'));
+      card.append(el('span', action ? 'Parametri e avvio' : 'Dettagli del passaggio', 'pipeline-affordance'));
+      card.addEventListener('click', () => openPipeline(step.id));
+      row.append(card);
+      if (action || step.id === 'normalization') {
+        const stop = el('button', running && active.cancel_requested ? 'Arresto richiesto' : 'Interrompi', 'pipeline-stop');
+        stop.type = 'button'; stop.setAttribute('aria-label', 'Interrompi ' + step.title);
+        stop.disabled = !data.controls.supports_stop || !running || Boolean(active?.cancel_requested);
+        // A stop control for a step that is not running is dead weight on every card.
+        stop.hidden = !running;
+        stop.addEventListener('click', () => stopPipeline(active.id));
+        row.append(stop);
+      }
+      list.append(row);
     }
+    renderPipelineFunnel(data.funnel);
+    renderPipelineActivity();
     $('pipeline-runs').replaceChildren();
+    for (const run of data.controls.history) {
+      const button = el('button', `${data.controls.actions[run.step]?.label || 'Sequenza'} · ${pipelineStates[run.status]} · ${pipelineDate(run.started_at)}`, 'pipeline-history');
+      button.addEventListener('click', () => openPipeline(run.step === 'sequence' ? run.detail.steps?.[0]?.step || run.detail.phase || 'remote' : run.step, run));
+      $('pipeline-runs').append(button);
+    }
     if (!data.runs.length) $('pipeline-runs').append(el('p', 'Nessuna esecuzione registrata. I dati importati possono comunque essere presenti.'));
     for (const run of data.runs) $('pipeline-runs').append(el('p', `${run.source}${run.task ? ' · ' + run.task : ''} · ${states[run.status] || run.status} · ${pipelineDate(run.created_at)}`));
   } catch (error) {
@@ -847,5 +906,359 @@ async function loadPipeline() {
     throw error;
   } finally {
     button.disabled = false;
+    clearTimeout(pipelineTimer);
+    if (!$('pipeline-view').hidden || $('pipeline-dialog').open) pipelineTimer = setTimeout(() => {
+      if (!$('pipeline-view').hidden || $('pipeline-dialog').open) loadPipeline().catch(error => message(error.message, true));
+    }, (pipelineData?.controls.poll_seconds || 5) * 1000);
   }
+}
+
+/** Reuse the funnel's visual language at card scale: what is done against the whole. */
+function shareBar(done, total, label) {
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const bar = document.createElementNS(svgNS, 'svg');
+  for (const [key, value] of [['viewBox', '0 0 100 5'], ['class', 'card-bar'], ['preserveAspectRatio', 'none'],
+    ['role', 'img'], ['aria-label', `${Math.round((done / Math.max(total, 1)) * 100)}% ${label}`]]) bar.setAttribute(key, value);
+  for (const [width, className] of [[100, 'track'], [total ? (done / total) * 100 : 0, 'seg-in']]) {
+    const rect = document.createElementNS(svgNS, 'rect');
+    for (const [key, value] of [['x', 0], ['y', 0], ['width', Math.max(width, 0)], ['height', 5], ['rx', 2.5], ['class', className]]) rect.setAttribute(key, String(value));
+    bar.append(rect);
+  }
+  return bar;
+}
+
+/** Name what every number counts: a bare ratio on a card is a riddle the reader has to solve. */
+function stepMeasure(step) {
+  const n = value => Number(value || 0).toLocaleString('it-IT');
+  const box = el('div', undefined, 'pipeline-measure');
+  const measurable = step.total !== null && step.total > 0;
+  if (measurable) box.append(shareBar(step.done, step.total, step.done_label));
+  const done = el('p', undefined, 'measure-line');
+  done.append(el('strong', n(step.done)), el('span', ' ' + step.done_label));
+  box.append(done);
+  if (measurable && step.rest_label) {
+    const rest = el('p', undefined, 'measure-line rest');
+    if (step.pending > 0) rest.append(el('strong', n(step.pending)), el('span', ' ' + step.rest_label));
+    else rest.append(el('span', 'Niente da elaborare adesso.'));
+    box.append(rest);
+  }
+  if (step.scope) box.append(el('small', step.scope));
+  return box;
+}
+
+/** Draw the funnel as complementary shares of one whole, with the survivors flowing into the next stage. */
+function renderPipelineFunnel(funnel) {
+  const area = $('pipeline-funnel');
+  area.replaceChildren(el('h3', 'Funnel: dove finiscono gli annunci'));
+  if (!funnel) {
+    area.append(el('p', 'Il funnel completo richiede il riavvio del server dopo la run corrente. Il contatore della run qui sotto riguarda tutte le aziende attraversate, anche quelle saltate.'));
+    return;
+  }
+  const n = value => Number(value || 0).toLocaleString('it-IT');
+  const svgNS = 'http://www.w3.org/2000/svg';
+  /** Build one SVG node; geometry lives in attributes so the page needs no inline style. */
+  const node = (tag, attributes, text) => {
+    const element = document.createElementNS(svgNS, tag);
+    for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+    if (text !== undefined) element.textContent = text;
+    return element;
+  };
+  const W = 1000, BAR = 38, TOP = 22, FLOW = 34, GAP = 40;
+  const stageTwo = TOP + BAR + FLOW + GAP;
+  const chart = node('svg', {viewBox: `0 0 ${W} ${stageTwo + BAR + 4}`, class: 'funnel-chart', role: 'img'});
+
+  /** Lay one complete stage out as adjacent shares; a share too narrow for its number keeps the legend instead. */
+  function stage(y, total, parts, title, unit) {
+    chart.append(node('text', {x: 0, y: y - 8, class: 'stage-label'}, title));
+    const totalText = node('text', {x: W, y: y - 8, class: 'stage-total', 'text-anchor': 'end'}, `${n(total)} ${unit}`);
+    chart.append(totalText, node('rect', {x: 0, y, width: W, height: BAR, rx: 6, class: 'track'}));
+    let x = 0;
+    const bounds = {};
+    for (const part of parts) {
+      const width = total ? (part.value / total) * W : 0;
+      bounds[part.key] = [x, x + width];
+      if (width >= 1) {
+        chart.append(node('rect', {x, y, width, height: BAR, rx: width > 12 ? 6 : 0, class: 'seg ' + part.className}));
+        if (width >= 84) chart.append(node('text', {x: x + width / 2, y: y + BAR / 2 + 5, class: 'seg-label', 'text-anchor': 'middle'},
+          `${n(part.value)} · ${Math.round((part.value / total) * 100)}%`));
+      }
+      x += width;
+    }
+    return bounds;
+  }
+
+  const local = stage(TOP, funnel.archive.jobs, [
+    {key: 'in', value: funnel.local.jobs, className: 'seg-in'},
+    {key: 'out', value: funnel.local.excluded_jobs, className: 'seg-out'}], '1. Filtri locali', 'annunci in archivio');
+  // The survivors of stage one become the whole width of stage two: the taper is the handover, not decoration.
+  const flowEnd = stageTwo - 24;
+  chart.append(node('polygon', {class: 'flow', points: `0,${TOP + BAR} ${local.in[1]},${TOP + BAR} ${W},${flowEnd} 0,${flowEnd}`}));
+  stage(stageTwo, funnel.local.jobs, [
+    {key: 'keep', value: funnel.qwen.keep, className: 'seg-keep'},
+    {key: 'review', value: funnel.qwen.review, className: 'seg-review'},
+    {key: 'exclude', value: funnel.qwen.exclude, className: 'seg-exclude'},
+    {key: 'pending', value: funnel.qwen.pending, className: 'seg-pending'}], '2. Selezione Qwen', 'annunci rimasti');
+  chart.append(node('title', {}, `Di ${n(funnel.archive.jobs)} annunci, ${n(funnel.local.excluded_jobs)} sono esclusi dai filtri locali e ${n(funnel.local.jobs)} proseguono. Di questi Qwen ne tiene ${n(funnel.qwen.keep)}, ne manda ${n(funnel.qwen.review)} da verificare, ne esclude ${n(funnel.qwen.exclude)} e ${n(funnel.qwen.pending)} non hanno ancora un giudizio.`));
+  area.append(chart);
+
+  /** Name every share once, with its number, so colour is never the only carrier of meaning. */
+  function legend(title, entries, total) {
+    area.append(el('h4', title));
+    const list = el('ul', undefined, 'funnel-legend');
+    for (const [className, label, value] of entries) {
+      const item = el('li');
+      item.append(el('span', undefined, 'swatch ' + className), el('span', label + ' '),
+        el('span', `${n(value)} · ${total ? Math.round((value / total) * 100) : 0}%`, 'count'));
+      list.append(item);
+    }
+    area.append(list);
+  }
+  legend('1. Filtri locali: come si divide l’archivio', [
+    ['seg-in', 'Rimasti, inviabili a Qwen', funnel.local.jobs],
+    ['seg-out', 'Esclusi dai filtri locali', funnel.local.excluded_jobs]], funnel.archive.jobs);
+  area.append(el('p', 'Le due quote sono complementari: insieme fanno tutto l’archivio. Solo la parte blu prosegue al passaggio successivo.', 'muted'));
+  if (funnel.local.unverified_jobs) area.append(el('p', `${n(funnel.local.unverified_jobs)} annunci hanno filtri mancanti o da aggiornare: restano inclusi prudenzialmente.`));
+  legend('2. Selezione Qwen: come si dividono gli annunci rimasti', [
+    ['seg-keep', 'Da tenere', funnel.qwen.keep],
+    ['seg-review', 'Da verificare', funnel.qwen.review],
+    ['seg-exclude', 'Esclusione proposta', funnel.qwen.exclude],
+    ['seg-pending', 'Ancora senza giudizio', funnel.qwen.pending]], funnel.local.jobs);
+  area.append(el('p', `Anche questi quattro gruppi sono complementari: sommano a ${n(funnel.local.jobs)} annunci. Gli esiti includono tutte le run, non solo quella attuale.`, 'muted'));
+
+  area.append(el('h4', 'Le stesse fasi contate per azienda'));
+  const companies = el('ul', undefined, 'funnel-companies');
+  for (const [label, value] of [
+    ['Aziende in archivio', funnel.archive.companies],
+    ['Escluse del tutto dai filtri locali', funnel.local.excluded_companies],
+    ['Con almeno un annuncio rimasto', funnel.local.companies],
+    ['Con almeno un ruolo da tenere', funnel.qwen.companies_with_keep],
+    ['Con annunci ancora da valutare', funnel.qwen.companies_with_pending_jobs]]) {
+    const item = el('li');
+    item.append(el('strong', n(value)), el('span', ' ' + label));
+    companies.append(item);
+  }
+  area.append(companies);
+  area.append(el('p', 'Un’azienda esce dal funnel locale solo quando non le resta nessun annuncio, quindi queste quote non sono complementari fra loro.', 'muted'));
+  area.append(el('p', funnel.qwen_basis, 'muted'));
+}
+
+/** Read the two live progress shapes: companies for Qwen, single records for the descriptions. */
+function progressOf(detail) {
+  if (detail.total_companies !== undefined) return {done: detail.completed_companies || 0, total: detail.total_companies, label: 'Aziende attraversate'};
+  if (detail.phase === 'descriptions' && detail.total) return {done: detail.done || 0, total: detail.total, label: 'Annunci elaborati'};
+  return null;
+}
+
+/** Extrapolate the remaining time from the observed pace only; skipped records make it optimistic. */
+function etaValue(detail, startedAt) {
+  // Only a caller that knows the job is still running passes a start: a finished run has no time left.
+  const step = startedAt ? progressOf(detail) : null;
+  const start = Date.parse(detail.started_at || startedAt || '');
+  if (!step || !step.done || step.done >= step.total || !start) return '';
+  const seconds = ((Date.now() - start) / 1000) * (step.total - step.done) / step.done;
+  if (!(seconds > 0)) return '';
+  const hours = Math.floor(seconds / 3600), minutes = Math.round((seconds % 3600) / 60);
+  return hours ? `${hours} h ${minutes} min` : seconds < 90 ? 'meno di due minuti' : `${minutes} min`;
+}
+
+/** Keep the card itself to one glance: how far along, and how long is left. */
+function liveText(detail, startedAt) {
+  const n = value => Number(value || 0).toLocaleString('it-IT');
+  const step = progressOf(detail);
+  const eta = etaValue(detail, startedAt);
+  return [step ? `${n(step.done)} / ${n(step.total)} · ${step.label.toLowerCase()}` : '',
+    eta ? `Tempo rimasto stimato: ${eta} (stima grezza)` : ''].filter(Boolean).join('\n');
+}
+
+/** Show run-only consumption as labelled facts; cached records never masquerade as paid requests. */
+function pipelineProgress(detail, startedAt) {
+  const c = detail.counts || {}, u = detail.usage || {}, b = detail.request_breakdown;
+  const n = value => Number(value || 0).toLocaleString('it-IT');
+  const modern = detail.task === 'company-batch';
+  let rows;
+  if (detail.phase === 'descriptions' && detail.total) {
+    rows = [['Annunci elaborati', `${n(detail.done)} / ${n(detail.total)}`, `${n(detail.workers)} recuperi contemporanei`],
+      ['Descrizioni salvate', n(detail.saved), `${n(detail.attempted)} pagine richieste`]];
+  } else {
+    rows = [
+      ['Aziende attraversate', `${n(detail.completed_companies)} / ${n(detail.total_companies)}`, 'comprese quelle saltate senza chiamata'],
+      ['Annunci valutati', modern ? `${n(c.evaluated_jobs)} / ${n(c.submitted_jobs)}` : b ? `${n(b.validated_jobs)} / ${n(b.submitted_jobs)}` : '—',
+        modern || b ? 'risposte validate su annunci inviati' : 'non registrato dalla vecchia versione'],
+      ['Nuovi esiti', modern ? `${n(c.kept_jobs)} · ${n(c.review_jobs)} · ${n(c.remote_excluded)}` : b ? `${n(b.keep)} · ${n(b.review)} · ${n(b.exclude)}` : n(c.remote_excluded),
+        'da tenere · da verificare · esclusioni proposte'],
+      ['Riusati dalla cache', modern ? n(c.cached_jobs) : n(c.cached), 'annunci già giudicati: nessuna nuova chiamata'],
+      ['Saltati dai filtri locali', n(c.local_excluded), 'mai inviati, quindi mai pagati'],
+      ['Chiamate API', modern ? `${n(c.api_calls)} per ${n(c.api_companies)} aziende` : b ? n(b.calls) : '—',
+        modern && c.rejected_companies ? `${n(c.rejected_companies)} con errore o risposta rifiutata` : 'una per azienda'],
+      ['Token consumati', n(u.total_tokens), `${n(u.prompt_tokens)} input + ${n(u.completion_tokens)} output`]];
+    if (c.rejected_jobs) rows.push(['Annunci scartati dalla risposta', n(c.rejected_jobs), 'il resto della chiamata è stato salvato']);
+    if (c.deferred_companies) rows.push(['Aziende oltre i limiti', n(c.deferred_companies), 'nessuna chiamata: da riprendere']);
+  }
+  const eta = etaValue(detail, startedAt);
+  if (eta) rows.push(['Tempo rimasto', eta, 'stima grezza sul ritmo finora osservato']);
+  const list = el('dl', undefined, 'run-facts');
+  if (detail.company_name) list.append(el('dt', 'Azienda corrente'), el('dd', detail.company_name));
+  for (const [label, value, hint] of rows) {
+    list.append(el('dt', label));
+    const cell = el('dd');
+    cell.append(el('strong', String(value)), el('small', hint));
+    list.append(cell);
+  }
+  return list;
+}
+
+/** Keep the active run visible and refresh the dialog without discarding edited parameters. */
+function renderPipelineActivity() {
+  const active = pipelineData.controls.active;
+  const area = $('pipeline-active');
+  area.replaceChildren();
+  if (active) {
+    const detail = active.detail;
+    area.append(el('strong', 'In esecuzione: ' + (pipelineData.controls.actions[detail.phase || active.step]?.label || 'Sequenza')));
+    area.append(el('p', 'Progresso e consumi di questa esecuzione. Separati dal funnel complessivo sopra.'));
+    if (progressOf(detail)) area.append(pipelineProgress(detail, active.started_at));
+    area.append(el('p', 'I risultati riutilizzati non consumano token. Non sommare cache, esclusioni e aziende: sono contatori diversi.', 'muted'));
+    area.append(el('small', 'Avviato ' + pipelineDate(active.started_at) + '. Mantieni attivo il server della web app.'));
+    if (!pipelineData.controls.supports_stop) area.append(el('p', 'Il comando Interrompi richiede il riavvio del server dopo questa esecuzione.'));
+  } else if (pipelineData.collection_running) area.append(el('p', 'Raccolta avviata dalla pagina Fonti in corso. Attendi prima di avviare un altro passaggio.'));
+  else {
+    area.append(el('p', 'Nessun passaggio della web app in esecuzione. Seleziona una card per iniziare.'));
+    const lastRemote = pipelineData.controls.history.find(run => run.detail.request_breakdown || run.detail.task === 'company-batch');
+    if (lastRemote) {
+      area.append(el('strong', 'Ultima esecuzione Qwen: ' + (pipelineStates[lastRemote.status] || lastRemote.status)));
+      if (lastRemote.detail.mode === 'preview') area.append(el('p', 'Anteprima senza chiamate API. Apri il passaggio per i dettagli.', 'muted'));
+      else area.append(pipelineProgress(lastRemote.detail));
+    }
+  }
+  if ($('pipeline-dialog').open) {
+    $('pipeline-start').disabled = Boolean(active || pipelineData.collection_running);
+    const ownRun = active && (active.step === pipelineStep || active.detail.phase === pipelineStep || pipelineStep === 'normalization' && (active.step === 'collection' || active.detail.phase === 'collection'));
+    $('pipeline-stop').disabled = !pipelineData.controls.supports_stop || !ownRun || Boolean(active?.cancel_requested);
+    $('pipeline-stop').textContent = ownRun && active.cancel_requested ? 'Arresto richiesto' : 'Interrompi';
+    const last = pipelineData.controls.actions[pipelineStep]?.last_run;
+    $('pipeline-dialog-state').textContent = active ? 'Un passaggio è in esecuzione. Il risultato verrà aggiornato qui.' : last ? `${pipelineStates[last.status]} · ${pipelineDate(last.finished_at || last.started_at)}` : '';
+    if (last) pipelineResult(last);
+  }
+}
+
+/** Render an inspectable saved outcome using text only, including costs when returned by the API. */
+function pipelineResult(run) {
+  const container = $('pipeline-last-result');
+  container.replaceChildren();
+  const detail = run.detail || {};
+  if (detail.message) container.append(el('p', detail.message));
+  if (detail.total_companies !== undefined) container.append(el('p', `${detail.completed_companies} / ${detail.total_companies} aziende attraversate, incluse quelle saltate`));
+  if (detail.task === 'company-batch') {
+    if (detail.mode === 'preview') container.append(el('p', `Anteprima: ${detail.counts?.planned_api_calls || 0} chiamate aziendali previste per ${detail.counts?.planned_jobs || 0} annunci. Nessuna chiamata API effettuata, nessun costo.`));
+    else container.append(pipelineProgress(detail));
+  } else if (detail.request_breakdown) { container.append(pipelineProgress(detail));
+  } else if (detail.counts) container.append(el('p', `Richieste previste: ${detail.counts.selected || 0} · Risultati salvati: ${detail.counts.processed || 0} · Già in cache: ${detail.counts.cached || 0}`));
+  if (detail.usage) container.append(el('p', `Token: ${detail.usage.total_tokens || 0} · Costo API: ${detail.usage.cost === undefined ? 'non restituito dal provider' : '$' + detail.usage.cost.toFixed(6)}`));
+  if (detail.counts?.requests_without_cost) container.append(el('p', `Costo incompleto: ${detail.counts.requests_without_cost} risposte non riportano il costo. Controlla il consuntivo LLM remoto.`, 'error'));
+  const details = el('details');
+  details.append(el('summary', 'Risultato completo'), el('pre', JSON.stringify(detail, null, 2)));
+  container.append(details);
+}
+
+/** Build native controls from server-provided limits, with an explicit paid mode. */
+function pipelineField(key, scope, step) {
+  const data = pipelineData.controls;
+  const labels = {source: 'Fonte', limit: 'Numero massimo di annunci', workers: step === 'remote' ? 'Chiamate API contemporanee' : 'Recuperi contemporanei', all: 'Tutte le descrizioni recuperabili', refresh_stale: 'Aggiorna anche descrizioni scadute', force: 'Riprova gli errori, rispettando i blocchi della fonte', company_limit: 'Numero di aziende del campione', all_companies: "Tutte le aziende dell'archivio", mode: 'Modalità LLM remoto'};
+  const label = el('label', labels[key]);
+  let input;
+  if (key === 'source' || key === 'mode') {
+    input = el('select');
+    const choices = key === 'mode' ? [['preview', 'Anteprima senza spesa'], ['execute', 'Esegui con API a pagamento']] : (step === 'collection' ? data.collection_sources : ['', ...data.description_sources]).map(v => [v, v || 'Tutte le fonti']);
+    for (const [value, text] of choices) { const option = el('option', text); option.value = value; input.append(option); }
+  } else {
+    input = el('input');
+    input.type = ['all', 'refresh_stale', 'force', 'all_companies', 'continue_after'].includes(key) ? 'checkbox' : 'number';
+    if (input.type === 'number') {
+      const scale = key === 'workers' ? (step === 'remote' ? 'remote_workers' : 'workers') : key === 'company_limit' ? 'remote' : step;
+      input.min = '1'; input.max = String(data.limits[scale]);
+      input.value = String(key === 'company_limit' ? data.defaults.company_limit : key === 'workers' ? data.defaults[scale] : Math.min(10, Number(input.max)));
+      input.required = true;
+    }
+  }
+  input.name = key; input.dataset.scope = scope; input.setAttribute('aria-label', labels[key]);
+  label.append(input); return label;
+}
+
+/** Open one stage with its parameters, retry evidence and optional downstream sequence. */
+function openPipeline(id, savedRun = null) {
+  const step = pipelineData.steps.find(s => s.id === id);
+  if (!step) return;
+  pipelineStep = id;
+  const action = pipelineData.controls.actions[id];
+  $('pipeline-dialog-title').textContent = step.title;
+  $('pipeline-dialog-note').textContent = action?.note || step.note;
+  $('pipeline-error').textContent = '';
+  $('pipeline-fields').replaceChildren(); $('pipeline-last-result').replaceChildren();
+  $('pipeline-start').hidden = !action;
+  $('pipeline-go-feedback').hidden = id !== 'feedback';
+  if (action) {
+    for (const key of action.fields) $('pipeline-fields').append(pipelineField(key, 'step', id));
+    const sequence = pipelineData.controls.sequence;
+    if (sequence.includes(id) && id !== sequence.at(-1)) {
+      const label = el('label', 'Continua da qui con i passaggi successivi');
+      const checkbox = el('input'); checkbox.type = 'checkbox'; checkbox.name = 'continue_after';
+      label.append(checkbox); $('pipeline-fields').append(label);
+      const chain = el('div'); chain.hidden = true;
+      chain.append(el('p', sequence.slice(sequence.indexOf(id)).map(k => pipelineData.controls.actions[k].label).join(' → ')));
+      chain.append(el('p', 'I passaggi facoltativi vengono saltati. La sequenza si ferma su errore o risultato parziale. Il recupero successivo considera tutte le descrizioni eleggibili.'));
+      if (id !== 'remote' && sequence.indexOf(id) < sequence.indexOf('remote')) {
+        chain.append(el('h3', 'Passaggio LLM remoto della sequenza'));
+        for (const key of ['company_limit', 'all_companies', 'mode']) chain.append(pipelineField(key, 'remote', 'remote'));
+      }
+      checkbox.addEventListener('change', () => { chain.hidden = !checkbox.checked; updatePipelineButton(); });
+      $('pipeline-fields').append(chain);
+    }
+    $('pipeline-fields').onchange = updatePipelineButton;
+  }
+  if (!$('pipeline-dialog').open) $('pipeline-dialog').showModal();
+  renderPipelineActivity(); updatePipelineButton();
+  if (savedRun) pipelineResult(savedRun);
+}
+
+/** Name paid actions directly on the submit button, including paid work later in a sequence. */
+function updatePipelineButton() {
+  const form = $('pipeline-form');
+  const sequence = form.elements.namedItem('continue_after')?.checked;
+  const paid = [...form.querySelectorAll('select[name="mode"]')].some(input => input.value === 'execute' && (input.dataset.scope === 'step' || sequence));
+  $('pipeline-start').textContent = paid ? sequence ? 'Avvia sequenza con API a pagamento' : 'Avvia API a pagamento' : sequence ? 'Avvia sequenza' : pipelineStep === 'remote' ? 'Prepara anteprima' : 'Avvia passaggio';
+  for (const [toggle, number] of [['all', 'limit'], ['all_companies', 'company_limit']]) {
+    for (const input of form.querySelectorAll(`input[name="${toggle}"]`)) {
+      const field = form.querySelector(`input[name="${number}"][data-scope="${input.dataset.scope}"]`);
+      if (field) field.disabled = input.checked;
+    }
+  }
+}
+
+/** Submit an allowlisted action; opening the dialog never starts work or calls an API. */
+async function launchPipeline(event) {
+  event.preventDefault();
+  const button = $('pipeline-start'); button.disabled = true;
+  $('pipeline-error').textContent = '';
+  try {
+    const values = {step: {}, remote: {}};
+    for (const input of $('pipeline-fields').querySelectorAll('[data-scope]')) values[input.dataset.scope][input.name] = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
+    await api('/api/pipeline/start', {step: pipelineStep, parameters: values.step, remote_parameters: values.remote, continue_after: $('pipeline-form').elements.namedItem('continue_after')?.checked || false});
+    $('pipeline-dialog-state').textContent = 'Avvio registrato. Esecuzione in background.';
+    await loadPipeline();
+  } catch (error) {
+    $('pipeline-error').textContent = error.message;
+  } finally {
+    button.disabled = Boolean(pipelineData?.controls.active || pipelineData?.collection_running);
+  }
+}
+
+/** Stop the current stage and its remaining sequence without discarding saved results. */
+async function stopPipeline(jobId) {
+  if (!jobId) return;
+  try {
+    await api('/api/pipeline/stop', {job_id: jobId});
+    message('Arresto richiesto. Le richieste già inviate possono terminare prima dello stop.');
+    await loadPipeline();
+    setTimeout(() => loadPipeline().catch(error => message(error.message, true)), 2000);
+  } catch (error) { message(error.message, true); }
 }

@@ -1,7 +1,7 @@
 {
-  "provider": "openrouter",
-  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
-  "model": "z-ai/glm-5.3-flash",
+  "provider": "alibaba",
+  "endpoint": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "model": "qwen3.7-flash",
   "api_key_env": "JOBHUNTER_API_KEY",
   "secrets_file": ".env.local",
   "timeout_seconds": 120,
@@ -14,9 +14,12 @@
   "profile_path": "user_context/llm-selection-profile.md",
   "schema_version": "2",
   "job_fields_path": "config/job_summary_fields.json",
-  "duplicates": {"enabled": true, "minimum_description_chars": 200},
-  "web_search": {
+  "duplicates": {
     "enabled": true,
+    "minimum_description_chars": 200
+  },
+  "web_search": {
+    "enabled": false,
     "engine": "exa",
     "max_uses": 1,
     "max_results": 3,
@@ -24,7 +27,10 @@
     "max_characters": 3000
   },
   "parameters": {
-    "reasoning": {"effort": "low", "exclude": true},
+    "enable_thinking": false,
+    "response_format": {
+      "type": "json_object"
+    },
     "max_tokens": 4096
   },
   "prompts": {
@@ -32,5 +38,25 @@
     "job-summary": "config/prompts/remote-job-summary.txt",
     "company-summary": "config/prompts/remote-company-summary.txt",
     "company-research": "config/prompts/remote-company-research.txt"
+  },
+  "evidence_reference_tasks": [
+    "selection",
+    "job-summary",
+    "company-summary"
+  ],
+  "response_schemas": {
+    "selection": "config/remote-selection-schema.json",
+    "job-summary": "config/remote-job-summary-schema.json",
+    "company-summary": "config/remote-company-summary-schema.json"
+  },
+  "field_sections_path": "config/job_field_sections.json",
+  "company_categories_path": "config/categories.json",
+  "company_batch": {
+    "prompt_path": "config/prompts/remote-company-batch.txt",
+    "max_input_chars": 80000,
+    "max_jobs": 30,
+    "max_tokens": 12000,
+    "workers": 4,
+    "max_workers": 8
   }
 }

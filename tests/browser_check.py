@@ -31,9 +31,13 @@ def main():
         remote_path = Path(directory)/'remote.json'
         remote_path.write_text(json.dumps(remote_cfg))
         field_labels = json.loads((ROOT/remote_cfg['job_fields_path']).read_text(encoding='utf-8'))
-        summary = {'summary': 'Analisi dati e miglioramento dei modelli.', 'facts': [{'section': 'responsibilities', 'text': 'Analisi dati', 'quote': 'Analyze data'}], 'fields': {key: ([0] if key == 'responsibilities' else None) for key in field_labels}, 'missing_information': []}
+        oid = archive.db.execute("SELECT id FROM opportunities WHERE json_extract(data,'$.title')='Junior optimization engineer'").fetchone()[0]
+        catalog = remote_llm.inputs(archive, 'job-summary', oid, remote_cfg)['source']['evidence_catalog']
+        reference = next(key for key, text in catalog.items() if 'Analyze data' in text)
+        summary = {'summary': 'Analisi dati e miglioramento dei modelli.', 'facts': [{'field': 'responsibilities', 'text': 'Analisi dati', 'quote': reference}], 'missing_information': []}
         with patch('jobhunter.remote_llm.api_key', return_value='dummy'), patch('jobhunter.remote_llm.request', return_value=(summary, {}, [])):
             assert remote_llm.run(archive, 'job-summary', execute=True, config_path=remote_path)['processed'] == 1
+        archive.categorize(cid, "Energia", "Fixture: categoria aziendale già verificata")
         archive.close()
         cfg = settings()
         server = create_server(database, cfg, 0)
@@ -159,15 +163,54 @@ def main():
                 expect(page.locator("#rows .company-link")).to_have_count(30)
                 assert not errors, errors
                 page.get_by_role("button", name="Pipeline", exact=True).click()
-                expect(page.locator("#pipeline-steps > li")).to_have_count(9)
+                expect(page.locator("#pipeline-steps > li")).to_have_count(7)
                 expect(page.locator("#pipeline-status")).to_contain_text("annunci")
-                expect(page.locator("#pipeline-steps")).to_contain_text("Classificazione aziende")
+                expect(page.locator("#pipeline-steps")).not_to_contain_text("Categorie locali")
+                expect(page.locator("#pipeline-steps")).not_to_contain_text("Statistiche dell")
+                for retired in ("HTML salvato", "Impaginazione Ollama"):
+                    expect(page.locator("#pipeline-steps")).not_to_contain_text(retired)
                 page.screenshot(path=str(destination / "pipeline-mobile.png"), full_page=True)
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
                 page.set_viewport_size({"width": 1440, "height": 1050})
+                expect(page.locator('#pipeline-funnel')).to_contain_text('Esclusi dai filtri locali')
+                expect(page.locator('#pipeline-funnel')).to_contain_text('Ancora senza giudizio')
+                # The funnel is SVG: geometry attributes only, so a blocked inline style cannot hide a share.
+                expect(page.locator('#pipeline-funnel svg.funnel-chart rect.seg')).not_to_have_count(0)
                 page.screenshot(path=str(destination / "pipeline-desktop.png"), full_page=True)
+                page.get_by_role('button', name='Apri Selezione e schede con Qwen', exact=True).click()
+                expect(page.locator('#pipeline-dialog')).to_be_visible()
+                expect(page.get_by_label('Numero di aziende del campione', exact=True)).to_have_value('100')
+                expect(page.get_by_label('Modalità LLM remoto', exact=True)).to_have_value('preview')
+                page.screenshot(path=str(destination/'pipeline-dialog.png'), full_page=True)
+                page.get_by_label('Numero di aziende del campione', exact=True).fill('2')
+                page.get_by_role('button', name='Prepara anteprima', exact=True).click()
+                expect(page.locator('#pipeline-last-result')).to_contain_text('chiamate aziendali previste', timeout=45000)
+                expect(page.locator('#pipeline-last-result')).to_contain_text('2 / 2 aziende')
+                page.get_by_role('button', name='Chiudi parametri', exact=True).click()
+                page.get_by_role('button', name='Apri Applicazione filtri', exact=True).click()
+                page.get_by_label('Continua da qui con i passaggi successivi', exact=True).check()
+                expect(page.get_by_role('button', name='Avvia sequenza', exact=True)).to_be_visible()
+                page.get_by_label('Continua da qui con i passaggi successivi', exact=True).uncheck()
+                page.get_by_role('button', name='Avvia passaggio', exact=True).click()
+                expect(page.locator('#pipeline-dialog-state')).to_contain_text('Terminato', timeout=45000)
+                page.get_by_role('button', name='Chiudi parametri', exact=True).click()
                 page.get_by_role("button", name="Aggiorna stato", exact=True).click()
                 expect(page.locator("#refresh-pipeline")).to_be_enabled()
+                def slow_stage(archive, cfg, step, values, progress):
+                    """Expose a cancellable offline operation to exercise the real stop button."""
+                    import time
+                    for index in range(200):
+                        progress({'saved': index})
+                        time.sleep(.05)
+                    return {'status': 'success'}
+                with patch('jobhunter.pipeline_actions.execute', side_effect=slow_stage):
+                    page.get_by_role('button', name='Apri Applicazione filtri', exact=True).click()
+                    page.get_by_role('button', name='Avvia passaggio', exact=True).click()
+                    expect(page.locator('#pipeline-stop')).to_be_enabled()
+                    page.locator('#pipeline-stop').click()
+                    expect(page.locator('#pipeline-dialog-state')).to_contain_text('Interrotto', timeout=15000)
+                    expect(page.locator('#pipeline-stop')).to_be_disabled()
+                page.get_by_role('button', name='Chiudi parametri', exact=True).click()
                 assert not errors, errors
                 browser.close()
             print(json.dumps({"status": "passed", "page_errors": errors, "screenshots": str(destination)}))

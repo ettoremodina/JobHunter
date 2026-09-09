@@ -1,0 +1,60 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "responsibilities",
+              "required_skills",
+              "preferred_skills",
+              "required_experience",
+              "preferred_experience",
+              "education",
+              "languages",
+              "location",
+              "work_mode",
+              "contract",
+              "salary",
+              "visa",
+              "travel",
+              "other_conditions"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "text",
+          "quote"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 20
+    },
+    "missing_information": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "summary",
+    "facts",
+    "missing_information"
+  ],
+  "additionalProperties": false
+}

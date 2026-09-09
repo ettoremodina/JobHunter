@@ -77,8 +77,8 @@
               <button id="export">Esporta risultati CSV</button>
             </div>
             <p class="hint">
-              Una riga per azienda. Conteggi e sedi riguardano la selezione scelta.
-              Il dettaglio conserva tutti i ruoli, anche quelli esclusi.
+              Una riga per azienda. Conteggi, sedi e ruoli nel dettaglio riguardano
+              la selezione scelta. Nulla viene cancellato: «Tutto l'archivio» li mostra di nuovo.
             </p>
             <div class="table-scroll">
               <table>
@@ -116,12 +116,25 @@
       </section>
       <section id="pipeline-view" hidden>
         <div class="toolbar"><h2>Pipeline dell'archivio</h2><button id="refresh-pipeline">Aggiorna stato</button></div>
-        <p>Segui i dati dalla raccolta alle decisioni. La copertura riguarda l'archivio attuale; una data recente non significa che tutti i record siano stati elaborati.</p>
+        <p>Il funnel dice dove sono finiti gli annunci. Le card sotto dicono quanto lavoro resta a ogni passaggio: il numero in alto è ciò che è già fatto, quello sotto ciò che manca. Le frecce indicano l'ordine; apri una card per i parametri e l'avvio.</p>
         <p id="pipeline-status" role="status" aria-live="polite"></p>
-        <div id="pipeline-workflow"></div>
+        <section id="pipeline-funnel" aria-label="Funnel degli annunci"></section>
+        <div id="pipeline-active" role="status" aria-live="polite"></div>
         <ol id="pipeline-steps" aria-label="Fasi della pipeline"></ol>
+        <details><summary>Workflow esterni e copertura</summary><div id="pipeline-workflow"></div></details>
         <details class="queue-help"><summary>Ultime esecuzioni registrate</summary><div id="pipeline-runs"></div></details>
       </section>
+      <dialog id="pipeline-dialog" aria-labelledby="pipeline-dialog-title">
+        <form id="pipeline-form">
+          <div class="toolbar"><h2 id="pipeline-dialog-title"></h2><button type="button" id="pipeline-close" aria-label="Chiudi parametri">Chiudi</button></div>
+          <p id="pipeline-dialog-note"></p>
+          <div id="pipeline-fields"></div>
+          <p id="pipeline-dialog-state"></p>
+          <p id="pipeline-error" role="alert" class="error"></p>
+          <div id="pipeline-last-result"></div>
+          <div class="actions"><button type="submit" id="pipeline-start" class="primary">Avvia</button><button type="button" id="pipeline-stop" disabled>Interrompi</button><button type="button" id="pipeline-go-feedback" hidden>Apri la coda</button></div>
+        </form>
+      </dialog>
       <section id="sources-view" hidden>
         <h2>Fonti e raccolta</h2>
         <p>

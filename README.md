@@ -6,6 +6,8 @@ Archivio locale di aziende e opportunità, utilizzabile da Codex, CLI e dashboar
 
 ## Avvio rapido
 
+Per usare la web app senza terminale su Windows, aprire [Avvia JobHunter.pyw](Avvia%20JobHunter.pyw) con doppio clic. La pagina **Pipeline** permette di avviare i passaggi dalle card, impostare i parametri, seguire i risultati e scegliere **Continua da qui**. Il pulsante **Ferma e chiudi** della finestra di avvio termina sempre il server: se un passaggio è in corso chiede conferma e lo interrompe, i risultati già salvati restano. [Guida del pannello operativo](docs/pipeline-ui.md).
+
 Per una nuova persona seguire [Inizializzazione guidata e configurazioni](docs/jobhunter-onboarding.md), richiamata dalla skill `$jobhunter`. Questa copia di lavoro contiene anche dati e preferenze personali versionati: un clone ordinario non è una distribuzione senza dati. La guida distingue il percorso nuovo utente dall'importazione dell'archivio storico mostrata sotto.
 
 Python 3.11+. La CLI e la dashboard usano solo la standard library.
@@ -43,6 +45,8 @@ python main.py --help
 ```
 
 ## Documentazione e test
+
+[Profilo, prompt e filtri usati dai modelli](docs/llm-review.html): pagina di conferma generata dai file di configurazione attivi con `python docs/build_llm_review.py`.
 
 [LLM remoto: GLM via API, configurazione chiave e pilot](docs/remote-llm.md). I comandi `python main.py llm ...` sono anteprime senza chiamate; `--execute` avvia esplicitamente le richieste remote. Gli originali restano conservati.
 

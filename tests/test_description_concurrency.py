@@ -4,6 +4,7 @@ from contextlib import closing
 import json
 from pathlib import Path
 import tempfile
+import time
 from threading import Barrier, Lock
 import unittest
 from unittest.mock import patch
@@ -11,10 +12,46 @@ from urllib.error import HTTPError
 
 from jobhunter.descriptions import recover
 from jobhunter.workspace import Archive
+from jobhunter import cancellation
 
 
 class DescriptionConcurrencyTests(unittest.TestCase):
     """Exercise real worker threads and a real temporary SQLite archive."""
+
+    def test_cancel_drains_inflight_results_and_skips_queued_requests(self):
+        """Stop queued work while saving descriptions already fetched by active workers."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'config').mkdir()
+            (root/'config/descriptions.json').write_text(json.dumps({
+                'default_limit': 12, 'max_limit': 50, 'workers': 2, 'max_workers': 8,
+                'allowed_hosts': ['www.linkedin.com'], 'timeout_seconds': 1,
+                'request_delay_seconds': 0, 'output_directory': 'details'}))
+            with closing(Archive(root/'archive.db')) as archive:
+                archive.ingest([{'company_name': 'Example', 'title': 'Data Scientist',
+                                 'source_url': f'https://www.linkedin.com/jobs/view/{i}'} for i in range(12)], 'jobspy')
+                checks = 0
+                def requested():
+                    """Request a stop after the first result has been saved."""
+                    nonlocal checks
+                    checks += 1
+                    return checks > 1
+                def fetched(*args):
+                    """Keep workers briefly occupied so queued requests remain cancellable."""
+                    time.sleep(.03)
+                    return '<div class="show-more-less-html__markup">Build data science models.</div>'
+                cancellation.bind(requested)
+                try:
+                    with patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.descriptions.fetch', side_effect=fetched) as fetch:
+                        with self.assertRaises(cancellation.Cancelled):
+                            recover(archive, all_missing=True)
+                    self.assertLess(fetch.call_count, 12)
+                    saved = archive.db.execute("SELECT count(*) FROM opportunities WHERE json_extract(data,'$.description') != ''").fetchone()[0]
+                    self.assertEqual(saved, fetch.call_count)
+                    report = json.loads(next((root/'details').glob('*/report.json')).read_text())
+                    self.assertEqual(report['status'], 'interrupted')
+                finally:
+                    cancellation.bind()
 
     def test_parallel_saves_and_blocked_queue(self):
         """Four requests overlap, all writes persist, and a 429 prevents queued requests."""
