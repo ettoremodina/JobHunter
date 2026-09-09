@@ -42,9 +42,8 @@ def parser():
     search.add_argument("--eligibility", choices=("potential", "review", "excluded"), default="", help="Only roles matching the current profile-filter outcome")
     sub.add_parser("show", help="Company with opportunities and provenance").add_argument("id")
     sub.add_parser("categories", help="List the shared category vocabulary")
-    sweep = sub.add_parser("collect-all", help="Broad acquisition including descriptions, categories and selection")
+    sweep = sub.add_parser("collect-all", help="Broad acquisition only: all queries, all countries, all boards")
     sweep.add_argument("--fresh", action="store_true", help="Back up SQLite and reset acquired data while preserving personal records")
-    sweep.add_argument("--resume-after-listings", action="store_true", help="Reuse archived listings and continue details, categories and selection")
     sub.add_parser("queue", help="Resume the personal company queue")
     sub.add_parser("metrics", help="Decision coverage and reasons")
     analytics = sub.add_parser("analytics", help="Archive distributions and data completeness; no network or LLM")
@@ -78,7 +77,7 @@ def parser():
     shortlist.add_argument("--limit", type=int, default=30)
     shortlist.add_argument("--offset", type=int, default=0)
     enrich = sub.add_parser("enrich", help="Explicit bounded local Ollama pass; preserves source records")
-    enrich.add_argument("task", choices=("description", "category"))
+    enrich.add_argument("task", choices=("description", "category", "selection"))
     enrich.add_argument("--limit", type=int)
     enrich.add_argument("--model")
     enrich.add_argument("--force", action="store_true")
@@ -137,11 +136,9 @@ def execute(args, archive, cfg):
         return summary(archive, args.eligibility)
     if command == "collect-all":
         from jobhunter.sweep import sweep
-        if args.fresh and args.resume_after_listings:
-            raise ValueError("Choose either --fresh or --resume-after-listings")
         if args.fresh:
             archive.reset_collection()
-        return sweep(archive, cfg, resume_after_listings=args.resume_after_listings)
+        return sweep(archive, cfg)
     if command in ("queue", "metrics", "proposals", "research-brief"):
         from jobhunter.selection import queue, metrics, proposals, research_brief
         if command == "queue": return queue(archive)

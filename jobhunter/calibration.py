@@ -78,7 +78,7 @@ def label_batches(config, directory, only_batch=None):
             labels = validate(json.loads(output.read_text(encoding="utf-8")), batch)
             (directory / f"validated-{index:02}.json").write_text(json.dumps(labels, ensure_ascii=False, indent=2), encoding="utf-8")
             continue
-        payload = [{k: j.get(k) for k in ("id", "title", "description", "seniority", "employment_type")} for j in batch]
+        payload = [{k: j.get(k) for k in ("id", "title", "description", "employment_type")} for j in batch]
         text = prompt + "\nJOBS:\n" + json.dumps(payload, ensure_ascii=False)
         (directory / f"input-{index:02}.txt").write_text(text, encoding="utf-8")
         with tempfile.TemporaryDirectory(prefix="jobhunter-classify-") as cwd, (directory / f"events-{index:02}.jsonl").open("w", encoding="utf-8") as log, (directory / f"stderr-{index:02}.log").open("w", encoding="utf-8") as err:

@@ -33,6 +33,10 @@
     },
     "max_tokens": 4096
   },
+  "cache": {
+    "explicit": true,
+    "type": "ephemeral"
+  },
   "prompts": {
     "selection": "config/prompts/remote-selection.txt",
     "job-summary": "config/prompts/remote-job-summary.txt",

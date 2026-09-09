@@ -14,8 +14,8 @@ from jobhunter.workspace import Archive, identity, settings
 class PipelineTests(unittest.TestCase):
     """Verify coverage on disposable data without triggering the monitored stages."""
 
-    def test_funnel_partitions_jobs_without_counting_audits_or_summaries(self):
-        """Mixed companies remain eligible; audit judgments on local exclusions stay outside the funnel."""
+    def test_funnel_partitions_both_axes_and_composes_the_tier(self):
+        """Ogni asse è una partizione completa; il tier ne discende e non è mai salvato."""
         with tempfile.TemporaryDirectory() as directory, closing(Archive(Path(directory)/'a.db')) as a:
             a.ingest([{'company_name': company, 'title': title, 'description': 'Build models',
                        'source_url': f'https://example.org/{i}'} for i, (company, title) in enumerate([
@@ -35,15 +35,19 @@ class PipelineTests(unittest.TestCase):
             f = summary(a, settings(), Path(directory))['funnel']
             self.assertEqual(a.db.total_changes, before)
             self.assertEqual(f['archive'], {'jobs': 4, 'companies': 2})
-            self.assertEqual((f['local']['jobs'], f['local']['companies']), (2, 1))
-            self.assertEqual((f['local']['excluded_jobs'], f['local']['excluded_companies']), (2, 1))
-            self.assertEqual((f['qwen']['keep'], f['qwen']['pending']), (1, 1))
-            self.assertEqual(sum(f['qwen'][k] for k in ('keep', 'review', 'exclude', 'pending')), f['local']['jobs'])
-            self.assertEqual(f['qwen']['companies_with_all_decisions'], 0)
-            self.assertEqual(f['qwen']['companies_with_pending_jobs'], 1)
+            # I due assi sono partizioni complete dei rispettivi insiemi.
+            self.assertEqual(sum(f['ruolo'].values()), 4)
+            self.assertEqual(sum(f['azienda'].values()), 2)
+            self.assertEqual(sum(f['tier'].values()), 2)
+            self.assertEqual((f['ruolo']['tieni'], f['ruolo']['scarta']), (2, 2))
+            # Nessuna azienda ha una categoria: l'asse azienda non è valutabile, ma i ruoli primari valgono da soli.
+            self.assertEqual(f['azienda']['evidenza_mancante'], 2)
+            self.assertEqual((f['tier']['B-esperienza'], f['tier']['evidenza-mancante']), (1, 1))
+            # Il regex ha già deciso ogni ruolo: nessun giudizio remoto entra nella cascata.
+            self.assertEqual(f['giudici'], {'regex': 4})
 
-    def test_description_card_counts_only_surviving_jobs(self):
-        """Excluded jobs, including ones with text, must not inflate downstream coverage."""
+    def test_description_card_counts_company_coverage(self):
+        """DESIGN §4: la copertura si misura sulle aziende, non sui ruoli sopravvissuti ai filtri."""
         with tempfile.TemporaryDirectory() as directory, closing(Archive(Path(directory)/'a.db')) as a:
             a.ingest([{'company_name': 'Example', 'title': title, 'description': text,
                        'source_url': f'https://example.org/{i}'} for i, (title,text) in enumerate([
@@ -52,7 +56,7 @@ class PipelineTests(unittest.TestCase):
             a.evaluations()
             result = summary(a, settings(), Path(directory))
             step = next(s for s in result['steps'] if s['id'] == 'descriptions')
-            self.assertEqual((step['done'], step['total'], step['pending']), (1, 2, 1))
+            self.assertEqual((step['done'], step['total'], step['pending']), (1, 1, 0))
             self.assertEqual(result['opportunities'], 3)
 
     def test_empty_and_stale_evidence_is_read_only(self):

@@ -14,5 +14,6 @@
   "max_workers": 16,
   "refresh_after_days": 30,
   "retry_after_hours": 24,
-  "missing_page_retry_days": 7
+  "missing_page_retry_days": 7,
+  "checkpoint_seconds": 2
 }

@@ -27,8 +27,8 @@
         <p class="queue-intro">Una selezione dall'archivio, costruita sul PC con i tuoi filtri. Questa pagina non chiama ChatGPT né Ollama.</p>
         <details class="queue-help"><summary>Come usarla con la chat</summary><p>Apri un'azienda per verificare i ruoli e registrare una decisione. Oppure prepara il testo da copiare nella chat di Codex per un approfondimento. Nulla viene inviato automaticamente.</p><p>La coda mantiene le aziende già proposte. Una decisione libera spazio; al prossimo caricamento entrano altre aziende. Ricaricare non estrae dieci nomi nuovi.</p></details>
         <p id="queue-summary" role="status"></p>
-        <h3>Aziende prioritarie</h3>
-        <p>Dati, machine learning, modellazione e ottimizzazione hanno precedenza. Gli altri ruoli compatibili restano disponibili.</p>
+        <h3>Due code, due ritmi</h3>
+        <p>Tier A è cosa guardare questa settimana. Tier B è una mappa senza urgenza: aziende interessanti senza ruoli aperti, e ruoli che valgono da soli in aziende fuori dalle categorie preferite. Le preferenze vivono in <code>config/role_filters.json</code>.</p>
         <div id="queue-items" aria-label="Aziende da valutare"></div>
         <section aria-labelledby="uncertainty-heading">
           <h3 id="uncertainty-heading">Da chiarire insieme</h3>
@@ -41,7 +41,8 @@
       </section>
       <section id="companies-view">
         <form id="filters" class="filters">
-          <label>Mostra<select id="eligibility"><option value="potential">Ruoli compatibili con i filtri</option><option value="review">Ruoli da verificare</option><option value="">Tutto l'archivio</option><option value="excluded">Ruoli esclusi dai filtri</option></select></label>
+          <label>Asse ruolo<select id="eligibility"><option value="">Tutto l'archivio</option><option value="potential">Ruoli compatibili</option><option value="review">Ruoli ancora da decidere</option><option value="excluded">Ruoli scartati dal regex</option></select></label>
+          <label>Tier<select id="tier-scope"><option value="">Tutti i tier</option><option value="A">Tier A</option><option value="B-attesa">Tier B · attesa</option><option value="B-esperienza">Tier B · esperienza</option><option value="evidenza-mancante">Evidenza mancante</option><option value="scarto">Scarto</option></select></label>
           <label
             >Cerca azienda, attività o ruolo<input
               id="query"
@@ -85,7 +86,7 @@
                 <thead>
                   <tr>
                     <th>Azienda e attività</th>
-                    <th>Categoria</th>
+                    <th>Tier</th>
                     <th>Località</th>
                     <th>Ruoli</th>
                     <th>Stato</th>

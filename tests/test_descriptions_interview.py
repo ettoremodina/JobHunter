@@ -15,8 +15,8 @@ from jobhunter.interview import review_rule
 class DescriptionInterviewTests(unittest.TestCase):
     """Exercise persistence, evidence conditions and reversible rule application on disposable files."""
 
-    def test_full_recovery_screens_listing(self):
-        """Full recovery excludes clear title mismatches and reports unvisited blocked jobs."""
+    def test_full_recovery_answers_company_coverage(self):
+        """Recovery answers company coverage, not the role filters, and reports unvisited blocked jobs."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'config').mkdir()
@@ -29,18 +29,21 @@ class DescriptionInterviewTests(unittest.TestCase):
             archive.ingest([{'company_name': 'Excluded', 'title': 'Senior Engineer', 'source_url': 'https://www.linkedin.com/jobs/view/excluded'}], 'jobspy')
             with patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.descriptions.fetch', return_value='<div class="show-more-less-html__markup">Required experience: 5 years</div>') as fetch:
                 result = recover(archive, all_missing=True)
-            self.assertEqual(result['saved'], 3)
-            self.assertEqual(result['excluded_by_listing'], 1)
-            self.assertEqual(fetch.call_count, 3)
+            # DESIGN §4: l'azienda con soli ruoli esclusi dal regex resta cieca se la salta.
+            self.assertEqual(result['saved'], 4)
+            self.assertEqual(result['blind_companies'], 2)
+            self.assertEqual(fetch.call_count, 4)
             self.assertEqual(result['remaining_missing'], 0)
+            self.assertEqual([json.loads(r[0])['description'] != '' for r in archive.db.execute(
+                "SELECT data FROM opportunities WHERE json_extract(data,'$.title')='Senior Engineer'")], [True])
             with archive.db:
                 archive.db.execute("UPDATE opportunities SET data=json_set(data,'$.description','')")
             with patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.descriptions.fetch', side_effect=HTTPError('https://www.linkedin.com', 429, 'Rate limit', {}, None)) as fetch:
                 blocked = recover(archive, all_missing=True)
             self.assertEqual(fetch.call_count, 1)
             self.assertEqual(blocked['status'], 'partial')
-            self.assertEqual(blocked['unattempted'], 2)
-            self.assertEqual(blocked['remaining_missing'], 3)
+            self.assertEqual(blocked['unattempted'], 3)
+            self.assertEqual(blocked['remaining_missing'], 4)
             archive.close()
 
     def test_airtable_mapping_preserves_observed_fields(self):
@@ -65,7 +68,7 @@ class DescriptionInterviewTests(unittest.TestCase):
         self.assertEqual(extract(html, address)[0], '')
         application = application_link(html, address)
         self.assertEqual(application, 'https://jobs.smartrecruiters.com/Example/123')
-        body, method = extract('<nav>Sign in</nav><div itemprop="description"><section>Job Description<p>Develop models.</p></section><section>Qualifications<p>Minimum 3 years of relevant experience.</p></section></div>', application)
+        body, method, _ = extract('<nav>Sign in</nav><div itemprop="description"><section>Job Description<p>Develop models.</p></section><section>Qualifications<p>Minimum 3 years of relevant experience.</p></section></div>', application)
         self.assertEqual(method, 'smartrecruiters_microdata')
         self.assertNotIn('Sign in', body)
         self.assertEqual(evaluate({'title': 'Software Engineer', 'description': body})['status'], 'excluded')
@@ -75,7 +78,7 @@ class DescriptionInterviewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             archive = Archive(Path(directory) / 'test.db')
             archive.ingest([{'company_name': name, 'title': 'Engineer', 'source_url': f'https://example.org/{name}'} for name in ('Saved', 'Transient')], 'test')
-            role = archive.db.execute("SELECT id,company_id FROM opportunities WHERE json_extract(data,'$.company_name')='Saved'").fetchone()
+            role = archive.db.execute("SELECT o.id,o.company_id FROM opportunities o JOIN companies c ON c.id=o.company_id WHERE c.name='Saved'").fetchone()
             archive.feedback(role['company_id'], 'saved', 'Keep this note', role['id'])
             archive.preference('Keep this preference')
             result = archive.reset_collection()
@@ -106,7 +109,7 @@ class DescriptionInterviewTests(unittest.TestCase):
 
     def test_description_only_extracts_job_content(self):
         """Boilerplate is not a description, and access blocks are errors."""
-        body, method = extract('<nav>Sign in</nav><div class="show-more-less-html__markup"><p>Develop models</p><p>No visa sponsorship</p></div>', 'https://www.linkedin.com/jobs/view/123')
+        body, method, _ = extract('<nav>Sign in</nav><div class="show-more-less-html__markup"><p>Develop models</p><p>No visa sponsorship</p></div>', 'https://www.linkedin.com/jobs/view/123')
         self.assertNotIn("Sign in", body)
         self.assertIn("No visa sponsorship", body)
         self.assertEqual(method, "linkedin_public_description")

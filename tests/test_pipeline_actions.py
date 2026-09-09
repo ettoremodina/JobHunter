@@ -37,7 +37,7 @@ class ActionTests(unittest.TestCase):
 
     def test_pipeline_collection_defers_details_and_local_categories(self):
         """The operational order must defer network details and classification, not just relabel cards."""
-        self.assertEqual(configuration()['sequence'], ['collection', 'filters', 'descriptions', 'remote', 'queue'])
+        self.assertEqual(configuration()['sequence'], ['collection', 'filters', 'descriptions', 'local', 'remote', 'queue'])
         with patch('jobhunter.collection.collect', return_value={}) as collect:
             execute(self.archive, self.cfg, 'collection', {'source': 'test', 'limit': 3}, lambda d: None)
         self.assertFalse(collect.call_args.kwargs['recover_descriptions'])
@@ -72,13 +72,13 @@ class ActionTests(unittest.TestCase):
         self.archive.db.commit()
         self.assertTrue(controls(self.archive, self.cfg)['actions']['filters']['needs_update'])
 
-    def test_sequence_stops_at_partial_and_keeps_stage_result(self):
-        """A partial upstream result must prevent later API work."""
+    def test_partial_continues_and_only_failed_stops_the_sequence(self):
+        """data-model.md: `partial` è lo stato normale e prosegue; solo `failed` ferma la sequenza."""
         lock = threading.Lock()
         executed = []
 
         def partial(archive, cfg, step, values, progress):
-            """Fail the second stage without making network requests."""
+            """Return a partial stage result without making network requests."""
             executed.append(step)
             return {'status': 'partial' if step == 'descriptions' else 'success'}
 
@@ -86,10 +86,22 @@ class ActionTests(unittest.TestCase):
             start(self.path, self.cfg, 'filters', {}, lock, continue_after=True)
             self.assertTrue(lock.acquire(timeout=5))
             lock.release()
-        self.assertEqual(executed, ['filters', 'descriptions'])
+        self.assertEqual(executed, ['filters', 'descriptions', 'local', 'remote', 'queue'])
         result = controls(self.archive, self.cfg)
         self.assertEqual(result['actions']['descriptions']['last_run']['status'], 'partial')
-        self.assertFalse(any(r['step'] == 'remote' for r in result['history']))
+
+        executed.clear()
+
+        def failing(archive, cfg, step, values, progress):
+            """Break the second stage: credentials, transport or database."""
+            executed.append(step)
+            return {'status': 'failed' if step == 'descriptions' else 'success'}
+
+        with patch('jobhunter.pipeline_actions.execute', side_effect=failing):
+            start(self.path, self.cfg, 'filters', {}, lock, continue_after=True)
+            self.assertTrue(lock.acquire(timeout=5))
+            lock.release()
+        self.assertEqual(executed, ['filters', 'descriptions'])
 
     def test_stop_preserves_completed_work_and_prevents_next_stage(self):
         """A persisted stop survives progress updates and interrupts the sequence at a safe boundary."""
