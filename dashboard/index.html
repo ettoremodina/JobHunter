@@ -17,7 +17,7 @@
       <nav aria-label="Navigazione principale">
         <button data-view="queue">La mia coda</button>
         <button data-view="companies" aria-current="page">Aziende</button
-        ><button data-view="analytics">Metriche</button><button data-view="pipeline">Pipeline</button><button data-view="profile">Profilo</button>
+        ><button data-view="analytics">Metriche</button><button data-view="pipeline">Pipeline</button>
       </nav>
     </header>
     <div id="message" role="status" aria-live="polite"></div>
@@ -148,26 +148,6 @@
         <h3>Ultime acquisizioni</h3>
         <p id="collection-state" role="status"></p>
         <div id="runs"></div>
-      </section>
-      <section id="profile-view" hidden>
-        <h2>Profilo e preferenze</h2>
-        <p>
-          Il profilo originale resta invariato. Le preferenze esplicite aggiunte
-          qui sono disponibili anche a Codex.
-        </p>
-        <pre id="profile-text"></pre>
-        <h3>Preferenze aggiunte</h3>
-        <ul id="preferences"></ul>
-        <form id="preference-form">
-          <label
-            >Nuova preferenza<textarea
-              id="preference-note"
-              required
-              rows="3"
-              placeholder="Es. Preferisco ruoli di ottimizzazione applicata all’energia."
-            ></textarea></label
-          ><button class="primary">Salva preferenza</button>
-        </form>
       </section>
     </main>
     <footer>

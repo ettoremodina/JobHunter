@@ -78,16 +78,14 @@ class BatchTests(unittest.TestCase):
                         data = json.loads(row['data']); data['description'] = ''
                         arc.db.execute('UPDATE opportunities SET data=?,content_hash=? WHERE id=?', (json.dumps(data), 'no-description', row['id']))
                     arc.db.commit()
-                    def selection_only(config, prompt, payload, key):
-                        """Absent descriptions permit judgments but never request an invented summary."""
-                        self.assertTrue(all(not job['summary_requested'] for job in payload['jobs'].values()))
-                        return {'company': None, 'jobs': [{'id': oid, 'selection': {'decision': 'review', 'rationale': 'Manca descrizione', 'evidence': [], 'missing_information': ['Descrizione']}, 'summary': None} for oid in payload['jobs']]}, {'total_tokens': 50}, []
-                    request.side_effect = selection_only
+                    # Senza descrizione non si paga nessuna chiamata: il modello direbbe solo «review».
+                    def never_called(config, prompt, payload, key):
+                        raise AssertionError('Un annuncio senza descrizione non deve essere spedito')
+                    request.side_effect = never_called
+                    before = request.call_count
                     result = run(arc, values, lambda d: None)
                     self.assertEqual(result['status'], 'success')
-                    self.assertEqual(result['counts']['evaluated_jobs'], 2)
-                    before = request.call_count
-                    run(arc, values, lambda d: None)
+                    self.assertEqual(result['counts']['evaluated_jobs'], 0)
                     self.assertEqual(request.call_count, before)
 
 

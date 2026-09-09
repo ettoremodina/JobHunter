@@ -35,7 +35,7 @@ def prepare(config, directory):
     for name, content in files.items():
         (directory / name).write_text(json.dumps(content, ensure_ascii=False, indent=2), encoding="utf-8")
     shutil.copyfile(ROOT / rules["profile_evidence"], directory / "portfolio.md")
-    shutil.copyfile(ROOT / "config/prompts/calibration.txt", directory / "prompt.txt")
+    shutil.copyfile(ROOT / "config/prompts/remote-calibration.txt", directory / "prompt.txt")
     logger.info("Prepared %s jobs from %s eligible", len(sample), len(pool))
 
 

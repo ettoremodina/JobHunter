@@ -334,10 +334,7 @@ class Archive:
         hashes = [r[0] for r in self.db.execute("SELECT content_hash FROM opportunities WHERE company_id=? ORDER BY id", (cid,))]
         hashes += [str(r[0]) for r in self.db.execute("SELECT id FROM preferences ORDER BY id")]
         hashes += [r[0] for r in self.db.execute("SELECT id FROM evidence WHERE company_id=? ORDER BY id", (cid,))]
-        profile = ROOT / "user_context/profile.md"
-        if profile.exists():
-            hashes.append(identity(profile.read_text(encoding="utf-8")))
-        for path in (ROOT / "user_context/search-profile.md", ROOT / "config/role_filters.json"):
+        for path in (ROOT / "user_context/llm-selection-profile.md", ROOT / "config/role_filters.json"):
             hashes.append(identity(path.read_text(encoding="utf-8")))
         return identity("|".join(hashes))
 

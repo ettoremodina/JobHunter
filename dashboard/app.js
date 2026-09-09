@@ -573,14 +573,6 @@ async function sources() {
   if (state.running)
     setTimeout(() => sources().catch((e) => message(e.message, true)), 2500);
 }
-async function profile() {
-  const data = await api("/api/profile");
-  $("profile-text").textContent =
-    data.profile || "Profilo originale non disponibile.";
-  $("preferences").replaceChildren(
-    ...data.preferences.map((p) => el("li", p.note)),
-  );
-}
 async function exportCSV() {
   const items = [];
   for (let start = 0; start < total; start += 500) {
@@ -751,10 +743,9 @@ async function init() {
         for (const node of document.querySelectorAll("[data-view]"))
           node.removeAttribute("aria-current");
         button.setAttribute("aria-current", "page");
-        for (const name of ["companies", "sources", "profile", "queue", "analytics", "pipeline"])
+        for (const name of ["companies", "sources", "queue", "analytics", "pipeline"])
           $(name + "-view").hidden = name !== button.dataset.view;
         if (button.dataset.view === "sources") await sources();
-        if (button.dataset.view === "profile") await profile();
         if (button.dataset.view === "queue") await loadQueue();
         if (button.dataset.view === "analytics") await loadAnalytics();
         if (button.dataset.view === "pipeline") await loadPipeline();
@@ -803,16 +794,6 @@ async function init() {
     document.querySelector('[data-view="queue"]').click();
   });
   $("analytics-scope").addEventListener("change", guarded(loadAnalytics));
-  $("preference-form").addEventListener(
-    "submit",
-    guarded(async (e) => {
-      e.preventDefault();
-      await api("/api/preference", { note: $("preference-note").value });
-      $("preference-note").value = "";
-      await profile();
-      message("Preferenza aggiunta, disponibile anche nella chat.");
-    }),
-  );
   await load();
 }
 init().then(() => {

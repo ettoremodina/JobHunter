@@ -111,8 +111,6 @@ def parser():
     company = sub.add_parser("add-company", help="Add a research candidate without inventing a job")
     company.add_argument("name")
     company.add_argument("--website", default="")
-    profile = sub.add_parser("profile", help="Read profile and explicit preference additions")
-    profile.add_argument("--add", help="Append an explicit preference")
     export = sub.add_parser("export", help="Export companies as JSON or CSV")
     export.add_argument("path")
     export.add_argument("--status", choices=STATUSES, default="")
@@ -208,11 +206,6 @@ def execute(args, archive, cfg):
         with archive.db:
             cid = archive.company(args.name, args.website)
         return {"id": cid}
-    if command == "profile":
-        if args.add:
-            archive.preference(args.add)
-        path = ROOT / cfg["profile"]
-        return {"profile": path.read_text(encoding="utf-8") if path.exists() else "", "search_profile": (ROOT / "user_context/search-profile.md").read_text(encoding="utf-8"), "preferences": [dict(r) for r in archive.db.execute("SELECT * FROM preferences ORDER BY id")]}
     if command == "export":
         items, offset = [], 0
         while True:
