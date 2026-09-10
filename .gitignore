@@ -11,3 +11,8 @@ data/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# agent-workflow:provider-bridges:start
+# Machine-local .agents -> .claude junctions. Recreated by scripts/sync-provider-bridges.ps1.
+.claude/memory/
+# agent-workflow:provider-bridges:end

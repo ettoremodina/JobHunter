@@ -160,7 +160,9 @@ async function load() {
       el(
         "small",
         company.titles.slice(0, 2).join(" · ") ||
-          "Attività da approfondire",
+          (company.archive_opportunity_count
+            ? "Nessun ruolo che rientri nel filtro"
+            : "Attività da approfondire"),
       ),
     );
     const status = el("td");
@@ -171,7 +173,9 @@ async function load() {
       name,
       el("td", company.tier || company.category),
       el("td", locationPreview(company.locations)),
-      el("td", String(company.opportunity_count)),
+      el("td", company.archive_opportunity_count
+        ? `${company.opportunity_count} di ${company.archive_opportunity_count}`
+        : String(company.opportunity_count)),
       status,
     );
     $("rows").append(tr);
@@ -194,20 +198,40 @@ async function load() {
     ? `${offset + 1}–${Math.min(offset + config.page_size, total)} di ${total}`
     : "0 risultati";
 }
+/** Lo stato di un ruolo come pastiglia colorata: si legge prima del testo che lo spiega. */
+function verdictBadge(verdetto) {
+  const [text, tone] = {tieni: ["Compatibile", "saved"], scarta: ["Scartato", "discarded"],
+                        non_so: ["Da decidere", "review"]}[verdetto] || ["Senza verdetto", ""];
+  return el("span", text, "badge " + tone);
+}
+
+/** L'ultima decisione ancora valida per ogni ruolo; `feedback` arriva già dal più recente. */
+function roleDecisions(company) {
+  const decided = new Map();
+  for (const event of company.feedback)
+    if (event.opportunity_id && !event.undone_at && !decided.has(event.opportunity_id))
+      decided.set(event.opportunity_id, event.status);
+  return decided;
+}
+
 /** Name the two axis verdicts and say how they compose the tier: the UI mirrors the code (DESIGN §9). */
 function axisSummary(company) {
   const box = el("section", undefined, "axes");
-  const company_axis = {interessante: "Azienda interessante", non_interessante: "Azienda non fra le categorie preferite",
-                        evidenza_mancante: "Evidenza aziendale mancante"}[company.company_verdict?.verdetto] || "Asse azienda sconosciuto";
+  box.dataset.tier = company.tier || "";
+  const verdict = company.company_verdict?.verdetto;
+  const company_axis = {interessante: "Azienda interessante", non_interessante: "Fuori dalle categorie preferite",
+                        evidenza_mancante: "Evidenza aziendale mancante"}[verdict] || "Asse azienda sconosciuto";
+  const companyTone = {interessante: "saved", non_interessante: "discarded", evidenza_mancante: "review"}[verdict] || "";
   const roles = Object.values(company.opportunities || []).filter(job => job.verdict?.verdetto === "tieni");
-  const role_axis = roles.length ? `${roles.length} ruoli compatibili` : "Nessun ruolo compatibile adesso";
+  const role_axis = roles.length ? `${roles.length} ${roles.length === 1 ? "ruolo compatibile" : "ruoli compatibili"}` : "Nessun ruolo compatibile adesso";
   box.append(el("h3", company.tier_label || "Tier non calcolato"));
   const list = el("ul", undefined, "axis-list");
-  for (const [name, value, why] of [["Asse azienda", company_axis, company.company_verdict?.motivo || ""],
-                                    ["Asse ruolo", role_axis, roles.map(job => job.title).slice(0, 3).join(" · ")]]) {
+  for (const [name, value, tone, why] of [
+      ["Asse azienda", company_axis, companyTone, company.company_verdict?.motivo || ""],
+      ["Asse ruolo", role_axis, roles.length ? "saved" : "review", roles.map(job => job.title).slice(0, 3).join(" · ")]]) {
     const item = el("li");
-    item.append(el("strong", name + ": "), el("span", value));
-    if (why) item.append(el("small", " " + why));
+    item.append(el("strong", name), el("span", value, "badge " + tone));
+    if (why) item.append(el("small", why));
     list.append(item);
   }
   box.append(list);
@@ -217,11 +241,10 @@ function axisSummary(company) {
 
 /** Show which judge decided a role and on what evidence, so a verdict is checkable months later. */
 function roleVerdict(verdict) {
-  const names = {tieni: "Ruolo compatibile", scarta: "Ruolo scartato", non_so: "Ruolo ancora da decidere"};
-  const judges = {regex: "regex sui titoli", llm_locale: "modello locale", llm_remoto: "modello remoto"};
+  const judges = {regex: "regex su titolo e descrizione", llm_locale: "modello locale", llm_remoto: "modello remoto"};
   const line = el("p", undefined, "muted");
-  line.append(el("strong", names[verdict.verdetto] || verdict.verdetto));
-  line.append(el("span", verdict.giudice ? ` · deciso da ${judges[verdict.giudice] || verdict.giudice}` : " · nessun giudice ha ancora deciso"));
+  line.append(verdictBadge(verdict.verdetto));
+  line.append(el("span", verdict.giudice ? ` deciso dal ${judges[verdict.giudice] || verdict.giudice}` : " nessun giudice ha ancora deciso"));
   if (verdict.motivo) line.append(el("span", " · " + verdict.motivo));
   if (verdict.primary) line.append(el("span", " · ruolo prioritario"));
   if (verdict.prove?.length) {
@@ -233,31 +256,146 @@ function roleVerdict(verdict) {
   return line;
 }
 
+/** Nome del sito senza schema; un indirizzo malformato non deve rompere la scheda. */
+function hostname(address) {
+  try { return new URL(address).hostname || address; } catch { return address; }
+}
+
+/** Compact key/value block: quattro paragrafi sciolti si leggono peggio di quattro righe allineate. */
+function factList(pairs) {
+  const list = el("dl", undefined, "detail-facts");
+  for (const [key, value, note] of pairs) {
+    if (!value) continue;
+    list.append(el("dt", key));
+    const dd = el("dd");
+    dd.append(value instanceof Node ? value : el("span", value));
+    if (note) {
+      const hint = el("small", note);
+      hint.title = note;
+      dd.append(hint);
+    }
+    list.append(dd);
+  }
+  return list;
+}
+
+/** Un ruolo per volta, chiuso: la scheda si apre con l'elenco, non con il muro di testo. */
+function opportunityBlock(job, company, decision, id, open) {
+  const block = el("details", undefined, "opportunity");
+  block.id = "job-" + job.id;
+  block.open = open;
+  block.dataset.verdict = job.verdict?.verdetto || "non_so";
+  const head = el("summary");
+  const line = el("span", undefined, "job-head");
+  line.append(el("strong", job.title, "job-title"), verdictBadge(job.verdict?.verdetto));
+  if (decision) line.append(el("span", labels[decision], `badge ${decision}`));
+  head.append(line, el("small", [locationPreview(job.locations), date(job.last_seen_at)].filter(Boolean).join(" · ")));
+  block.append(head);
+  const body = el("div", undefined, "opportunity-body");
+  block.append(body);
+  body.append(locationDetails(job.locations));
+  const s = job.salary;
+  const conditions = [[job.remote_policy, job.employment_type, job.seniority].filter(Boolean).join(" · ") || "Condizioni non specificate"];
+  if (s.min !== null || s.max !== null || s.raw_text)
+    conditions.push(s.raw_text || [s.min === null ? "" : "da " + s.min.toLocaleString("it-IT"),
+                                    s.max === null ? "" : "fino a " + s.max.toLocaleString("it-IT"),
+                                    s.currency || "valuta non indicata", s.period || "periodo non indicato"].join(" "));
+  body.append(el("p", conditions.join(" · "), "muted"));
+  const links = el("p", undefined, "job-links");
+  links.append(link(job.application_url, "Apri annuncio"));
+  for (const source of job.sources) links.append(link(source.source_url, source.source + " · " + date(source.observed_at)));
+  body.append(links);
+  if (job.remote_summary) {
+    body.append(el("p", job.remote_summary.summary));
+    const fields = el("dl");
+    for (const [key, label] of Object.entries(company.job_field_labels)) {
+      const indices = job.remote_summary.fields[key];
+      fields.append(el("dt", label));
+      const value = el("dd", indices ? indices.map(i => job.remote_summary.facts[i].text).join("; ") : "Non indicato");
+      if (indices) value.title = indices.map(i => job.remote_summary.facts[i].quote).join("\n");
+      fields.append(value);
+    }
+    body.append(fields);
+    for (const missing of job.remote_summary.missing_information) body.append(el("p", "Da verificare: " + missing, "muted"));
+  }
+  if (job.verdict?.verdetto) body.append(roleVerdict(job.verdict));
+  const text = el("details");
+  text.append(el("summary", "Leggi descrizione"), description(job.formatted_description || job.description));
+  body.append(text);
+  // Provenienza, verifiche e citazioni servono a controllare un verdetto, non a leggere l'annuncio.
+  const proof = el("details");
+  proof.append(el("summary", "Provenienza e verifiche"));
+  if (job.formatted_description) {
+    const original = el("details");
+    original.append(el("summary", "Testo originale · impaginazione con " + job.formatting_model), el("p", job.description));
+    proof.append(original);
+  }
+  if (job.possible_duplicates?.length) {
+    const duplicates = el("p", "Possibile doppione: ");
+    for (const other of job.possible_duplicates) {
+      const anchor = el("a", "confronta annuncio ");
+      anchor.href = "#job-" + other;
+      duplicates.append(anchor);
+    }
+    proof.append(duplicates);
+  }
+  if (job.selection?.verification) {
+    const verification = job.selection.verification;
+    proof.append(el("p", `Informazioni: ${verification.description ? "descrizione disponibile" : "descrizione mancante"} · ${verification.experience_determined ? "esperienza obbligatoria determinata" : "esperienza da verificare"} · apertura da verificare`, "muted"));
+  }
+  if (job.selection?.requirements) {
+    const facts = job.selection.requirements;
+    if (facts.languages?.evidence.length) proof.append(el("p", "Requisiti linguistici: " + facts.languages.evidence.join(" · ")));
+    if (job.description_check) proof.append(el("p", "Ultimo tentativo di recupero: " + date(job.description_check.checked_at) + " · " + ({available: "testo disponibile", blocked: "fonte temporaneamente bloccata", missing_page: "pagina non trovata", unsupported_parser: "testo non estraibile", temporary_error: "errore temporaneo"}[job.description_check.status] || "da verificare"), "muted"));
+    for (const quote of [...facts.evidence, ...facts.eligibility_quotes]) proof.append(el("blockquote", quote));
+  }
+  body.append(proof);
+  const roleReason = el("select");
+  roleReason.setAttribute("aria-label", "Motivo sul ruolo " + job.title);
+  for (const [value, text] of Object.entries(config.feedback_reasons)) {
+    if (value === "not_now") continue;
+    const option = el("option", text);
+    option.value = value;
+    roleReason.append(option);
+  }
+  roleReason.value = "too_senior";
+  const actions = el("div", undefined, "actions job-actions");
+  const discardRole = el("button", "Scarta solo questo ruolo");
+  discardRole.addEventListener("click", guarded(async () => {
+    await api("/api/feedback", {company_id: id, opportunity_id: job.id, status: "discarded", reason: roleReason.value, note: "Decisione sul singolo ruolo"});
+    message("Ruolo scartato; azienda conservata.");
+    await show(id);
+  }));
+  const reject = el("button", "Da verificare");
+  reject.addEventListener("click", guarded(async () => {
+    await api("/api/feedback", {company_id: id, opportunity_id: job.id, status: "review",
+                                note: "Ruolo da verificare; interesse aziendale invariato"});
+    message("Annotazione sul ruolo salvata.");
+    await show(id);
+  }));
+  actions.append(roleReason, discardRole, reject);
+  body.append(actions);
+  return block;
+}
+
 async function show(id) {
   selected = id;
   const company = await api("/api/company/" + id);
   if (selected !== id) return;
   const panel = $("detail");
   panel.replaceChildren();
-  panel.append(
-    el("h2", company.name),
-    el("span", labels[company.status], `badge ${company.status}`),
-  );
+  const heading = el("div", undefined, "detail-heading");
+  heading.append(el("h2", company.name), el("span", labels[company.status], `badge ${company.status}`));
+  panel.append(heading);
   panel.append(axisSummary(company));
-  panel.append(el("p", "Categoria: " + company.category));
-  panel.append(el("p", (company.category_method === "chat" ? "Assegnata dalla chat. " : company.category_method === "local_llm" ? "Suggerita dal modello locale. " : company.category_method === "rules" ? "Suggerita da regole. " : "") + company.category_reason, "muted"));
-  if (company.sectors) panel.append(el("p", "Settori dalla fonte: " + company.sectors, "muted"));
-  if (company.website) {
-    const website = el("p");
-    website.append(link(company.website, "Sito aziendale"));
-    panel.append(website);
-  }
-  panel.append(
-    el(
-      "p",
-      company.remote_summary?.summary || company.description || "Descrizione aziendale da approfondire in chat.",
-    ),
-  );
+  const origin = company.category_method === "chat" ? "Assegnata dalla chat" : company.category_method === "local_llm" ? "Suggerita dal modello locale"
+    : company.category_method === "rules" ? "Suggerita da regole" : "";
+  panel.append(factList([
+    ["Categoria", company.category, [origin, company.category_reason].filter(Boolean).join(" · ")],
+    ["Settori", company.sectors],
+    ["Sito", company.website ? link(company.website, hostname(company.website)) : ""],
+    ["Osservata", date(company.last_seen), `${company.opportunities.length} opportunità osservate`]]));
+  panel.append(el("p", company.remote_summary?.summary || company.description || "Descrizione aziendale da approfondire in chat."));
   if (company.remote_summary?.summary) {
     const original = el("details");
     original.append(el("summary", "Fonti della sintesi aziendale"));
@@ -269,13 +407,23 @@ async function show(id) {
     }
     panel.append(original);
   }
-  panel.append(
-    el(
-      "p",
-      `Ultima osservazione: ${date(company.last_seen)}. ${company.opportunities.length} opportunità osservate.`,
-      "muted",
-    ),
-  );
+  const note = el("textarea");
+  note.rows = 2;
+  note.id = "detail-note";
+  const companyChoices = el("div", undefined, "actions");
+  for (const [text, status, reason] of [["Azienda non interessante", "discarded", "company_not_interested"], ["Nessun ruolo adatto adesso", "review", "no_current_roles"]]) {
+    const button = el("button", text);
+    button.addEventListener("click", guarded(async () => {
+      await api("/api/feedback", {company_id: id, status, reason, note: note.value});
+      message(reason === "no_current_roles" ? "Azienda rimandata: può tornare con nuovi ruoli o requisiti cambiati." : "Azienda esclusa dalle proposte. Puoi annullare la decisione nello storico.");
+      await show(id); await load();
+    }));
+    companyChoices.append(button);
+  }
+  panel.append(companyChoices);
+  // Le due scelte rapide coprono quasi tutto: il modulo completo resta a un clic, non a schermo.
+  const decide = el("details", undefined, "decide");
+  decide.append(el("summary", "Registra una decisione con motivo e nota"));
   const form = el("form");
   const statusLabel = el("label", "Stato azienda");
   const select = el("select");
@@ -298,213 +446,82 @@ async function show(id) {
   reasonLabel.append(reason);
   const untilLabel = el("label", "Riproponi dal giorno (per Non ora)");
   const until = el("input"); until.type = "date"; until.id = "feedback-until"; untilLabel.append(until);
-  const note = el("textarea");
-  note.rows = 2;
-  note.id = "detail-note";
   noteLabel.append(note);
   const actions = el("div", undefined, "actions");
   const save = el("button", "Salva decisione", "primary");
   save.type = "submit";
   actions.append(save);
   form.append(statusLabel, reasonLabel, untilLabel, noteLabel, actions);
-  form.addEventListener(
-    "submit",
-    guarded(async (e) => {
-      e.preventDefault();
-      await api("/api/feedback", {
-        company_id: id,
-        status: select.value,
-        note: note.value,
-        reason: reason.value,
-        until_date: until.value,
-      });
-      message("Decisione salvata.");
-      await show(id);
-      await load();
-    }),
-  );
-  panel.append(form);
-  const companyChoices = el("div", undefined, "actions");
-  for (const [text, status, reason] of [["Azienda non interessante", "discarded", "company_not_interested"], ["Nessun ruolo adatto adesso", "review", "no_current_roles"]]) {
-    const button = el("button", text);
-    button.addEventListener("click", guarded(async () => {
-      await api("/api/feedback", {company_id: id, status, reason, note: note.value});
-      message(reason === "no_current_roles" ? "Azienda rimandata: può tornare con nuovi ruoli o requisiti cambiati." : "Azienda esclusa dalle proposte. Puoi annullare la decisione nello storico.");
-      await show(id); await load();
-    }));
-    companyChoices.append(button);
-  }
-  panel.append(companyChoices);
-  if (company.assessment) {
-    panel.append(el("h3", "Valutazione dalla chat"));
-    if (company.assessment.stale)
-      panel.append(
-        el("p", "Dati o preferenze cambiati: rivalutare in chat.", "muted"),
-      );
-    panel.append(el("p", company.assessment.reasoning));
-    for (const missing of company.assessment.missing_information || [])
-      panel.append(el("p", "Da verificare: " + missing));
-  }
-  if (company.evidence.length) {
-    panel.append(el("h3", "Ricerca e fonti"));
+  form.addEventListener("submit", guarded(async (e) => {
+    e.preventDefault();
+    await api("/api/feedback", {company_id: id, status: select.value, note: note.value,
+                                reason: reason.value, until_date: until.value});
+    message("Decisione salvata.");
+    await show(id);
+    await load();
+  }));
+  decide.append(form);
+  panel.append(decide);
+  if (company.assessment || company.evidence.length) {
+    const research = el("details");
+    research.append(el("summary", "Valutazione dalla chat e fonti"));
+    if (company.assessment) {
+      if (company.assessment.stale) research.append(el("p", "Dati o preferenze cambiati: rivalutare in chat.", "muted"));
+      research.append(el("p", company.assessment.reasoning));
+      for (const missing of company.assessment.missing_information || []) research.append(el("p", "Da verificare: " + missing));
+    }
     for (const evidence of company.evidence) {
       const p = el("p", evidence.note + " ");
-      p.append(
-        link(evidence.source_url, "Fonte"),
-        el("small", " · " + date(evidence.observed_at)),
-      );
-      panel.append(p);
+      p.append(link(evidence.source_url, "Fonte"), el("small", " · " + date(evidence.observed_at)));
+      research.append(p);
     }
+    panel.append(research);
   }
   const scope = $("eligibility").value;
-  const visible = scope ? company.opportunities.filter(job => job.selection?.status === scope) : company.opportunities;
+  const tierScope = $("tier-scope").value;
+  // Un tier filtra le aziende, ma la scheda deve mostrare i ruoli che quel tier riguarda:
+  // elencare gli scartati di un'azienda in Tier A e' rumore. Stessa regola lato server in search().
+  const visible = company.opportunities.filter(job =>
+    (!scope || job.selection?.status === scope) &&
+    (!tierScope || tierScope === "B-attesa" || job.verdict?.verdetto !== "scarta"));
   const hidden = company.opportunities.length - visible.length;
-  panel.append(el("h3", "Opportunità associate"));
+  // Compatibili in cima: l'ordine per data mette gli scarti davanti a ciò che conta.
+  const rank = {tieni: 0, non_so: 1, scarta: 2};
+  visible.sort((a, b) => (rank[a.verdict?.verdetto] ?? 1) - (rank[b.verdict?.verdetto] ?? 1));
+  const tally = {tieni: 0, non_so: 0, scarta: 0};
+  for (const job of visible) tally[job.verdict?.verdetto || "non_so"]++;
+  const rolesHeading = el("div", undefined, "roles-heading");
+  rolesHeading.append(el("h3", `Opportunità associate · ${visible.length}`));
+  for (const [key, one, many] of [["tieni", "compatibile", "compatibili"], ["non_so", "da decidere", "da decidere"], ["scarta", "scartato", "scartati"]])
+    if (tally[key]) rolesHeading.append(el("span", `${tally[key]} ${tally[key] === 1 ? one : many}`, "badge " + {tieni: "saved", non_so: "review", scarta: "discarded"}[key]));
+  panel.append(rolesHeading);
   if (hidden) {
-    const label = {potential: "compatibili con i filtri", review: "da verificare", excluded: "esclusi dai filtri"}[scope];
-    const note = el("p", `${visible.length} di ${company.opportunities.length} ruoli: sono mostrati solo quelli ${label}. `, "muted");
+    const reasons = [];
+    if (scope) reasons.push({potential: "compatibili con i filtri", review: "da verificare", excluded: "esclusi dai filtri"}[scope]);
+    if (tierScope && tierScope !== "B-attesa") reasons.push("non scartati sull'asse ruolo");
+    const filtered = el("p", `${visible.length} di ${company.opportunities.length} ruoli: sono mostrati solo quelli ${reasons.join(" e ")}. `, "muted");
     const showAll = el("button", "Mostra tutti i ruoli");
-    showAll.addEventListener("click", guarded(async () => { $("eligibility").value = ""; offset = 0; await show(id); }));
-    note.append(showAll);
-    panel.append(note);
+    showAll.addEventListener("click", guarded(async () => { $("eligibility").value = ""; $("tier-scope").value = ""; offset = 0; await show(id); }));
+    filtered.append(showAll);
+    panel.append(filtered);
   }
-  for (const job of visible) {
-    const block = el("article", undefined, "opportunity");
-    block.id = "job-" + job.id;
-    block.append(
-      el("h3", job.title),
-      locationDetails(job.locations),
-    );
-    block.append(
-      el(
-        "p",
-        [job.remote_policy, job.employment_type, job.seniority]
-          .filter(Boolean)
-          .join(" · ") || "Condizioni non specificate",
-        "muted",
-      ),
-    );
-    const s = job.salary;
-    if (s.min !== null || s.max !== null || s.raw_text)
-      block.append(
-        el(
-          "p",
-          "Salario di questo ruolo: " +
-            (s.raw_text ||
-              [
-                s.min === null ? "" : "da " + s.min.toLocaleString("it-IT"),
-                s.max === null ? "" : "fino a " + s.max.toLocaleString("it-IT"),
-                s.currency || "valuta non indicata",
-                s.period || "periodo non indicato",
-              ].join(" ")),
-        ),
-      );
-    const links = el("p");
-    links.append(link(job.application_url, "Apri annuncio"));
-    block.append(links);
-    for (const source of job.sources) {
-      const p = el(
-        "p",
-        source.source + " · " + date(source.observed_at) + " · ",
-        "muted",
-      );
-      p.append(link(source.source_url, "Fonte"));
-      block.append(p);
-    }
-    if (job.possible_duplicates?.length) {
-      const duplicates = el("p", "Possibile doppione: ");
-      for (const id of job.possible_duplicates) {
-        const anchor = el("a", "confronta annuncio ");
-        anchor.href = "#job-" + id;
-        duplicates.append(anchor);
-      }
-      block.append(duplicates);
-    }
-    if (job.remote_summary) {
-      block.append(el("p", job.remote_summary.summary));
-      const fields = el("dl");
-      for (const [key, label] of Object.entries(company.job_field_labels)) {
-        const indices = job.remote_summary.fields[key];
-        fields.append(el("dt", label));
-        const value = el("dd", indices ? indices.map(i => job.remote_summary.facts[i].text).join("; ") : "Non indicato");
-        if (indices) value.title = indices.map(i => job.remote_summary.facts[i].quote).join("\n");
-        fields.append(value);
-      }
-      block.append(fields);
-      for (const missing of job.remote_summary.missing_information) block.append(el("p", "Da verificare: " + missing, "muted"));
-    }
-    const details = el("details");
-    details.append(
-      el("summary", "Leggi descrizione"),
-      description(job.formatted_description || job.description),
-    );
-    block.append(details);
-    if (job.formatted_description) {
-      const original = el("details");
-      original.append(el("summary", "Testo originale · impaginazione con " + job.formatting_model), el("p", job.description));
-      block.append(original);
-    }
-    if (job.verdict?.verdetto) block.append(roleVerdict(job.verdict));
-    if (job.selection?.verification) {
-      const verification = job.selection.verification;
-      block.append(el("p", `Informazioni: ${verification.description ? "descrizione disponibile" : "descrizione mancante"} · ${verification.experience_determined ? "esperienza obbligatoria determinata" : "esperienza da verificare"} · apertura da verificare`, "muted"));
-    }
-    if (job.selection?.requirements) {
-      const facts = job.selection.requirements;
-      if (facts.languages?.evidence.length) block.append(el("p", "Requisiti linguistici: " + facts.languages.evidence.join(" · ")));
-      if (job.description_check) block.append(el("p", "Ultimo tentativo di recupero: " + date(job.description_check.checked_at) + " · " + ({available: "testo disponibile", blocked: "fonte temporaneamente bloccata", missing_page: "pagina non trovata", unsupported_parser: "testo non estraibile", temporary_error: "errore temporaneo"}[job.description_check.status] || "da verificare"), "muted"));
-      for (const quote of [...facts.evidence, ...facts.eligibility_quotes]) block.append(el("blockquote", quote));
-    }
-    const roleReason = el("select"); roleReason.setAttribute("aria-label", "Motivo sul ruolo " + job.title);
-    for (const [value, text] of Object.entries(config.feedback_reasons)) {
-      if (value === "not_now") continue;
-      const option = el("option", text); option.value = value; roleReason.append(option);
-    }
-    roleReason.value = "too_senior";
-    const discardRole = el("button", "Scarta solo questo ruolo");
-    discardRole.addEventListener("click", guarded(async () => {
-      await api("/api/feedback", {company_id: id, opportunity_id: job.id, status: "discarded", reason: roleReason.value, note: "Decisione sul singolo ruolo"});
-      message("Ruolo scartato; azienda conservata."); await show(id);
-    }));
-    block.append(roleReason, discardRole);
-    const reject = el("button", "Segna solo questo ruolo da verificare");
-    reject.addEventListener(
-      "click",
-      guarded(async () => {
-        await api("/api/feedback", {
-          company_id: id,
-          opportunity_id: job.id,
-          status: "review",
-          note: "Ruolo da verificare; interesse aziendale invariato",
-        });
-        message("Annotazione sul ruolo salvata.");
-        await show(id);
-      }),
-    );
-    block.append(reject);
-    panel.append(block);
-  }
+  const decisions = roleDecisions(company);
+  for (const job of visible)
+    panel.append(opportunityBlock(job, company, decisions.get(job.id), id, visible.length === 1));
   if (company.feedback.length) {
     const history = el("details");
     history.append(el("summary", "Storico decisioni"));
     for (const event of company.feedback) {
-      const row = el(
-        "div",
-        `${date(event.created_at)} · ${event.opportunity_id ? "Ruolo" : "Azienda"} · ${labels[event.status]} · ${config.feedback_reasons[event.reason] || ""} · ${event.until_date || ""} · ${event.note || "Senza nota"}`,
-        "feedback-entry",
-      );
+      const row = el("div", `${date(event.created_at)} · ${event.opportunity_id ? "Ruolo" : "Azienda"} · ${labels[event.status]} · ${config.feedback_reasons[event.reason] || ""} · ${event.until_date || ""} · ${event.note || "Senza nota"}`, "feedback-entry");
       if (event.undone_at) row.append(el("small", " · Annullata"));
       else {
         const undo = el("button", "Annulla");
-        undo.addEventListener(
-          "click",
-          guarded(async () => {
-            await api("/api/undo", { event_id: event.id });
-            await show(id);
-            await load();
-            message("Decisione annullata.");
-          }),
-        );
+        undo.addEventListener("click", guarded(async () => {
+          await api("/api/undo", { event_id: event.id });
+          await show(id);
+          await load();
+          message("Decisione annullata.");
+        }));
         row.append(undo);
       }
       history.append(row);
@@ -906,17 +923,9 @@ async function loadPipeline() {
       const state = running ? active.cancel_requested ? 'Arresto richiesto' : 'In esecuzione' : retry ? pipelineStates[last.status] : stale ? 'Dati cambiati: da aggiornare' : last?.parameters.mode === 'preview' ? 'Anteprima disponibile' : step.total === null ? 'Su richiesta' : {complete: 'Copertura completa', partial: 'Copertura parziale', missing: 'Da elaborare', empty: 'Nessun dato'}[step.state] || 'Su richiesta';
       card.append(el('span', state, 'pipeline-state'));
       card.append(stepMeasure(step));
-      if (running) {
-        const text = liveText(active.detail, active.started_at);
-        if (text) card.append(el('span', text, 'pipeline-live-count'));
-        const live = progressOf(active.detail);
-        if (live?.total) {
-          const bar = el('progress'); bar.max = live.total; bar.value = live.done;
-          bar.setAttribute('aria-label', live.label); card.append(bar);
-        }
-      }
       const stamp = action?.last_success || step.updated_at;
-      card.append(el('span', stamp ? 'Ultima esecuzione: ' + pipelineDate(stamp) : 'Mai eseguito da questo pannello', 'pipeline-time'));
+      // Mentre gira, l'orario che conta e' quello di avvio, e lo scrive il pannello qui sotto.
+      if (!running) card.append(el('span', stamp ? 'Ultima esecuzione: ' + pipelineDate(stamp) : 'Mai eseguito da questo pannello', 'pipeline-time'));
       card.append(el('span', action ? 'Parametri e avvio' : 'Dettagli del passaggio', 'pipeline-affordance'));
       card.addEventListener('click', () => openPipeline(step.id));
       row.append(card);
@@ -932,6 +941,7 @@ async function loadPipeline() {
       list.append(row);
     }
     renderPipelineFunnel(data.funnel);
+    renderJourney(data.funnel?.percorso);
     renderPipelineActivity();
     $('pipeline-runs').replaceChildren();
     for (const run of data.controls.history) {
@@ -953,142 +963,149 @@ async function loadPipeline() {
   }
 }
 
-/** Reuse the funnel's visual language at card scale: what is done against the whole. */
-function shareBar(done, total, label) {
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const bar = document.createElementNS(svgNS, 'svg');
-  for (const [key, value] of [['viewBox', '0 0 100 5'], ['class', 'card-bar'], ['preserveAspectRatio', 'none'],
-    ['role', 'img'], ['aria-label', `${Math.round((done / Math.max(total, 1)) * 100)}% ${label}`]]) bar.setAttribute(key, value);
-  for (const [width, className] of [[100, 'track'], [total ? (done / total) * 100 : 0, 'seg-in']]) {
-    const rect = document.createElementNS(svgNS, 'rect');
-    for (const [key, value] of [['x', 0], ['y', 0], ['width', Math.max(width, 0)], ['height', 5], ['rx', 2.5], ['class', className]]) rect.setAttribute(key, String(value));
-    bar.append(rect);
+/** Render a proportional bar with a single labelled count for every share, including zeroes. */
+function pipelineShares(title, total, parts) {
+  const n = value => Number(value || 0).toLocaleString('it-IT');
+  const section = el('div', undefined, 'pipeline-shares');
+  if (title) {
+    const heading = el('div', undefined, 'share-heading');
+    heading.append(el('strong', title), el('span', n(total)));
+    section.append(heading);
   }
-  return bar;
+  const ns = 'http://www.w3.org/2000/svg';
+  const bar = document.createElementNS(ns, 'svg');
+  bar.setAttribute('viewBox', '0 0 1000 24');
+  bar.setAttribute('preserveAspectRatio', 'none');
+  bar.setAttribute('class', 'funnel-chart');
+  bar.setAttribute('aria-hidden', 'true');
+  let x = 0;
+  for (const [color, label, value] of parts) {
+    const rect = document.createElementNS(ns, 'rect');
+    const width = total > 0 ? value / total * 1000 : 0;
+    for (const [key, val] of Object.entries({x, y: 0, width, height: 24, class: 'seg ' + color})) rect.setAttribute(key, val);
+    bar.append(rect);
+    x += width;
+  }
+  section.append(bar);
+  const legend = el('ul', undefined, 'funnel-legend');
+  for (const [color, label, value] of parts) {
+    const item = el('li');
+    const swatch = el('span', undefined, 'swatch ' + color);
+    swatch.setAttribute('aria-hidden', 'true');
+    item.append(swatch, el('span', label), el('strong', n(value), 'count'));
+    legend.append(item);
+  }
+  section.append(legend);
+  return section;
 }
 
-/** Name what every number counts: a bare ratio on a card is a riddle the reader has to solve. */
+/** Keep coverage and its population together, without repeating the card's status. */
 function stepMeasure(step) {
-  const n = value => Number(value || 0).toLocaleString('it-IT');
   const box = el('div', undefined, 'pipeline-measure');
-  const measurable = step.total !== null && step.total > 0;
-  if (measurable) box.append(shareBar(step.done, step.total, step.done_label));
-  const done = el('p', undefined, 'measure-line');
-  done.append(el('strong', n(step.done)), el('span', ' ' + step.done_label));
-  box.append(done);
-  if (measurable && step.rest_label) {
-    const rest = el('p', undefined, 'measure-line rest');
-    if (step.pending > 0) rest.append(el('strong', n(step.pending)), el('span', ' ' + step.rest_label));
-    else rest.append(el('span', 'Niente da elaborare adesso.'));
-    box.append(rest);
+  if (step.total !== null && step.total > 0) {
+    // Un passaggio che si ferma per informazione mancante ha tre quote, non due: le dichiara lui.
+    box.append(pipelineShares(step.measure || '', step.total, step.parts || [
+      ['seg-in', step.done_label, step.done],
+      ['seg-pending', step.rest_label || 'Da elaborare', step.pending ?? Math.max(0, step.total - step.done)]]));
+  } else {
+    box.append(el('strong', Number(step.done || 0).toLocaleString('it-IT') + ' ' + step.done_label));
   }
+  // Un passaggio che lavora su due popolazioni ne mostra due: una sola barra racconta meta' lavoro.
+  for (const bar of step.extra || []) box.append(pipelineShares(bar.title, bar.total, bar.parts));
   if (step.scope) box.append(el('small', step.scope));
   return box;
 }
 
-/** Draw the funnel as complementary shares of one whole, with the survivors flowing into the next stage. */
+/** Show the independent axes and derived tiers once, with labels attached to each chart. */
 function renderPipelineFunnel(funnel) {
   const area = $('pipeline-funnel');
-  area.replaceChildren(el('h3', 'Due assi indipendenti, e il tier che ne discende'));
+  area.replaceChildren(el('h3', 'Due assi indipendenti → Tier'));
   if (!funnel) {
-    area.append(el('p', 'Il funnel completo richiede il riavvio del server dopo la run corrente. Il contatore della run qui sotto riguarda tutte le aziende attraversate, anche quelle saltate.'));
+    area.append(el('p', 'Funnel non disponibile. Riavvia il server al termine dell’esecuzione.'));
+    return;
+  }
+  area.append(
+    pipelineShares('Asse ruolo · annunci', funnel.archive.jobs, [
+      ['seg-keep', 'Compatibili', funnel.ruolo.tieni],
+      ['seg-review', 'Da decidere', funnel.ruolo.non_so],
+      ['seg-exclude', 'Scartati', funnel.ruolo.scarta]]),
+    pipelineShares('Asse azienda · aziende', funnel.archive.companies, [
+      ['seg-keep', 'Interessanti', funnel.azienda.interessante],
+      ['seg-pending', 'Evidenza mancante', funnel.azienda.evidenza_mancante],
+      ['seg-exclude', 'Fuori preferenze', funnel.azienda.non_interessante]]),
+    pipelineShares('Tier · aziende', funnel.archive.companies, [
+      ['seg-keep', 'A · azienda e ruolo sì', funnel.tier.A],
+      ['seg-in', 'B · attesa di un ruolo', funnel.tier['B-attesa']],
+      ['seg-review', 'B · solo esperienza', funnel.tier['B-esperienza']],
+      ['seg-pending', 'Evidenza mancante', funnel.tier['evidenza-mancante']],
+      ['seg-exclude', 'Scarto', funnel.tier.scarto]]));
+  const details = el('details');
+  details.append(el('summary', 'Origine dei giudizi'));
+  if (funnel.giudici) details.append(pipelineShares('Giudici · annunci', funnel.archive.jobs,
+    [['regex', 'Regex', 'seg-in'], ['llm_locale', 'Modello locale', 'seg-keep'],
+     ['llm_remoto', 'Modello remoto', 'seg-review'], ['nessuno', 'Senza giudizio', 'seg-pending']]
+      .map(([key, label, color]) => [color, label, funnel.giudici[key] || 0])));
+  if (funnel.basis) details.append(el('p', funnel.basis, 'muted'));
+  area.append(details);
+}
+
+/** Il percorso come imbuto: ogni tappa larga quanto e' arrivato fin li', e chi esce esce alla sua tappa.
+
+Le quote di ogni tappa sono complementari, e il totale di una tappa e' la quota che prosegue di quella
+prima: il restringimento del disegno e' il dato, non una decorazione. La legenda ripete ogni numero,
+percio' il colore non porta mai da solo un'informazione.
+*/
+function renderJourney(stages) {
+  const area = $('pipeline-journey');
+  area.replaceChildren();
+  if (!stages?.length) {
+    area.append(el('p', 'Percorso non disponibile. Riavvia il server al termine dell’esecuzione.'));
     return;
   }
   const n = value => Number(value || 0).toLocaleString('it-IT');
-  const svgNS = 'http://www.w3.org/2000/svg';
-  /** Build one SVG node; geometry lives in attributes so the page needs no inline style. */
+  const ns = 'http://www.w3.org/2000/svg';
   const node = (tag, attributes, text) => {
-    const element = document.createElementNS(svgNS, tag);
+    const element = document.createElementNS(ns, tag);
     for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
     if (text !== undefined) element.textContent = text;
     return element;
   };
-  const W = 1000, BAR = 38, TOP = 22, FLOW = 34, GAP = 40;
-  const stageTwo = TOP + BAR + FLOW + GAP;
-  const stageThree = stageTwo + BAR + FLOW + GAP;
-  const chart = node('svg', {viewBox: `0 0 ${W} ${stageThree + BAR + 4}`, class: 'funnel-chart', role: 'img'});
-
-  /** Lay one complete stage out as adjacent shares; a share too narrow for its number keeps the legend instead. */
-  function stage(y, total, parts, title, unit) {
-    chart.append(node('text', {x: 0, y: y - 8, class: 'stage-label'}, title));
-    const totalText = node('text', {x: W, y: y - 8, class: 'stage-total', 'text-anchor': 'end'}, `${n(total)} ${unit}`);
-    chart.append(totalText, node('rect', {x: 0, y, width: W, height: BAR, rx: 6, class: 'track'}));
-    let x = 0;
-    const bounds = {};
-    for (const part of parts) {
-      const width = total ? (part.value / total) * W : 0;
-      bounds[part.key] = [x, x + width];
-      if (width >= 1) {
-        chart.append(node('rect', {x, y, width, height: BAR, rx: width > 12 ? 6 : 0, class: 'seg ' + part.className}));
-        if (width >= 84) chart.append(node('text', {x: x + width / 2, y: y + BAR / 2 + 5, class: 'seg-label', 'text-anchor': 'middle'},
-          `${n(part.value)} · ${Math.round((part.value / total) * 100)}%`));
+  const W = 1000, BAR = 30, GAP = 40, TOP = 20, ROW = BAR + GAP;
+  const chart = node('svg', {viewBox: `0 0 ${W} ${TOP + stages.length * ROW}`, class: 'funnel-chart', role: 'img'});
+  const boxes = [];
+  for (const [index, stage] of stages.entries()) {
+    const y = TOP + index * ROW;
+    const width = stage.scale > 0 ? Math.max(2, (stage.total / stage.scale) * W) : 0;
+    const left = (W - width) / 2;
+    boxes.push({left, width, y});
+    // Il flusso collega solo tappe della stessa unita': un annuncio non "diventa" un'azienda.
+    const before = boxes[index - 1];
+    if (before && !stage.unit_change)
+      chart.append(node('polygon', {class: 'flow', points:
+        `${before.left},${before.y + BAR} ${before.left + before.width},${before.y + BAR} ${left + width},${y} ${left},${y}`}));
+    chart.append(node('text', {x: 0, y: y - 7, class: 'stage-label'}, stage.title));
+    chart.append(node('text', {x: W, y: y - 7, class: 'stage-total', 'text-anchor': 'end'}, `${n(stage.total)} ${stage.unit}`));
+    chart.append(node('rect', {x: left, y, width, height: BAR, rx: 5, class: 'track'}));
+    let x = left;
+    for (const [color, label, value] of stage.parts) {
+      const part = stage.total > 0 ? (value / stage.total) * width : 0;
+      if (part >= 1) {
+        chart.append(node('rect', {x, y, width: part, height: BAR, class: 'seg ' + color}));
+        if (part >= 70) chart.append(node('text', {x: x + part / 2, y: y + BAR / 2 + 4, class: 'seg-label', 'text-anchor': 'middle'}, n(value)));
       }
-      x += width;
+      x += part;
     }
-    return bounds;
   }
-
-  stage(TOP, funnel.archive.jobs, [
-    {key: 'tieni', value: funnel.ruolo.tieni, className: 'seg-keep'},
-    {key: 'non_so', value: funnel.ruolo.non_so, className: 'seg-review'},
-    {key: 'scarta', value: funnel.ruolo.scarta, className: 'seg-exclude'}], '1. Asse ruolo', 'annunci in archivio');
-  stage(stageTwo, funnel.archive.companies, [
-    {key: 'interessante', value: funnel.azienda.interessante, className: 'seg-keep'},
-    {key: 'evidenza', value: funnel.azienda.evidenza_mancante, className: 'seg-pending'},
-    {key: 'non_interessante', value: funnel.azienda.non_interessante, className: 'seg-exclude'}], '2. Asse azienda', 'aziende in archivio');
-  // Il tier non è un terzo giudizio: è la composizione dei due assi sullo stesso insieme di aziende.
-  const flowEnd = stageThree - 24;
-  chart.append(node('polygon', {class: 'flow', points: `0,${stageTwo + BAR} ${W},${stageTwo + BAR} ${W},${flowEnd} 0,${flowEnd}`}));
-  stage(stageThree, funnel.archive.companies, [
-    {key: 'A', value: funnel.tier.A, className: 'seg-keep'},
-    {key: 'B-attesa', value: funnel.tier['B-attesa'], className: 'seg-in'},
-    {key: 'B-esperienza', value: funnel.tier['B-esperienza'], className: 'seg-review'},
-    {key: 'evidenza-mancante', value: funnel.tier['evidenza-mancante'], className: 'seg-pending'},
-    {key: 'scarto', value: funnel.tier.scarto, className: 'seg-exclude'}], '3. Tier che ne discende', 'aziende in archivio');
-  chart.append(node('title', {}, `Di ${n(funnel.archive.jobs)} annunci, ${n(funnel.ruolo.tieni)} sono compatibili, ${n(funnel.ruolo.non_so)} non sono ancora decisi e ${n(funnel.ruolo.scarta)} sono scartati. Di ${n(funnel.archive.companies)} aziende, ${n(funnel.azienda.interessante)} sono interessanti, ${n(funnel.azienda.evidenza_mancante)} non hanno evidenza e ${n(funnel.azienda.non_interessante)} non rientrano nelle categorie preferite. Ne discendono ${n(funnel.tier.A)} aziende in Tier A e ${n(funnel.tier['B-attesa'] + funnel.tier['B-esperienza'])} in Tier B.`));
-  area.append(chart);
-
-  /** Name every share once, with its number, so colour is never the only carrier of meaning. */
-  function legend(title, entries, total) {
-    area.append(el('h4', title));
-    const list = el('ul', undefined, 'funnel-legend');
-    for (const [className, label, value] of entries) {
-      const item = el('li');
-      item.append(el('span', undefined, 'swatch ' + className), el('span', label + ' '),
-        el('span', `${n(value)} · ${total ? Math.round((value / total) * 100) : 0}%`, 'count'));
-      list.append(item);
-    }
-    area.append(list);
+  chart.append(node('title', {}, stages.map(stage =>
+    `${stage.title}: ${n(stage.total)} ${stage.unit}, di cui ` +
+    stage.parts.map(([, label, value]) => `${n(value)} ${label}`).join(', ')).join('. ')));
+  const scroll = el('div', undefined, 'journey-scroll');
+  scroll.append(chart);
+  area.append(scroll);
+  for (const stage of stages) {
+    area.append(pipelineShares(`${stage.title} · ${stage.unit}`, stage.total, stage.parts));
+    if (stage.note) area.append(el('p', stage.note, 'muted'));
   }
-  legend('1. Asse ruolo: esiste un ruolo adatto?', [
-    ['seg-keep', 'Compatibili', funnel.ruolo.tieni],
-    ['seg-review', 'Ancora da decidere: sono questi il lavoro che resta', funnel.ruolo.non_so],
-    ['seg-exclude', 'Scartati', funnel.ruolo.scarta]], funnel.archive.jobs);
-  area.append(el('p', 'Le tre quote sono complementari: insieme fanno tutti gli annunci in archivio. Un annuncio scartato resta in archivio e può tornare se il testo cambia.', 'muted'));
-  legend('2. Asse azienda: la categoria è fra quelle preferite?', [
-    ['seg-keep', 'Interessanti', funnel.azienda.interessante],
-    ['seg-pending', 'Evidenza mancante: coda di lavoro, non un rifiuto', funnel.azienda.evidenza_mancante],
-    ['seg-exclude', 'Fuori dalle categorie preferite', funnel.azienda.non_interessante]], funnel.archive.companies);
-  area.append(el('p', 'Anche queste tre quote sono complementari, e nessuna delle due partizioni può cancellare l’altra.', 'muted'));
-  legend('3. Tier: come i due assi si compongono', [
-    ['seg-keep', 'Tier A · azienda sì · ruolo sì', funnel.tier.A],
-    ['seg-in', 'Tier B · attesa · azienda sì, nessun ruolo ora', funnel.tier['B-attesa']],
-    ['seg-review', 'Tier B · esperienza · azienda no, ruolo che vale da solo', funnel.tier['B-esperienza']],
-    ['seg-pending', 'Evidenza mancante', funnel.tier['evidenza-mancante']],
-    ['seg-exclude', 'Scarto', funnel.tier.scarto]], funnel.archive.companies);
-
-  area.append(el('h4', 'Chi ha deciso l’asse ruolo'));
-  const judged = el('ul', undefined, 'funnel-companies');
-  for (const [key, label] of [['regex', 'Regex sui titoli, gratis'], ['llm_locale', 'Modello locale, gratis'],
-                              ['llm_remoto', 'Modello remoto, a pagamento'], ['nessuno', 'Nessun giudice: ancora aperti']]) {
-    if (!funnel.giudici?.[key]) continue;
-    const item = el('li');
-    item.append(el('strong', n(funnel.giudici[key])), el('span', ' ' + label));
-    judged.append(item);
-  }
-  area.append(judged);
-  area.append(el('p', 'Ogni giudice lavora solo su ciò che il precedente non ha saputo decidere: più regex e liste tagliano, meno lavoro vede l’API.', 'muted'));
-  area.append(el('p', funnel.basis, 'muted'));
 }
 
 /** Read the two live progress shapes: companies for Qwen, single records for the descriptions. */
@@ -1108,15 +1125,6 @@ function etaValue(detail, startedAt) {
   if (!(seconds > 0)) return '';
   const hours = Math.floor(seconds / 3600), minutes = Math.round((seconds % 3600) / 60);
   return hours ? `${hours} h ${minutes} min` : seconds < 90 ? 'meno di due minuti' : `${minutes} min`;
-}
-
-/** Keep the card itself to one glance: how far along, and how long is left. */
-function liveText(detail, startedAt) {
-  const n = value => Number(value || 0).toLocaleString('it-IT');
-  const step = progressOf(detail);
-  const eta = etaValue(detail, startedAt);
-  return [step ? `${n(step.done)} / ${n(step.total)} · ${step.label.toLowerCase()}` : '',
-    eta ? `Tempo rimasto stimato: ${eta} (stima grezza)` : ''].filter(Boolean).join('\n');
 }
 
 /** Show run-only consumption as labelled facts; cached records never masquerade as paid requests. */
@@ -1144,16 +1152,34 @@ function pipelineProgress(detail, startedAt) {
     if (c.deferred_companies) rows.push(['Aziende oltre i limiti', n(c.deferred_companies), 'nessuna chiamata: da riprendere']);
   }
   const eta = etaValue(detail, startedAt);
-  if (eta) rows.push(['Tempo rimasto', eta, 'stima grezza sul ritmo finora osservato']);
+
+  const panel = el('div', undefined, 'run-progress');
+  const progress = progressOf(detail);
+  if (progress) {
+    panel.append(pipelineShares(progress.label, progress.total, [
+      ['seg-in', 'Elaborati', progress.done], ['seg-pending', 'Rimanenti', Math.max(0, progress.total - progress.done)]]));
+    rows = rows.filter(([label]) => label !== progress.label);
+  }
+  if (modern || b) {
+    const outcomes = [['seg-keep', 'Da tenere', modern ? c.kept_jobs : b.keep],
+      ['seg-review', 'Da verificare', modern ? c.review_jobs : b.review],
+      ['seg-exclude', 'Esclusioni proposte', modern ? c.remote_excluded : b.exclude]];
+    panel.append(pipelineShares('Nuovi esiti · annunci', outcomes.reduce((sum, part) => sum + (part[2] || 0), 0), outcomes));
+    rows = rows.filter(([label]) => label !== 'Nuovi esiti');
+  }
   const list = el('dl', undefined, 'run-facts');
-  if (detail.company_name) list.append(el('dt', 'Azienda corrente'), el('dd', detail.company_name));
+  if (detail.company_name) panel.append(el('p', detail.company_name));
+  if (eta) panel.append(el('p', 'Tempo rimasto stimato: ' + eta, 'muted'));
   for (const [label, value, hint] of rows) {
     list.append(el('dt', label));
     const cell = el('dd');
     cell.append(el('strong', String(value)), el('small', hint));
     list.append(cell);
   }
-  return list;
+  const details = el('details');
+  details.append(el('summary', 'Consumi e dettagli'), list);
+  panel.append(details);
+  return panel;
 }
 
 /** Keep the active run visible and refresh the dialog without discarding edited parameters. */
@@ -1164,9 +1190,9 @@ function renderPipelineActivity() {
   if (active) {
     const detail = active.detail;
     area.append(el('strong', 'In esecuzione: ' + (pipelineData.controls.actions[detail.phase || active.step]?.label || 'Sequenza')));
-    area.append(el('p', 'Progresso e consumi di questa esecuzione. Separati dal funnel complessivo sopra.'));
+
     if (progressOf(detail)) area.append(pipelineProgress(detail, active.started_at));
-    area.append(el('p', 'I risultati riutilizzati non consumano token. Non sommare cache, esclusioni e aziende: sono contatori diversi.', 'muted'));
+
     area.append(el('small', 'Avviato ' + pipelineDate(active.started_at) + '. Mantieni attivo il server della web app.'));
     if (!pipelineData.controls.supports_stop) area.append(el('p', 'Il comando Interrompi richiede il riavvio del server dopo questa esecuzione.'));
   } else if (pipelineData.collection_running) area.append(el('p', 'Raccolta avviata dalla pagina Fonti in corso. Attendi prima di avviare un altro passaggio.'));
@@ -1212,7 +1238,7 @@ function pipelineResult(run) {
 /** Build native controls from server-provided limits, with an explicit paid mode. */
 function pipelineField(key, scope, step) {
   const data = pipelineData.controls;
-  const labels = {source: 'Fonte', limit: 'Numero massimo di annunci', workers: step === 'remote' ? 'Chiamate API contemporanee' : 'Recuperi contemporanei', all: 'Tutte le descrizioni recuperabili', refresh_stale: 'Aggiorna anche descrizioni scadute', force: 'Riprova gli errori, rispettando i blocchi della fonte', company_limit: 'Numero di aziende del campione', all_companies: "Tutte le aziende dell'archivio", mode: 'Modalità LLM remoto'};
+  const labels = {source: 'Fonte', limit: 'Numero massimo di annunci', workers: step === 'remote' ? 'Chiamate API contemporanee' : 'Recuperi contemporanei', all: 'Tutte le descrizioni recuperabili', refresh_stale: 'Aggiorna anche descrizioni scadute', force: 'Riprova gli errori, rispettando i blocchi della fonte', company_limit: 'Numero di aziende del campione', all_companies: "Tutte le aziende dell'archivio", mode: 'Modalità LLM remoto', recategorize: 'Rivedi anche le aziende già categorizzate'};
   const label = el('label', labels[key]);
   let input;
   if (key === 'source' || key === 'mode') {
@@ -1221,7 +1247,7 @@ function pipelineField(key, scope, step) {
     for (const [value, text] of choices) { const option = el('option', text); option.value = value; input.append(option); }
   } else {
     input = el('input');
-    input.type = ['all', 'refresh_stale', 'force', 'all_companies', 'continue_after'].includes(key) ? 'checkbox' : 'number';
+    input.type = ['all', 'refresh_stale', 'force', 'all_companies', 'continue_after', 'recategorize'].includes(key) ? 'checkbox' : 'number';
     if (input.type === 'number') {
       const scale = key === 'workers' ? (step === 'remote' ? 'remote_workers' : 'workers') : key === 'company_limit' ? 'remote' : step;
       input.min = '1'; input.max = String(data.limits[scale]);

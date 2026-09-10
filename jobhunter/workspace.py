@@ -100,6 +100,9 @@ class Archive:
         CREATE TABLE IF NOT EXISTS description_attempts(opportunity_id TEXT PRIMARY KEY REFERENCES opportunities(id) ON DELETE CASCADE,
           status TEXT NOT NULL, checked_at TEXT NOT NULL, last_success_at TEXT, retry_after TEXT,
           parser_version TEXT NOT NULL, source_url TEXT NOT NULL, error TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS company_profile_attempts(company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+          strategy TEXT NOT NULL, status TEXT NOT NULL, url TEXT NOT NULL, found TEXT NOT NULL,
+          detail TEXT NOT NULL, checked_at TEXT NOT NULL, retry_after TEXT, PRIMARY KEY(company_id,strategy));
         """)
         if 'decision' not in {r[1] for r in self.db.execute('PRAGMA table_info(search_eligibility)')}:
             self.db.execute('ALTER TABLE search_eligibility ADD COLUMN decision TEXT')
@@ -214,6 +217,24 @@ class Archive:
         logger.info("Saved recovered description for %s", oid)
         return True
 
+    def record_profile_attempt(self, cid, strategy, status, url='', found='', detail='', retry_after=None):
+        """Tenere traccia di ogni strada provata su un'azienda, non solo di quella che ha funzionato.
+
+        Una riga per azienda e per strategia, sovrascritta a ogni nuovo tentativo: dice cosa
+        abbiamo provato, quando, com'e' andata e che testo grezzo ne e' uscito. Senza, una
+        descrizione mancante non si distingue da una mai cercata.
+        """
+        self.db.execute("""INSERT INTO company_profile_attempts VALUES(?,?,?,?,?,?,?,?)
+            ON CONFLICT(company_id,strategy) DO UPDATE SET status=excluded.status,url=excluded.url,
+            found=excluded.found,detail=excluded.detail,checked_at=excluded.checked_at,retry_after=excluded.retry_after""",
+                        (cid, strategy, status, url, found, detail, now(), retry_after))
+
+    def profile_attempts(self, cid):
+        """Le strade provate su un'azienda, dalla piu' recente."""
+        return [dict(r) for r in self.db.execute(
+            'SELECT strategy,status,url,detail,checked_at,retry_after,length(found) found_chars '
+            'FROM company_profile_attempts WHERE company_id=? ORDER BY checked_at DESC', (cid,))]
+
     def record_description_attempt(self, oid, status, source_url, error="", retry_after=None, observed=None, parser_version="source"):
         """Remember fetch outcomes without claiming that a missing page means a closed position."""
         stamp = observed or now()
@@ -311,8 +332,15 @@ class Archive:
             item.update(self.category(item["id"]))
             state = assessment[item["id"]]
             item.update(tier=state["tier"], tier_label=tiers.label(state["tier"]), company_verdict=state["azienda"])
-            jobs = [json.loads(r[0]) for r in self.db.execute("SELECT o.data FROM opportunities o WHERE o.company_id=?" + role_where, [item["id"], *role_args])]
-            if role_conditions:
+            rows = self.db.execute("SELECT o.id,o.data FROM opportunities o WHERE o.company_id=?" + role_where, [item["id"], *role_args]).fetchall()
+            # Chiedere un tier e vedersi elencare i ruoli scartati dell'azienda e' rumore: il filtro
+            # sceglie le aziende, ma i titoli mostrati devono essere quelli che quel tier riguarda.
+            # Eccezione: «B-attesa» significa gia' «nessun ruolo adatto ora». Nascondere gli scartati
+            # lascerebbe la scheda vuota proprio dove sono l'unica cosa che l'azienda ha.
+            hide_dropped = bool(tier) and tier != 'B-attesa'
+            jobs = [json.loads(r["data"]) for r in rows
+                    if not hide_dropped or state["ruoli"].get(r["id"], {}).get("verdetto") != tiers.DROP]
+            if role_conditions or hide_dropped:
                 item["archive_opportunity_count"] = item["opportunity_count"]
                 item["opportunity_count"] = len(jobs)
             item["locations"] = sorted({x for j in jobs for x in j["locations"]})

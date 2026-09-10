@@ -245,15 +245,63 @@ td { overflow-wrap: anywhere; }
 /* Company detail */
 .detail-meta { overflow-wrap: anywhere; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
-.opportunity {
-  padding: 18px;
-  margin: 14px 0;
+.detail-heading { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.detail-heading h2 { margin: 0; }
+
+/* Two axis verdicts, colored by the tier they compose. */
+.axes {
+  margin: 16px 0;
+  padding: 14px 16px;
+  background: var(--surface-sunken);
   border: 1px solid var(--line-soft);
-  border-left: 3px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.axes[data-tier="A"] { border-left-color: var(--ok); }
+.axes[data-tier="B-attesa"], .axes[data-tier="B-esperienza"] { border-left-color: var(--brand); }
+.axes[data-tier="evidenza-mancante"] { border-left-color: var(--warn); }
+.axes[data-tier="scarto"] { border-left-color: var(--bad); }
+.axes h3 { margin: 0 0 10px; }
+.axes p { margin: 10px 0 0; font-size: .82rem; }
+.axis-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.axis-list li { display: grid; grid-template-columns: 7rem auto 1fr; align-items: center; gap: 8px; }
+.axis-list strong { color: var(--ink-soft); font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; }
+.axis-list small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 900px) { .axis-list li { grid-template-columns: 1fr; gap: 2px; } }
+
+/* Facts as aligned rows: four loose paragraphs read worse than four labelled lines. */
+.detail-facts { display: grid; grid-template-columns: 6.5rem 1fr; gap: 6px 14px; margin: 16px 0; font-size: .9rem; }
+.detail-facts dt { color: var(--ink-soft); font-weight: 600; }
+.detail-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.detail-facts dd small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink-faint); font-size: .8rem; }
+.decide > summary { font-size: .9rem; }
+
+/* Roles: an index first, one open body at a time. */
+.roles-heading { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 24px 0 12px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.roles-heading h3 { margin: 0; }
+.opportunity {
+  margin: 10px 0;
+  border: 1px solid var(--line-soft);
+  border-left: 4px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
 }
-.opportunity h3 { margin: 0 0 8px; }
+.opportunity[data-verdict="tieni"] { border-left-color: var(--ok); }
+.opportunity[data-verdict="non_so"] { border-left-color: var(--warn); }
+.opportunity[data-verdict="scarta"] { border-left-color: var(--bad); opacity: .8; }
+.opportunity[open] { opacity: 1; box-shadow: var(--shadow); }
+.opportunity > summary { display: grid; grid-template-columns: 14px 1fr; gap: 2px 8px; padding: 12px 14px; color: var(--ink); font-weight: 400; list-style: none; }
+.opportunity > summary::-webkit-details-marker { display: none; }
+.opportunity > summary::before { content: "▸"; grid-row: 1 / span 2; color: var(--ink-faint); transition: transform .12s ease; }
+.opportunity[open] > summary::before { transform: rotate(90deg); }
+.opportunity > summary:hover { background: var(--brand-tint); border-radius: var(--radius-sm); }
+.opportunity > summary > small { grid-column: 2; }
+.job-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.job-title { font-weight: 650; }
+.opportunity-body { padding: 0 14px 14px; border-top: 1px solid var(--line-soft); }
+.job-links { display: flex; gap: 14px; flex-wrap: wrap; font-size: .85rem; }
+.job-actions { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.job-actions select { max-width: 16rem; }
 .opportunity p { margin: 6px 0; }
 .opportunity dl { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr; gap: 2px 14px; margin: 12px 0; font-size: .88rem; }
 .opportunity dt { color: var(--ink-soft); font-weight: 600; }
@@ -402,7 +450,6 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 #pipeline-active p { margin: 6px 0; }
 .pipeline-history { display: block; text-align: left; margin: 8px 0; max-width: 100%; }
 .pipeline-stop { margin-top: .5rem; width: 100%; }
-.pipeline-live-count { white-space: pre-line; line-height: 1.6; font-size: .85rem; }
 .pipeline-card progress { width: 100%; height: .7rem; accent-color: var(--brand); }
 .pipeline-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .pipeline-heading h3 { margin: 0; font-size: 1.1rem; }
@@ -440,9 +487,9 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 #pipeline-funnel h4 { margin: 1.4rem 0 .5rem; font-size: .95rem; }
 #pipeline-funnel p { max-width: 80ch; }
 .funnel-chart { display: block; width: 100%; height: auto; overflow: visible; }
-.funnel-chart .stage-label { fill: var(--ink); font-size: 13px; font-weight: 700; }
-.funnel-chart .stage-total { fill: var(--ink-soft); font-size: 12px; }
-.funnel-chart .seg-label { fill: #fff; font-size: 12px; font-weight: 650; }
+.funnel-chart .stage-label { fill: var(--ink); font-size: 17px; font-weight: 700; }
+.funnel-chart .stage-total { fill: var(--ink-soft); font-size: 15px; }
+.funnel-chart .seg-label { fill: #fff; font-size: 14px; font-weight: 650; }
 .funnel-chart .seg-label.dark { fill: var(--ink); }
 .funnel-chart .flow { fill: var(--brand); opacity: .18; }
 .funnel-chart .track, .card-bar .track { fill: var(--surface-sunken); }
@@ -516,11 +563,9 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 }
 
 /* Company detail: separate the decision form and the role list from the company facts. */
-#detail > form { display: grid; gap: 12px; padding: 16px; margin: 16px 0 12px; background: var(--surface-sunken); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); }
-#detail > form label { gap: 4px; }
+.decide form { display: grid; gap: 12px; padding: 16px; margin: 16px 0 12px; background: var(--surface-sunken); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); }
+.decide form label { gap: 4px; }
 #detail > h3 { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
-#detail .opportunity h3 { margin-top: 0; padding-top: 0; border-top: 0; }
-#detail > .badge { margin-bottom: 8px; }
 #detail select, #detail input, #detail textarea { width: 100%; }
 
 /* Pipeline cards: the same share language as the funnel, at card scale. */
@@ -538,3 +583,28 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 .run-facts dd strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .run-facts dd small { color: var(--ink-faint); }
 @media (max-width: 640px) { .run-facts { grid-template-columns: 1fr; gap: 2px; } .run-facts dt { margin-top: .5rem; } }
+
+/* One chart and one labelled count per share, shared by overview, steps and runs. */
+.pipeline-shares { min-width: 0; margin: 18px 0; }
+.share-heading { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.share-heading > span { font-variant-numeric: tabular-nums; color: var(--ink-soft); white-space: nowrap; flex: 0 0 auto; }
+.pipeline-shares > .funnel-chart { height: 24px; background: var(--surface-sunken); border-radius: 4px; overflow: hidden; }
+.pipeline-shares .funnel-legend { margin: 8px 0 0; gap: 8px 20px; }
+.pipeline-shares .funnel-legend li { align-items: center; }
+.pipeline-shares .count { white-space: nowrap; }
+.pipeline-measure .pipeline-shares { margin: 10px 0; }
+.pipeline-measure .funnel-legend { display: grid; gap: 6px; }
+.pipeline-measure .funnel-legend li { display: grid; grid-template-columns: 12px 1fr auto; align-items: start; }
+.pipeline-measure .funnel-chart { height: 14px; }
+.run-progress { max-width: 900px; }
+.run-progress > details { margin-top: 16px; }
+@media (max-width: 640px) {
+  .pipeline-shares .funnel-legend { display: grid; }
+  .pipeline-shares .funnel-legend li { display: grid; grid-template-columns: 12px 1fr auto; }
+}
+
+/* Il percorso: sotto una certa larghezza il disegno scorre invece di diventare illeggibile. */
+.journey-scroll { overflow-x: auto; margin: 12px 0 20px; }
+.journey-scroll .funnel-chart { min-width: 640px; }
+#pipeline-journey .pipeline-shares { margin: 22px 0 0; }
+#pipeline-journey > p { margin: 6px 0 0; font-size: .85rem; }

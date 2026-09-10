@@ -11,6 +11,12 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 # L'annuncio contiene solo il ruolo, l'azienda solo l'azienda: questi campi arrivano dalla fonte,
 # risolvono o aggiornano la riga azienda e non vengono salvati sul record (docs/data-model.md).
 COMPANY_FIELDS = ("company_name", "company_description", "sectors", "website_url")
+# Gli alias non sono nostri: sono i nomi che JobSpy e le colonne del foglio ClimateTechList
+# usano davvero. Rinominarli qui significa perdere il campo alla prossima importazione.
+# I nomi senza prefisso sono invece i nostri, prodotti da `postings()` e dall'adattatore browser.
+# Verificato il 10 settembre 2026 su 399 file di raccolta: ogni alias qui sotto compare davvero
+# nei dati grezzi. `Organization Name`, `company_info` e `company_vertical` non comparivano mai
+# e sono stati tolti (docs/dati-aziendali-per-fonte.md).
 
 
 def clean(value):
@@ -52,7 +58,7 @@ def normalize(row, source):
     """Map a source row to an opportunity without flattening its relationships."""
     if not isinstance(row, dict):
         raise ValueError("Each record must be an object")
-    name = clean(row.get("company_name") or row.get("company") or row.get("Company") or row.get("Organization Name"))
+    name = clean(row.get("company_name") or row.get("company") or row.get("Company"))
     title = clean(row.get("title") or row.get("Position Title") or row.get("Job Title"))
     link = url(row.get("source_url") or row.get("original_url") or row.get("job_url") or row.get("url") or row.get("Apply to Job") or row.get("Job Posting URL"))
     if not name or not title or not link:
@@ -69,8 +75,8 @@ def normalize(row, source):
         "application_url": url(row.get("application_url") or row.get("job_url_direct")) or link,
         "website_url": url(row.get("website_url") or row.get("company_url_direct")),
         "company_profile_url": url(row.get("company_url") or row.get("ℹ️ Company info")),
-        "company_description": clean(row.get("company_description") or row.get("company_info")),
-        "sectors": clean(row.get("sectors") or row.get("company_vertical") or row.get("Company Vertical") or row.get("company_industry")),
+        "company_description": clean(row.get("company_description")),
+        "sectors": clean(row.get("sectors") or row.get("Company Vertical") or row.get("company_industry")),
         "locations": list(dict.fromkeys(filter(None, map(clean, locations)))),
         "remote_policy": clean(row.get("remote_policy") or row.get("work_model") or row.get("Remote")) or ("remote" if remote is True or str(remote).lower() == "true" else None),
         "employment_type": clean(row.get("employment_type") or row.get("job_type") or row.get("Commitment (Beta)")) or None,

@@ -1,15 +1,159 @@
 {
-  "Energia": ["clean energy", "renewable", "solar", "wind power", "energy storage", "battery", "batteries", "utilities", "oil and gas", "energia", "power generation"],
-  "Mobilità e trasporti": ["mobility", "transportation", "automotive", "motor vehicle", "logistics", "railroad"],
-  "Aerospazio": ["aerospace", "aviation", "space", "satellite", "aircraft", "avionics", "spaceflight"],
-  "Agricoltura e alimentazione": ["food", "agriculture", "farming", "agtech", "food & ag", "agricoltura"],
-  "Ambiente e clima": ["climate tech", "environmental", "carbon removal", "carbon capture", "waste", "recycling", "efficiency & reduction", "sustainability", "water"],
-  "Industria e materiali": ["industrials", "industrial", "manufacturing", "mining", "metals", "materials", "chemicals"],
-  "Edilizia e immobili": ["built environment", "construction", "real estate", "architecture", "building"],
-  "Software e tecnologia": ["software", "it services", "information technology", "technology, information", "internet", "semiconductor"],
-  "Finanza e assicurazioni": ["financial", "financing", "fintech", "banking", "insurance", "investment"],
-  "Salute e biotecnologie": ["health", "medical", "pharmaceutical", "biotechnology", "hospital"],
-  "Ricerca e formazione": ["research", "education", "university", "universities", "schools", "training"],
-  "Consulenza e servizi": ["consulting", "business services", "engineering services", "staffing", "recruiting", "legal services"],
-  "Commercio e beni di consumo": ["retail", "wholesale", "consumer goods", "apparel", "e-commerce"]
+  "Energia": [
+    "clean energy",
+    "renewable",
+    "solar",
+    "wind power",
+    "energy storage",
+    "battery",
+    "batteries",
+    "utilities",
+    "oil and gas",
+    "energia",
+    "power generation"
+  ],
+  "Mobilità e trasporti": [
+    "mobility",
+    "transportation",
+    "automotive",
+    "motor vehicle",
+    "logistics",
+    "railroad"
+  ],
+  "Aerospazio": [
+    "aerospace",
+    "aviation",
+    "space",
+    "satellite",
+    "aircraft",
+    "avionics",
+    "spaceflight"
+  ],
+  "Agricoltura e alimentazione": [
+    "food",
+    "agriculture",
+    "farming",
+    "agtech",
+    "food & ag",
+    "agricoltura"
+  ],
+  "Ambiente e clima": [
+    "climate tech",
+    "environmental",
+    "carbon removal",
+    "carbon capture",
+    "waste",
+    "recycling",
+    "efficiency & reduction",
+    "sustainability",
+    "water"
+  ],
+  "Industria e materiali": [
+    "industrials",
+    "industrial",
+    "manufacturing",
+    "mining",
+    "metals",
+    "materials",
+    "chemicals"
+  ],
+  "Edilizia e immobili": [
+    "built environment",
+    "construction",
+    "real estate",
+    "architecture",
+    "building"
+  ],
+  "Software e tecnologia": [
+    "software",
+    "it services",
+    "information technology",
+    "technology, information",
+    "internet",
+    "semiconductor"
+  ],
+  "Finanza e assicurazioni": [
+    "financial",
+    "financing",
+    "fintech",
+    "banking",
+    "insurance",
+    "investment"
+  ],
+  "Salute e biotecnologie": [
+    "health",
+    "medical",
+    "pharmaceutical",
+    "biotechnology",
+    "hospital"
+  ],
+  "Ricerca e formazione": [
+    "research",
+    "education",
+    "university",
+    "universities",
+    "schools",
+    "training"
+  ],
+  "Consulenza e servizi": [
+    "consulting",
+    "business services",
+    "engineering services",
+    "staffing",
+    "recruiting",
+    "legal services"
+  ],
+  "Commercio e beni di consumo": [
+    "retail",
+    "wholesale",
+    "consumer goods",
+    "apparel",
+    "e-commerce"
+  ],
+  "Ospitalità e turismo": [
+    "hospitality",
+    "hotel",
+    "hotels",
+    "hotel management",
+    "resort",
+    "restaurant",
+    "catering",
+    "tourism",
+    "travel",
+    "leisure",
+    "ospitalità",
+    "alberghiero",
+    "turismo",
+    "ristorazione"
+  ],
+  "Pubblica amministrazione": [
+    "public sector",
+    "government",
+    "ministry",
+    "municipality",
+    "city council",
+    "local authority",
+    "civil service",
+    "public administration",
+    "regulator",
+    "agency of the",
+    "kommun",
+    "gemeente",
+    "comune di",
+    "pubblica amministrazione",
+    "ente pubblico"
+  ],
+  "Difesa e sicurezza": [
+    "defence",
+    "defense",
+    "military",
+    "armed forces",
+    "homeland security",
+    "counter-ied",
+    "electronic warfare",
+    "security services",
+    "surveillance",
+    "difesa",
+    "sicurezza nazionale"
+  ]
 }

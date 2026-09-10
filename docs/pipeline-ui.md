@@ -26,7 +26,7 @@ Le esclusioni Qwen governano la spesa di arricchimento ma restano proposte nella
 
 ## Stato, persistenza e interruzioni
 
-Ogni card dice quanto lavoro resta, non solo un rapporto: la prima riga conta ciò che è già fatto, la seconda ciò che manca e perché conta, la terza dichiara su quale insieme è calcolato. Una barra riprende i colori del funnel. I passaggi senza un totale conoscibile, come la raccolta e la coda, non dichiarano una copertura parziale: sono su richiesta. Durante un'esecuzione i contatori compaiono come tabella di fatti, con la stima del tempo rimasto; a run finita la stima sparisce.
+Il funnel mostra una barra per asse e per tier, con etichette e conteggi direttamente sotto ogni barra. Anche le quote nulle o molto piccole mantengono un conteggio leggibile. Le card usano lo stesso formato per lavoro completato e rimanente. Il pannello attivo mostra avanzamento e nuovi esiti; consumi e contatori aggiuntivi sono in «Consumi e dettagli». L'origine dei giudizi è espandibile nel funnel. I conteggi dell'archivio e quelli della singola esecuzione restano distinti.
 
 La pagina aggiorna lo stato ogni trenta secondi mentre è aperta. La frequenza limita il lavoro del monitor sull'intero archivio; il pulsante Aggiorna stato permette una lettura manuale. Le esecuzioni vengono salvate in SQLite nella tabella `pipeline_jobs`: parametri, orario, stato, progressi, risultato e impronta degli input. Chiudere la scheda del browser non ferma il worker. Il server deve rimanere attivo.
 

@@ -99,7 +99,7 @@ class WorkflowTests(unittest.TestCase):
         cid = self.archive.search(category="Energia")["items"][0]["id"]
         self.assertEqual(self.archive.show(cid)["category_method"], "rules")
         self.archive.categorize(cid, "Industria e materiali", "Company manufactures components")
-        self.archive.ingest([dict(self.rows[1], company_vertical="Clean Energy")], "airtable")
+        self.archive.ingest([dict(self.rows[1], **{"Company Vertical": "Clean Energy"})], "airtable")
         self.assertEqual(self.archive.show(cid)["category"], "Industria e materiali")
         self.assertEqual(self.archive.search(category="Energia")["total"], 0)
         self.archive.ingest([dict(self.rows[0], company_name="Unknown", title="Solar engineer", original_url="https://unknown.org/1")], "other")

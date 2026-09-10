@@ -33,8 +33,10 @@
     },
     "local": {
       "label": "Giudizi locali con Ollama",
-      "note": "Il modello locale categorizza le aziende con evidenza e giudica i ruoli che il regex non ha saputo decidere. Nessun costo API; i limiti per passata stanno in config/local_llm.json.",
-      "fields": []
+      "note": "Il modello locale categorizza le aziende con evidenza e giudica i ruoli che il regex non ha saputo decidere. Nessun costo API; i limiti per passata stanno in config/local_llm.json. Senza la casella, un'azienda gia' categorizzata non viene piu' riletta, nemmeno quando arrivano le sue descrizioni.",
+      "fields": [
+        "recategorize"
+      ]
     },
     "filters": {
       "label": "Aggiorna filtri locali",

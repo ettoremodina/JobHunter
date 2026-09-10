@@ -117,11 +117,12 @@
       </section>
       <section id="pipeline-view" hidden>
         <div class="toolbar"><h2>Pipeline dell'archivio</h2><button id="refresh-pipeline">Aggiorna stato</button></div>
-        <p>Il funnel dice dove sono finiti gli annunci. Le card sotto dicono quanto lavoro resta a ogni passaggio: il numero in alto è ciò che è già fatto, quello sotto ciò che manca. Le frecce indicano l'ordine; apri una card per i parametri e l'avvio.</p>
+        <p>Apri un passaggio per impostare i parametri e avviarlo.</p>
         <p id="pipeline-status" role="status" aria-live="polite"></p>
         <section id="pipeline-funnel" aria-label="Funnel degli annunci"></section>
         <div id="pipeline-active" role="status" aria-live="polite"></div>
         <ol id="pipeline-steps" aria-label="Fasi della pipeline"></ol>
+        <details id="pipeline-journey-box"><summary>Il percorso degli annunci, passaggio per passaggio</summary><div id="pipeline-journey"></div></details>
         <details><summary>Workflow esterni e copertura</summary><div id="pipeline-workflow"></div></details>
         <details class="queue-help"><summary>Ultime esecuzioni registrate</summary><div id="pipeline-runs"></div></details>
       </section>

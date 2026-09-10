@@ -82,6 +82,7 @@ def parser():
     enrich.add_argument("--model")
     enrich.add_argument("--force", action="store_true")
     enrich.add_argument("--missing-only", action="store_true", help="Only uncategorized companies with company-level evidence")
+    enrich.add_argument("--id", action="append", dest="ids", help="Limit to one company; repeatable")
     remote = sub.add_parser("llm", help="Preview or explicitly execute remote selection and concise summaries")
     from jobhunter.remote_llm import TASKS
     remote.add_argument("task", choices=TASKS)
@@ -89,6 +90,11 @@ def parser():
     remote.add_argument("--record-id", help="Opportunity ID for jobs, company ID for company summary")
     remote.add_argument("--llm-config", help="Remote model configuration JSON")
     remote.add_argument("--execute", action="store_true", help="Send selected source text to the configured paid API")
+    profile = sub.add_parser("company-profile", help="Recover company sector, website and description from public pages")
+    profile.add_argument("--limit", type=int)
+    profile.add_argument("--id", action="append", dest="ids", help="Limit to one company; repeatable")
+    profile.add_argument("--force", action="store_true", help="Overwrite sector and description already saved")
+    profile.add_argument("--no-about", action="store_true", help="Never follow an «about us» link: one request per company")
     classify = sub.add_parser("categorize", help="Refresh automatic categories, or assign one company from chat")
     classify.add_argument("id", nargs="?")
     classify.add_argument("--category")
@@ -146,9 +152,12 @@ def execute(args, archive, cfg):
     if command == "shortlist":
         from jobhunter.selection import shortlist
         return shortlist(archive, args.limit, args.offset)
+    if command == "company-profile":
+        from jobhunter.company_profile import recover
+        return recover(archive, args.limit, args.ids, force=args.force, follow_about=not args.no_about)
     if command == "enrich":
         from jobhunter.enrichment import run
-        return run(archive, args.task, args.limit, args.force, args.model, args.missing_only)
+        return run(archive, args.task, args.limit, args.force, args.model, args.missing_only, company_ids=args.ids)
     if command in ("init", "stats"):
         return archive.stats()
     if command == "sources":
