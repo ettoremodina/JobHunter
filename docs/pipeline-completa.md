@@ -56,15 +56,12 @@ flowchart TD
 
     U1 --> J{"c'è una descrizione<br/>da leggere?<br/><i>selection.judgeable</i>"}
     J -->|"no"| W["FERMO<br/>nessun modello viene chiamato"]
-    J -->|"sì"| G2
+    J -->|"sì"| G3
 
-    G2{{"4 · GIUDICE 2 · MODELLO LOCALE<br/>qwen3.5:4b su Ollama · gratis<br/>→ <b>enrichments</b> local:selection"}}
-    G2 -->|"keep / exclude"| K2["verdetto, con citazione letterale"]
-    G2 -->|"review"| U2["ancora <b>non so</b>"]
-
-    U2 --> G3{{"5 · GIUDICE 3 · QWEN REMOTO<br/>qwen3.7-flash via API · a pagamento<br/>una chiamata per <b>azienda</b><br/>→ <b>enrichments</b> remote:selection"}}
+    G3{{"4 · GIUDICE 2 · QWEN REMOTO<br/>qwen3.7-flash via API<br/>una chiamata per <b>azienda</b><br/>→ <b>enrichments</b> remote:selection"}}
     G3 --> K3["verdetto finale"]
     G3 -.->|"solo Tier A e B"| C1["scheda annuncio<br/>remote:job-summary"]
+    G3 -.-> C2["categoria e scheda azienda<br/>remote:company-summary"]
 ```
 
 ### Cosa fa ogni passaggio
@@ -99,18 +96,17 @@ cambia il `content_hash`, il verdetto si rifà da solo.
 modello solo il titolo produce sempre `review`: il costo di una chiamata per nessuna
 informazione nuova. Senza descrizione, l'annuncio resta fermo e in attesa — non respinto.
 
-**4 · Giudice 2 · modello locale.** Vede solo i «non so» del regex. Riceve titolo e
-descrizione, nient'altro; il profilo del candidato viaggia nel messaggio di sistema, che è
-identico fra una chiamata e l'altra, così Ollama riusa la cache di quel prefisso. Deve
-citare una frase presa parola per parola dal testo: senza, il verdetto viene rifiutato.
-
-**5 · Giudice 3 · Qwen remoto.** Vede quello che nemmeno il locale ha saputo decidere.
+**4 · Giudice 2 · Qwen remoto.** Vede i «non so» del regex che hanno un testo da leggere.
 **Una sola chiamata per azienda**, che porta insieme: i giudizi dei ruoli ancora aperti, le
-schede degli annunci compatibili di Tier A e B, e la scheda aziendale. Il profilo e le
-etichette stanno nel messaggio di sistema perché il provider possa metterlo in cache.
+schede degli annunci compatibili di Tier A e B, e la scheda aziendale con la sua categoria.
+Il profilo, le etichette e il vocabolario delle categorie stanno nel messaggio di sistema
+perché il provider possa metterlo in cache.
 
-La cascata è la regola: **vince il primo giudice che sa decidere**, gli altri non lo
-rivedono. Un titolo già accettato dal regex non si paga mai.
+Fra i due c'era un terzo giudice, un modello su Ollama, **rimosso il 10 settembre 2026**:
+decideva 0 ruoli su 4.918 e non toglieva lavoro al remoto (`DESIGN.md` §3).
+
+La cascata è la regola: **vince il primo giudice che sa decidere**, l'altro non lo rivede.
+Un titolo già accettato dal regex non si paga mai.
 
 ---
 
@@ -138,9 +134,8 @@ flowchart TD
     RW["l'evidenza entra nella chiamata remota<br/>una richiesta per azienda<br/>→ <b>enrichments</b> remote:company-summary"]
 
     RW --> CAT{{"CATEGORIA"}}
-    CAT --> C1["regole su settore, poi descrizione<br/><i>company_axis.categorize</i> · method=rules"]
-    C1 -->|"nessuna corrispondenza"| C2["modello locale<br/>method=local_llm"]
-    C2 -->|"ancora niente"| C3["Qwen remoto<br/>method=remote"]
+    CAT --> C1["regole a parole chiave su settore e descrizione<br/><i>company_axis.categorize</i> · method=rules"]
+    C1 -->|"nessuna corrispondenza"| C3["Qwen remoto, nella stessa chiamata<br/>method=remote"]
     CAT -.->|"sempre vincente"| C4["decisione tua da chat<br/>method=chat"]
 
     C1 --> V
@@ -156,8 +151,9 @@ classificare», il verdetto è `evidenza_mancante` — che è una coda di lavoro
 rifiuto.
 
 **Chi ha scritto la categoria conta.** Il campo `categories.method` dice se è arrivata
-dalle regole, dal modello locale, dal remoto o da te in chat. Le regole non riscrivono mai
-il giudizio di un modello, e niente riscrive mai una tua decisione da chat.
+dalle regole, dal modello remoto o da te in chat (`local_llm` resta sulle righe scritte dal
+giudice locale prima della sua rimozione). Le regole non riscrivono mai il giudizio di un
+modello, e niente riscrive mai una tua decisione da chat.
 
 ---
 
@@ -195,7 +191,7 @@ basta un ruolo compatibile qualsiasi. Per un'azienda che non interessa serve un 
 | `company_profile_attempts` | esito di **ogni strategia** provata per azienda, col testo grezzo | `company_profile.recover` |
 | `search_eligibility` | esito del regex, invalidato da contenuto e regole | cache pigra, a ogni lettura |
 | `categories` | categoria, **metodo** e motivazione | regole, modelli, chat |
-| `enrichments` | ogni risposta di un modello, con impronta dell'input e nome del modello | tutti i passaggi LLM |
+| `enrichments` | ogni risposta del modello remoto, con impronta dell'input e nome del modello | il passaggio remoto |
 | `personal_queue` | le aziende pronte da rivedere adesso | `selection.queue` |
 | `feedback` | le tue decisioni, annullabili | interfaccia |
 | `pipeline_jobs`, `runs` | ogni esecuzione, con parametri ed esito | dashboard e CLI |
@@ -221,7 +217,7 @@ Per la traccia grezza:
 |---|---|
 | il testo dell'annuncio è stato scaricato? | `description_attempts` |
 | che cosa ha deciso il regex e perché | `search_eligibility.decision` |
-| quale modello ha giudicato e con che prova | `enrichments`, task `local:selection` / `remote:selection` |
+| quale modello ha giudicato e con che prova | `enrichments`, task `remote:selection` |
 | da dove viene la descrizione dell'azienda | `companies.description_provenance` |
 | quali strade sono state provate su quell'azienda | `company_profile_attempts` |
 | chi ha messo quella categoria | `categories.method` |
@@ -230,7 +226,7 @@ Per la traccia grezza:
 
 ## L'ordine in cui girano
 
-La sequenza della dashboard è: **raccolta → filtri → descrizioni → locale → remoto → coda**.
+La sequenza della dashboard è: **raccolta → filtri → descrizioni → remoto → coda**.
 
 Ogni passaggio è indipendente e ripetibile. `pipeline_jobs` registra l'impronta degli input
 al momento in cui è girato, così la dashboard può dire «da rifare» quando qualcosa è

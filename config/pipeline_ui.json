@@ -6,7 +6,6 @@
     "collection",
     "filters",
     "descriptions",
-    "local",
     "remote",
     "queue"
   ],
@@ -31,13 +30,6 @@
         "force"
       ]
     },
-    "local": {
-      "label": "Giudizi locali con Ollama",
-      "note": "Il modello locale categorizza le aziende con evidenza e giudica i ruoli che il regex non ha saputo decidere. Nessun costo API; i limiti per passata stanno in config/local_llm.json. Senza la casella, un'azienda gia' categorizzata non viene piu' riletta, nemmeno quando arrivano le sue descrizioni.",
-      "fields": [
-        "recategorize"
-      ]
-    },
     "filters": {
       "label": "Aggiorna filtri locali",
       "note": "Ricalcola gli esiti con contenuti e preferenze correnti. Non modifica le regole.",
@@ -45,7 +37,7 @@
     },
     "remote": {
       "label": "Seleziona e arricchisci con Qwen",
-      "note": "Qwen giudica in una sola chiamata per azienda solo gli annunci che regex e modello locale hanno lasciato aperti, e produce le schede dei ruoli Tier A e B più quella aziendale, che non dipende dai ruoli. Controlla anche un campione di esclusi locali. Le chiamate contemporanee riducono il tempo totale, non il costo. Anteprima: nessuna chiamata.",
+      "note": "Qwen giudica in una sola chiamata per azienda solo gli annunci che il regex ha lasciato aperti, e produce le schede dei ruoli Tier A e B più quella aziendale, che non dipende dai ruoli. Controlla anche un campione di annunci esclusi dal regex. Le chiamate contemporanee riducono il tempo totale, non il costo. Anteprima: nessuna chiamata.",
       "fields": [
         "company_limit",
         "all_companies",

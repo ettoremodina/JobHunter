@@ -76,13 +76,6 @@ def parser():
     shortlist = sub.add_parser("shortlist", help="Company groups with initial role-filter explanations")
     shortlist.add_argument("--limit", type=int, default=30)
     shortlist.add_argument("--offset", type=int, default=0)
-    enrich = sub.add_parser("enrich", help="Explicit bounded local Ollama pass; preserves source records")
-    enrich.add_argument("task", choices=("description", "category", "selection"))
-    enrich.add_argument("--limit", type=int)
-    enrich.add_argument("--model")
-    enrich.add_argument("--force", action="store_true")
-    enrich.add_argument("--missing-only", action="store_true", help="Only uncategorized companies with company-level evidence")
-    enrich.add_argument("--id", action="append", dest="ids", help="Limit to one company; repeatable")
     remote = sub.add_parser("llm", help="Preview or explicitly execute remote selection and concise summaries")
     from jobhunter.remote_llm import TASKS
     remote.add_argument("task", choices=TASKS)
@@ -155,9 +148,6 @@ def execute(args, archive, cfg):
     if command == "company-profile":
         from jobhunter.company_profile import recover
         return recover(archive, args.limit, args.ids, force=args.force, follow_about=not args.no_about)
-    if command == "enrich":
-        from jobhunter.enrichment import run
-        return run(archive, args.task, args.limit, args.force, args.model, args.missing_only, company_ids=args.ids)
     if command in ("init", "stats"):
         return archive.stats()
     if command == "sources":

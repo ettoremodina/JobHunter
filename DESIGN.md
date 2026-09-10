@@ -67,26 +67,39 @@ Tier A e Tier B **non condividono la stessa coda**: un annuncio scade, l'interes
 per un'azienda no. Tier A è «cosa guardo questa settimana», Tier B è una mappa
 senza urgenza.
 
-## 3. Quattro giudici in cascata
+## 3. Tre giudici in cascata
 
 Ogni giudice lavora **solo su ciò che il precedente non ha saputo decidere**.
 
 | # | giudice | mestiere | esiti | costo misurato |
 |---|---------|----------|-------|----------------|
 | 1 | **Regex** | solo esclusioni **certe**: senior, manager, HR, mansioni fuori perimetro | escluso · passa | nullo |
-| 2 | **LLM locale** (Ollama) | categorizza le aziende, giudica i ruoli sul contenuto | tieni · scarta · **non so** | ~2 s per record |
-| 3 | **LLM remoto** (API) | **solo i «non so»** di entrambi gli assi; poi sintesi e scheda | tieni · scarta + scheda | ~2.461 token prompt + 466 output, ~7,4 s per chiamata |
-| 4 | **L'utente**, in chat | risponde alle domande dell'agente; scelta finale per azienda | preferenza · decisione | tempo umano |
+| 2 | **LLM remoto** (API) | **i «non so»** di entrambi gli assi: giudica i ruoli, categorizza l'azienda, scrive le schede | tieni · scarta + scheda | ~5.800 token per chiamata; **una passata sull'archivio ≈ 0,64 €** |
+| 3 | **L'utente**, in chat | risponde alle domande dell'agente; scelta finale per azienda | preferenza · decisione | tempo umano |
 
 **Il regex marca, non elimina.** È la condizione perché i passi successivi possano
 ignorarlo quando serve (vedi §4).
 
-Il livello 2 è sostenibile **solo** perché il livello 1 gli passa davanti: su tutti
-i 23.049 annunci sarebbero 13-25 ore, dopo il taglio regex 5-10.
-
-Il livello 3 va speso **dove i primi due hanno fallito**, mai prima. La sintesi e
+Il livello 2 va speso **dove il primo ha fallito**, mai prima. La sintesi e
 l'impaginazione si fanno **dopo** l'assegnazione del tier e **solo su Tier A e B**:
 riscrivere la scheda di un'azienda che poi si scarta è lavoro pagato e buttato.
+
+### Il giudice locale è stato rimosso il 10 settembre 2026
+
+Fra il regex e il remoto c'era un modello su Ollama (`qwen3.5:4b`) che categorizzava le
+aziende e giudicava i ruoli. Tolto, con le misure che lo hanno deciso:
+
+- **0 ruoli decisi su 4.918 giudicabili.** Non alleggeriva il conto del remoto di un solo
+  annuncio: quei ruoli il remoto li riceveva comunque tutti.
+- Su un campione di 27 annunci non ha prodotto **nessun** `keep`: solo `exclude` e `review`.
+- Raggruppare azienda e annunci in una chiamata sola per accorciare i tempi **peggiora**:
+  più lento del 12%, 8 citazioni inventate su 27, e i «non so» diventano «scarta» — falsi
+  negativi generati dal formato della domanda, non dal contenuto.
+- Il remoto fa lo stesso lavoro **dentro una chiamata che si paga comunque**, una per azienda.
+
+Resta un solo classificatore gratuito prima del remoto: le **regole a parole chiave** su
+settore e descrizione (`config/categories.json`), che coprono ~1.100 aziende senza
+chiamare nessun modello.
 
 Il livello 4 non gira dentro il tool: l'utente lavora in chat con un agente che
 legge i Tier A e B e propone domande mirate a produrre scarti o cambi di tier.
@@ -99,13 +112,12 @@ assi e ai tier, invece di lavorare solo sugli annunci in stato `review`.
 flowchart LR
     C["1 · Raccolta<br/>normalizza, raggruppa"] --> G["2 · Regex sui ruoli<br/>marca, non elimina"]
     G --> D["3 · Descrizioni<br/>mirate sulla copertura aziendale"]
-    D --> E["4 · Estrazione evidenza<br/>cascata senza LLM, residuo al locale"]
-    E --> L["5 · LLM locale<br/>categorie e ruoli"]
-    L --> Q["6 · LLM remoto<br/>solo i non so"]
+    D --> E["4 · Dati aziendali<br/>scheda, sito, annuncio"]
+    E --> R["5 · Regole a parole chiave<br/>gratis, solo certezze"]
+    R --> Q["6 · LLM remoto<br/>i non so, le categorie, le schede"]
     Q --> T["7 · Tier<br/>calcolato, mai salvato"]
-    T --> S["8 · Sintesi<br/>solo Tier A e B"]
-    S --> H["9 · Agente in chat<br/>domande, preferenze"]
-    H --> U["10 · Scelta manuale<br/>non genera regole"]
+    T --> H["8 · Agente in chat<br/>domande, preferenze"]
+    H --> U["9 · Scelta manuale<br/>non genera regole"]
 ```
 
 **Il passo 3 non risponde mai ai filtri sui ruoli: risponde alla copertura
@@ -127,7 +139,7 @@ poi ciò che costa. Coperture misurate il 9 settembre 2026:
 | `hiringOrganization.sameAs` dal JSON-LD → **sito aziendale** | 75% delle pagine | l'indirizzo, non il testo |
 | **Intersezione fra annunci della stessa azienda** | 1.286 aziende hanno ≥2 testi; 65% di queste dà un blocco comune | mediana **1.517 caratteri** |
 | Split per intestazione «About us / Chi siamo» | 13% | debole ma gratis |
-| Residuo | il resto | **LLM locale**, ~2 s: separare paragrafi è più facile che giudicare |
+| Residuo | il resto | **LLM remoto**, dentro la chiamata per azienda che si paga comunque |
 
 `hiringOrganization.description` **non esiste** nel corpus (0 occorrenze su 600
 pagine campionate): non usarlo come fonte.
@@ -175,7 +187,6 @@ I dati esistono già, sparsi:
 | `search_eligibility.decision` | ruolo | regex | `reasons`, requisiti, verifiche |
 | `enrichments` (`remote:selection`) | ruolo | LLM remoto | `rationale` + citazione verificata |
 | `categories` (`method`, `reason`) | azienda | tutti | categoria + provenienza |
-| *(da aggiungere)* | ruolo | LLM locale | verdetto + motivo |
 | *(da aggiungere)* | entrambi | utente | commento sulla scheda |
 
 **Non unificare le tabelle.** Visto che il tier si calcola a lettura (§2), la stessa

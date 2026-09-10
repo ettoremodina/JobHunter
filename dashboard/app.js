@@ -155,23 +155,34 @@ async function load() {
       "click",
       guarded(() => show(company.id)),
     );
+    // La colonna si chiama «azienda e attività»: se sappiamo cosa fa l'azienda, quella e'
+    // l'attività. I titoli dei ruoli restano il ripiego di quando non lo sappiamo ancora.
+    const activity = (company.description || "").trim();
     name.append(
       button,
       el(
         "small",
-        company.titles.slice(0, 2).join(" · ") ||
+        activity ||
+          company.titles.slice(0, 2).join(" · ") ||
           (company.archive_opportunity_count
             ? "Nessun ruolo che rientri nel filtro"
             : "Attività da approfondire"),
+        activity ? "company-activity" : undefined,
       ),
     );
     const status = el("td");
     status.append(
       el("span", labels[company.status], `badge ${company.status}`),
     );
+    const category = el("td");
+    category.append(el("span", company.category || "Da classificare"));
+    if (company.category && company.category !== "Da classificare") {
+      category.append(el("small", categoryMethods[company.category_method] || company.category_method));
+    }
     tr.append(
       name,
-      el("td", company.tier || company.category),
+      category,
+      el("td", company.tier_label ? company.tier : company.tier || "—"),
       el("td", locationPreview(company.locations)),
       el("td", company.archive_opportunity_count
         ? `${company.opportunity_count} di ${company.archive_opportunity_count}`
@@ -188,7 +199,7 @@ async function load() {
         ? "Nessuna azienda in questa pagina."
         : "Nessun risultato. Cambia i filtri oppure importa i dati dalla CLI.",
     );
-    td.colSpan = 5;
+    td.colSpan = 6;
     tr.append(td);
     $("rows").append(tr);
   }
@@ -241,7 +252,7 @@ function axisSummary(company) {
 
 /** Show which judge decided a role and on what evidence, so a verdict is checkable months later. */
 function roleVerdict(verdict) {
-  const judges = {regex: "regex su titolo e descrizione", llm_locale: "modello locale", llm_remoto: "modello remoto"};
+  const judges = {regex: "regex su titolo e descrizione", llm_remoto: "modello remoto"};
   const line = el("p", undefined, "muted");
   line.append(verdictBadge(verdict.verdetto));
   line.append(el("span", verdict.giudice ? ` deciso dal ${judges[verdict.giudice] || verdict.giudice}` : " nessun giudice ha ancora deciso"));
@@ -388,7 +399,8 @@ async function show(id) {
   heading.append(el("h2", company.name), el("span", labels[company.status], `badge ${company.status}`));
   panel.append(heading);
   panel.append(axisSummary(company));
-  const origin = company.category_method === "chat" ? "Assegnata dalla chat" : company.category_method === "local_llm" ? "Suggerita dal modello locale"
+  const origin = company.category_method === "chat" ? "Assegnata dalla chat"
+    : company.category_method === "remote" ? "Assegnata dal modello remoto"
     : company.category_method === "rules" ? "Suggerita da regole" : "";
   panel.append(factList([
     ["Categoria", company.category, [origin, company.category_reason].filter(Boolean).join(" · ")],
@@ -818,6 +830,9 @@ init().then(() => {
 }).catch((error) => message(error.message, true));
 
 /** Render comparable counts with a shared denominator and no chart dependency. */
+const categoryMethods = {rules: "da parole chiave", remote: "modello remoto",
+  chat: "scelta tua", unknown: "nessuna corrispondenza"};
+
 function metricTable(title, rows, total) {
   const section = el("section", undefined, "metric-section");
   section.append(el("h3", title));
@@ -1042,7 +1057,7 @@ function renderPipelineFunnel(funnel) {
   const details = el('details');
   details.append(el('summary', 'Origine dei giudizi'));
   if (funnel.giudici) details.append(pipelineShares('Giudici · annunci', funnel.archive.jobs,
-    [['regex', 'Regex', 'seg-in'], ['llm_locale', 'Modello locale', 'seg-keep'],
+    [['regex', 'Regex', 'seg-in'],
      ['llm_remoto', 'Modello remoto', 'seg-review'], ['nessuno', 'Senza giudizio', 'seg-pending']]
       .map(([key, label, color]) => [color, label, funnel.giudici[key] || 0])));
   if (funnel.basis) details.append(el('p', funnel.basis, 'muted'));
@@ -1112,6 +1127,7 @@ function renderJourney(stages) {
 function progressOf(detail) {
   if (detail.total_companies !== undefined) return {done: detail.completed_companies || 0, total: detail.total_companies, label: 'Aziende attraversate'};
   if (detail.phase === 'descriptions' && detail.total) return {done: detail.done || 0, total: detail.total, label: 'Annunci elaborati'};
+  if (detail.phase === 'company_profile' && detail.total) return {done: detail.done || 0, total: detail.total, label: 'Aziende esaminate'};
   return null;
 }
 
@@ -1136,6 +1152,9 @@ function pipelineProgress(detail, startedAt) {
   if (detail.phase === 'descriptions' && detail.total) {
     rows = [['Annunci elaborati', `${n(detail.done)} / ${n(detail.total)}`, `${n(detail.workers)} recuperi contemporanei`],
       ['Descrizioni salvate', n(detail.saved), `${n(detail.attempted)} pagine richieste`]];
+    } else if (detail.phase === 'company_profile' && detail.total) {
+    rows = [['Aziende esaminate', `${n(detail.done)} / ${n(detail.total)}`, 'ogni strada provata resta registrata'],
+      ['Descrizioni trovate', n(detail.trovata), 'scheda aggregatore, sito aziendale o annuncio']];
   } else {
     rows = [
       ['Aziende attraversate', `${n(detail.completed_companies)} / ${n(detail.total_companies)}`, 'comprese quelle saltate senza chiamata'],
@@ -1238,7 +1257,7 @@ function pipelineResult(run) {
 /** Build native controls from server-provided limits, with an explicit paid mode. */
 function pipelineField(key, scope, step) {
   const data = pipelineData.controls;
-  const labels = {source: 'Fonte', limit: 'Numero massimo di annunci', workers: step === 'remote' ? 'Chiamate API contemporanee' : 'Recuperi contemporanei', all: 'Tutte le descrizioni recuperabili', refresh_stale: 'Aggiorna anche descrizioni scadute', force: 'Riprova gli errori, rispettando i blocchi della fonte', company_limit: 'Numero di aziende del campione', all_companies: "Tutte le aziende dell'archivio", mode: 'Modalità LLM remoto', recategorize: 'Rivedi anche le aziende già categorizzate'};
+  const labels = {source: 'Fonte', limit: 'Numero massimo di annunci', workers: step === 'remote' ? 'Chiamate API contemporanee' : 'Recuperi contemporanei', all: 'Tutte le descrizioni recuperabili', refresh_stale: 'Aggiorna anche descrizioni scadute', force: 'Riprova gli errori, rispettando i blocchi della fonte', company_limit: 'Numero di aziende del campione', all_companies: "Tutte le aziende dell'archivio", mode: 'Modalità LLM remoto'};
   const label = el('label', labels[key]);
   let input;
   if (key === 'source' || key === 'mode') {
@@ -1247,7 +1266,7 @@ function pipelineField(key, scope, step) {
     for (const [value, text] of choices) { const option = el('option', text); option.value = value; input.append(option); }
   } else {
     input = el('input');
-    input.type = ['all', 'refresh_stale', 'force', 'all_companies', 'continue_after', 'recategorize'].includes(key) ? 'checkbox' : 'number';
+    input.type = ['all', 'refresh_stale', 'force', 'all_companies', 'continue_after'].includes(key) ? 'checkbox' : 'number';
     if (input.type === 'number') {
       const scale = key === 'workers' ? (step === 'remote' ? 'remote_workers' : 'workers') : key === 'company_limit' ? 'remote' : step;
       input.min = '1'; input.max = String(data.limits[scale]);

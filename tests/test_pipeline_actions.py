@@ -35,9 +35,9 @@ class ActionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 parameters(step, values, self.archive, self.cfg)
 
-    def test_pipeline_collection_defers_details_and_local_categories(self):
+    def test_pipeline_collection_defers_details_to_their_own_step(self):
         """The operational order must defer network details and classification, not just relabel cards."""
-        self.assertEqual(configuration()['sequence'], ['collection', 'filters', 'descriptions', 'local', 'remote', 'queue'])
+        self.assertEqual(configuration()['sequence'], ['collection', 'filters', 'descriptions', 'remote', 'queue'])
         with patch('jobhunter.collection.collect', return_value={}) as collect:
             execute(self.archive, self.cfg, 'collection', {'source': 'test', 'limit': 3}, lambda d: None)
         self.assertFalse(collect.call_args.kwargs['recover_descriptions'])
@@ -86,7 +86,7 @@ class ActionTests(unittest.TestCase):
             start(self.path, self.cfg, 'filters', {}, lock, continue_after=True)
             self.assertTrue(lock.acquire(timeout=5))
             lock.release()
-        self.assertEqual(executed, ['filters', 'descriptions', 'local', 'remote', 'queue'])
+        self.assertEqual(executed, ['filters', 'descriptions', 'remote', 'queue'])
         result = controls(self.archive, self.cfg)
         self.assertEqual(result['actions']['descriptions']['last_run']['status'], 'partial')
 

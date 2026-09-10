@@ -608,3 +608,11 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 .journey-scroll .funnel-chart { min-width: 640px; }
 #pipeline-journey .pipeline-shares { margin: 22px 0 0; }
 #pipeline-journey > p { margin: 6px 0 0; font-size: .85rem; }
+
+/* L'attività dell'azienda è prosa: due righe bastano, il resto sta nella scheda. */
+.company-activity {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

@@ -286,15 +286,30 @@ class Archive:
         if status and status not in STATUSES:
             raise ValueError("Unknown status")
         conditions, args = [], []
+        qualifying = None
         if tier:
             from jobhunter import tier as tiers
             from jobhunter.selection import verdicts
             if tier not in tiers.TIERS:
                 raise ValueError("Unknown tier")
             # Il tier non è in SQL perché non si salva mai: si calcola e si filtra sugli ID risultanti.
+            assessment = verdicts(self)
+            chosen = sorted(cid for cid, state in assessment.items() if state["tier"] == tier)
             conditions.append("c.id IN (SELECT value FROM json_each(?))")
-            args.append(json.dumps(sorted(cid for cid, state in verdicts(self).items() if state["tier"] == tier)))
+            args.append(json.dumps(chosen))
+            # Tier A e B·esperienza esistono *grazie a* certi annunci: gli altri filtri devono
+            # incrociarsi su quegli stessi annunci, altrimenti «Tier A a Milano» restituisce
+            # un'azienda che è Tier A per un ruolo a Londra e ha un ruolo scartato a Milano.
+            # Gli altri tre tier sono definiti dall'assenza di un ruolo compatibile: lì non
+            # esiste un annuncio che li giustifichi, e i filtri restano su tutti gli annunci.
+            if tier in ("A", "B-esperienza"):
+                qualifying = sorted(oid for cid in chosen for oid, verdict in assessment[cid]["ruoli"].items()
+                                    if verdict["verdetto"] == tiers.KEEP
+                                    and (tier != "B-esperienza" or verdict.get("primary")))
         role_conditions, role_args = [], []
+        if qualifying is not None:
+            role_conditions.append("o.id IN (SELECT value FROM json_each(?))")
+            role_args.append(json.dumps(qualifying))
         if eligibility:
             if eligibility not in ("potential", "review", "excluded"):
                 raise ValueError("Unknown eligibility scope")
