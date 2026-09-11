@@ -833,22 +833,113 @@ init().then(() => {
 const categoryMethods = {rules: "da parole chiave", remote: "modello remoto",
   chat: "scelta tua", unknown: "nessuna corrispondenza"};
 
-function metricTable(title, rows, total) {
+const nf = (value) => Number(value || 0).toLocaleString("it-IT");
+const pf = (value, total) => (total > 0 ? (value * 100) / total : 0).toLocaleString("it-IT", {maximumFractionDigits: 1}) + "%";
+const SVG = "http://www.w3.org/2000/svg";
+/** Un nodo SVG con soli attributi geometrici: la CSP blocca gli stili inline, non questi. */
+function svgNode(tag, attributes, text) {
+  const node = document.createElementNS(SVG, tag);
+  for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+/** Una quota disegnata contro il suo totale, mai contro il massimo della lista: barre confrontabili fra righe. */
+function meter(label, value, total, color = "seg-in") {
+  const row = el("div", undefined, "meter");
+  const head = el("div", undefined, "meter-head");
+  head.append(el("span", label, "meter-label"), el("span", `${nf(value)} · ${pf(value, total)}`, "meter-value"));
+  const chart = svgNode("svg", {viewBox: "0 0 1000 10", preserveAspectRatio: "none", class: "funnel-chart meter-bar", "aria-hidden": "true"});
+  chart.append(svgNode("rect", {x: 0, y: 0, width: total > 0 ? (value / total) * 1000 : 0, height: 10, class: "seg " + color}));
+  row.append(head, chart);
+  return row;
+}
+
+/** Una scheda di metriche: titolo, denominatore dichiarato una volta sola, poi le quote disegnate da `draw`. */
+function metricCard(title, total, unit, rows, hint, draw = meters) {
   const section = el("section", undefined, "metric-section");
-  section.append(el("h3", title));
-  const table = el("table");
-  const head = el("thead"), header = el("tr");
-  for (const text of ["Gruppo", "Annunci", "% del totale"]) header.append(el("th", text));
-  head.append(header); table.append(head);
-  const body = el("tbody");
-  for (const row of rows) {
-    const tr = el("tr");
-    tr.append(el("td", row.label), el("td", row.count.toLocaleString("it-IT")), el("td", (total ? row.count * 100 / total : 0).toLocaleString("it-IT", {maximumFractionDigits: 1}) + "%"));
-    body.append(tr);
-  }
-  table.append(body); section.append(table);
+  const heading = el("div", undefined, "share-heading");
+  heading.append(el("strong", title), el("span", `su ${nf(total)} ${unit}`));
+  section.append(heading);
+  if (hint) section.append(el("p", hint, "hint"));
+  section.append(...draw(rows, total));
   return section;
 }
+const meters = (rows, total) => rows.map(([label, value, color]) => meter(label, value, total, color));
+
+/** Uno spicchio di corona circolare da a0 ad a1 (radianti, 0 in alto, senso orario). */
+function ringArc(a0, a1, R = 50, r = 33) {
+  // Un arco con inizio e fine coincidenti non si disegna: l'anello pieno si ferma a un soffio dal giro,
+  // e lo scarto deve sopravvivere all'arrotondamento delle coordinate.
+  a1 = Math.min(a1, a0 + 2 * Math.PI - 1e-3);
+  const p = (radius, a) => `${(radius * Math.sin(a)).toFixed(3)} ${(-radius * Math.cos(a)).toFixed(3)}`;
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  return `M${p(R, a0)}A${R} ${R} 0 ${large} 1 ${p(R, a1)}L${p(r, a1)}A${r} ${r} 0 ${large} 0 ${p(r, a0)}Z`;
+}
+
+/** Una ciambella: spicchi contro il totale, la parte non coperta resta binario vuoto. Ogni spicchio ha il suo tooltip. */
+function donut(rows, total, center) {
+  const chart = svgNode("svg", {viewBox: "-51 -51 102 102", class: "donut", "aria-hidden": "true"});
+  chart.append(svgNode("path", {d: ringArc(0, 2 * Math.PI), class: "track"}));
+  let a = 0;
+  for (const [label, value, color] of rows) {
+    const b = a + (total > 0 ? value / total : 0) * 2 * Math.PI;
+    if (b - a > 1e-3) {
+      const seg = svgNode("path", {d: ringArc(a, b), class: "seg " + color});
+      seg.append(svgNode("title", {}, `${label}: ${nf(value)} · ${pf(value, total)}`));
+      chart.append(seg);
+    }
+    a = b;
+  }
+  chart.append(svgNode("text", {x: 0, y: 5, "text-anchor": "middle", class: "donut-center"}, center));
+  return chart;
+}
+
+/** Parte-tutto: la ciambella per il colpo d'occhio, la legenda per i numeri esatti. */
+function donutWithLegend(rows, total) {
+  const body = el("div", undefined, "donut-body");
+  const legend = el("ul", undefined, "funnel-legend donut-legend");
+  for (const [label, value, color] of rows) {
+    const item = el("li");
+    const swatch = el("span", undefined, "swatch " + color);
+    swatch.setAttribute("aria-hidden", "true");
+    item.append(swatch, el("span", label), el("strong", `${nf(value)} · ${pf(value, total)}`, "count"));
+    legend.append(item);
+  }
+  body.append(donut(rows, total, nf(total)), legend);
+  return [body];
+}
+
+/** Quote indipendenti (non sommano al totale): una piccola ciambella per ciascuna, mai spicchi della stessa. */
+function gauges(rows, total) {
+  const grid = el("div", undefined, "gauge-grid");
+  for (const row of rows) {
+    const cell = el("figure", undefined, "gauge");
+    cell.append(donut([row], total, pf(row[1], total)), el("figcaption", `${row[0]} · ${nf(row[1])}`));
+    grid.append(cell);
+  }
+  return [grid];
+}
+
+/** Una ciambella regge al massimo sei spicchi: cinque categorie con un colore ciascuno, il resto in grigio.
+Chi non ha categoria va in fondo e resta binario vuoto, come il dato mancante negli anelli di completezza. */
+function categorySlices(categories) {
+  const known = categories.filter(row => row.label !== "Da classificare");
+  const slices = ranked(known, 5, "Altre categorie").map(([label, value, color], index) =>
+    [label, value, color === "seg-pending" ? "seg-pending" : "cat-" + (index + 1)]);
+  const unclassified = categories.find(row => row.label === "Da classificare");
+  if (unclassified) slices.push(["Da classificare", unclassified.count, "track"]);
+  return slices;
+}
+
+/** Le prime voci di una distribuzione lunga, con la coda raccolta in una riga sola invece che troncata. */
+function ranked(rows, limit, restLabel = "Altre voci") {
+  const head = rows.slice(0, limit).map((row, index) => [row.label, row.count, index === 0 ? "seg-in" : "seg-rank"]);
+  const rest = rows.slice(limit).reduce((sum, row) => sum + row.count, 0);
+  if (rest) head.push([`${restLabel} (${rows.length - limit})`, rest, "seg-pending"]);
+  return head;
+}
+
 let analyticsRequest = 0;
 /** Refresh read-only distributions; stale responses cannot replace a newer scope. */
 async function loadAnalytics() {
@@ -856,27 +947,49 @@ async function loadAnalytics() {
   $("analytics-status").textContent = "Calcolo delle metriche in corso…";
   $("analytics-content").replaceChildren();
   try {
-    const data = await api("/api/analytics?" + new URLSearchParams({eligibility: $("analytics-scope").value}));
+    // Il percorso vive nel monitor della pipeline e riguarda sempre tutto l'archivio: le due letture
+    // sono indipendenti, e un funnel non disponibile non deve togliere le distribuzioni.
+    const [data, pipeline] = await Promise.all([
+      api("/api/analytics?" + new URLSearchParams({eligibility: $("analytics-scope").value})),
+      api("/api/pipeline").catch(() => null)]);
     if (request !== analyticsRequest) return;
-    $("analytics-status").textContent = `${data.total.toLocaleString("it-IT")} annunci · ${data.companies.toLocaleString("it-IT")} aziende · Aggiornato alle ${new Date(data.generated_at).toLocaleTimeString("it-IT")}`;
+    $("analytics-status").textContent = `${nf(data.total)} annunci · ${nf(data.companies)} aziende · Aggiornato alle ${new Date(data.generated_at).toLocaleTimeString("it-IT")}`;
     const content = $("analytics-content");
+    renderJourney(content, pipeline?.funnel);
     if (!data.total) { content.append(el("p", "Nessun annuncio in questa selezione.")); return; }
-    const health = [
-      {label: "Con categoria aziendale assegnata", count: data.health.categorized},
-      {label: "Categoria da classificare", count: data.total - data.health.categorized},
-      {label: "Con descrizione", count: data.health.with_description},
-      {label: "Descrizione mancante", count: data.total - data.health.with_description},
-      {label: "Paese non determinato", count: data.total - data.health.country_known},
-      {label: "Salario mancante", count: data.total - data.health.with_salary},
-      {label: "Data pubblicazione mancante", count: data.total - data.health.with_posted_date}
-    ];
-    content.append(el("p", "I conteggi riguardano annunci univoci. La categoria è il settore dell'azienda, non la mansione. Un campo presente non ne garantisce la correttezza o l'attualità.", "hint"));
+
+    const scoped = el("section", undefined, "metrics-block");
+    scoped.append(el("h3", "Qualità e composizione della selezione"));
+    scoped.append(el("p", $("analytics-scope").value
+      ? "Questa sezione segue il filtro qui sopra; il percorso resta sull'intero archivio."
+      : "Conteggi su annunci univoci. La categoria è il settore dell'azienda, non la mansione. Un campo presente non ne garantisce correttezza o attualità.", "hint"));
+    const selection = Object.fromEntries(data.selection.map(row => [row.label, row.count]));
     const grid = el("div", undefined, "metrics-grid");
-    grid.append(metricTable("Completezza dei dati", health, data.total), metricTable("Esito dei filtri locali", data.selection.map(row => ({...row, label: {potential: "Potenzialmente compatibili", review: "Da verificare", excluded: "Esclusi"}[row.label]})), data.total), metricTable("Categorie aziendali", data.categories, data.total));
-    content.append(grid, el("h3", "Distribuzione geografica"), el("p", "Ogni annuncio conta una volta per paese e continente: le percentuali possono superare il 100%. Si riconoscono nomi e codici espliciti; città isolate e sigle ambigue restano non determinate. Remoto non significa disponibile in tutto il mondo.", "hint"));
+    grid.append(
+      metricCard("Completezza dei dati", data.total, "annunci", [
+        ["Con descrizione completa", data.health.with_description, "seg-keep"],
+        ["Con categoria aziendale", data.health.categorized, "seg-keep"],
+        ["Con paese riconosciuto", data.health.country_known, "seg-in"],
+        ["Con salario dichiarato", data.health.with_salary, "seg-review"],
+        ["Con data di pubblicazione", data.health.with_posted_date, "seg-review"]],
+        "Ogni anello è la parte presente: il tratto vuoto è il dato mancante.", gauges),
+      metricCard("Esito dei filtri locali", data.total, "annunci", [
+        ["Potenzialmente compatibili", selection.potential || 0, "seg-keep"],
+        ["Da verificare", selection.review || 0, "seg-review"],
+        ["Esclusi dai filtri locali", selection.excluded || 0, "seg-gone"]],
+        "Le tre quote sommano al totale: è la tappa 3 del percorso, ristretta a questa selezione.", donutWithLegend),
+      metricCard("Categorie aziendali", data.total, "annunci", categorySlices(data.categories),
+        "Categoria dell'azienda che pubblica, contata una volta per annuncio.", donutWithLegend));
+    scoped.append(grid);
+
     const geography = el("div", undefined, "metrics-grid");
-    geography.append(metricTable("Continenti", data.continents, data.total), metricTable("Paesi", data.countries, data.total));
-    content.append(geography);
+    geography.append(
+      metricCard("Continenti", data.total, "annunci", ranked(data.continents, 6, "Altri continenti")),
+      metricCard("Paesi", data.total, "annunci", ranked(data.countries, 10, "Altri paesi")));
+    scoped.append(el("h3", "Distribuzione geografica"),
+      el("p", "Un annuncio può contare per più paesi e continenti: le percentuali possono superare il 100%. Si riconoscono nomi e codici espliciti; città isolate e sigle ambigue restano non determinate. Remoto non significa disponibile ovunque.", "hint"),
+      geography);
+    content.append(scoped);
   } catch (error) {
     if (request === analyticsRequest) $("analytics-status").textContent = "Metriche non disponibili. Riprova con Aggiorna metriche.";
     throw error;
@@ -895,6 +1008,16 @@ function pipelineDate(value) {
 
 let pipelineData = null, pipelineStep = null, pipelineTimer = null;
 const pipelineStates = {running: 'In esecuzione', success: 'Terminato', partial: 'Parziale: controlla e riprova', failed: 'Errore: da riprovare', interrupted: 'Interrotto: da riprendere'};
+const aboutOpen = new Set();
+/** Cosa fa ogni passaggio, in breve: su cosa lavora e se classifica, scarta o solo prepara. */
+const pipelineAbout = {
+  collection: ['Annunci', 'Scarica gli annunci dalle fonti configurate e li salva in archivio. Non classifica e non scarta nulla.'],
+  normalization: ['Annunci → aziende', 'Automatico a ogni importazione: uniforma i campi e raggruppa gli annunci sotto la loro azienda. Non classifica e non scarta.'],
+  descriptions: ['Aziende, tramite i loro annunci', 'Scarica il testo completo degli annunci, a partire da uno per ogni azienda ancora senza evidenza. Non giudica: prepara il materiale per i giudici.'],
+  filters: ['Annunci', 'Regole locali su titolo e descrizione, gratis. Classifica ogni annuncio: compatibile, escluso o «non so». Marca, non elimina: gli esclusi restano in archivio.'],
+  remote: ['Aziende e annunci', 'Una chiamata al modello remoto per azienda, a pagamento. Decide i «non so» del regex, riassume i ruoli rimasti e scrive la scheda dell’azienda (categoria e descrizione). Classifica: i suoi esiti sono proposte, non esclusioni definitive.'],
+  queue: ['Aziende', 'Incrocia asse ruolo e asse azienda nel Tier e mette in coda le aziende di Tier A e B. Non scarta: ordina e propone.'],
+  feedback: ['Aziende e annunci', 'Le tue decisioni, su un’azienda intera o su un singolo ruolo. È l’unico passaggio che decide in modo definitivo.']};
 
 /** Read pipeline evidence without starting collection, filtering or model work. */
 async function loadPipeline() {
@@ -944,6 +1067,16 @@ async function loadPipeline() {
       card.append(el('span', action ? 'Parametri e avvio' : 'Dettagli del passaggio', 'pipeline-affordance'));
       card.addEventListener('click', () => openPipeline(step.id));
       row.append(card);
+      const about = pipelineAbout[step.id];
+      if (about) {
+        // Fuori dalla card: un bottone non puo' contenere un altro controllo.
+        // Le card si ridisegnano a ogni aggiornamento: senza memoria il riquadro si richiuderebbe da solo.
+        const info = el('details', undefined, 'pipeline-about');
+        info.open = aboutOpen.has(step.id);
+        info.addEventListener('toggle', () => info.open ? aboutOpen.add(step.id) : aboutOpen.delete(step.id));
+        info.append(el('summary', 'Cosa fa'), el('p', `Lavora su: ${about[0]}. ${about[1]}`));
+        row.append(info);
+      }
       if (action || step.id === 'normalization') {
         const stop = el('button', running && active.cancel_requested ? 'Arresto richiesto' : 'Interrompi', 'pipeline-stop');
         stop.type = 'button'; stop.setAttribute('aria-label', 'Interrompi ' + step.title);
@@ -955,8 +1088,6 @@ async function loadPipeline() {
       }
       list.append(row);
     }
-    renderPipelineFunnel(data.funnel);
-    renderJourney(data.funnel?.percorso);
     renderPipelineActivity();
     $('pipeline-runs').replaceChildren();
     for (const run of data.controls.history) {
@@ -979,7 +1110,7 @@ async function loadPipeline() {
 }
 
 /** Render a proportional bar with a single labelled count for every share, including zeroes. */
-function pipelineShares(title, total, parts) {
+function pipelineShares(title, total, parts, legend = true) {
   const n = value => Number(value || 0).toLocaleString('it-IT');
   const section = el('div', undefined, 'pipeline-shares');
   if (title) {
@@ -1002,24 +1133,33 @@ function pipelineShares(title, total, parts) {
     x += width;
   }
   section.append(bar);
-  const legend = el('ul', undefined, 'funnel-legend');
+  if (!legend) return section;
+  const list = el('ul', undefined, 'funnel-legend');
   for (const [color, label, value] of parts) {
     const item = el('li');
     const swatch = el('span', undefined, 'swatch ' + color);
     swatch.setAttribute('aria-hidden', 'true');
     item.append(swatch, el('span', label), el('strong', n(value), 'count'));
-    legend.append(item);
+    list.append(item);
   }
-  section.append(legend);
+  section.append(list);
   return section;
 }
 
-/** Keep coverage and its population together, without repeating the card's status. */
+/** Keep coverage and its population together, without repeating the card's status.
+
+Ogni card apre dichiarando quanti ne ha ricevuti e da quale passaggio. Senza quella riga un totale
+nato da una sottrazione, o un cambio di unita' fra annunci e aziende, resta un numero che compare
+dal nulla: e' esattamente il punto in cui il lettore perde il filo fra una card e la successiva.
+*/
 function stepMeasure(step) {
   const box = el('div', undefined, 'pipeline-measure');
+  if (step.inflow) box.append(el('p', step.inflow, 'pipeline-inflow'));
   if (step.total !== null && step.total > 0) {
     // Un passaggio che si ferma per informazione mancante ha tre quote, non due: le dichiara lui.
-    box.append(pipelineShares(step.measure || '', step.total, step.parts || [
+    // La barra usa `base`: dove una quota non e' lavorabile, il totale disegnato non e' il denominatore
+    // della copertura, e sommare le quote contro quest'ultimo le disegnerebbe piu' larghe del vero.
+    box.append(pipelineShares(step.measure || '', step.base ?? step.total, step.parts || [
       ['seg-in', step.done_label, step.done],
       ['seg-pending', step.rest_label || 'Da elaborare', step.pending ?? Math.max(0, step.total - step.done)]]));
   } else {
@@ -1031,96 +1171,113 @@ function stepMeasure(step) {
   return box;
 }
 
-/** Show the independent axes and derived tiers once, with labels attached to each chart. */
-function renderPipelineFunnel(funnel) {
-  const area = $('pipeline-funnel');
-  area.replaceChildren(el('h3', 'Due assi indipendenti → Tier'));
-  if (!funnel) {
-    area.append(el('p', 'Funnel non disponibile. Riavvia il server al termine dell’esecuzione.'));
+/** Il percorso come sequenza di barre tutte larghe uguali: il denominatore non cambia mai da una tappa
+all'altra, percio' due quote di tappe diverse si confrontano a occhio senza rifare il conto.
+
+La fascia scura a sinistra e' chi e' gia' uscito nelle tappe precedenti: cresce verso destra riga dopo
+riga, e quel bordo che scivola e' il funnel. Il colore non porta mai da solo un'informazione: ogni
+numero e' scritto nella barra quando ci sta, e comunque nella legenda della riga.
+*/
+function renderJourney(area, funnel) {
+  const stages = funnel?.percorso;
+  if (!stages?.length) {
+    area.append(el('p', 'Percorso non disponibile. Riavvia il server al termine dell’esecuzione.', 'hint'));
     return;
   }
-  area.append(
-    pipelineShares('Asse ruolo · annunci', funnel.archive.jobs, [
+  const block = el('section', undefined, 'metrics-block journey');
+  block.append(el('h3', 'Il percorso degli annunci'));
+  block.append(el('p', 'Ogni barra è larga quanto l’intero archivio, tappa dopo tappa. La fascia scura a sinistra è chi è già uscito: quello che resta a destra è ciò che prosegue. Riguarda sempre tutto l’archivio, anche quando il filtro qui sopra è attivo.', 'hint'));
+  const key = el('ul', undefined, 'funnel-legend journey-key');
+  for (const [color, label] of [['seg-gone', 'Usciti'], ['seg-keep', 'Compatibili'], ['seg-in', 'In gioco'],
+                               ['seg-review', 'Ancora da decidere'], ['seg-pending', 'Fermi: manca un’informazione']]) {
+    const item = el('li');
+    const swatch = el('span', undefined, 'swatch ' + color);
+    swatch.setAttribute('aria-hidden', 'true');
+    item.append(swatch, el('span', label));
+    key.append(item);
+  }
+  block.append(key);
+
+  const W = 1000, BAR = 42, ROW = 82, TOP = 26;
+  const chart = svgNode('svg', {viewBox: `0 0 ${W} ${TOP + stages.length * ROW}`, class: 'funnel-chart journey-chart', role: 'img'});
+  let previous = null;
+  for (const [index, stage] of stages.entries()) {
+    const base = stage.base || 0;
+    const label = TOP + index * ROW, top = label + 10;
+    chart.append(svgNode('text', {x: 0, y: label, class: 'stage-label'}, stage.title));
+    chart.append(svgNode('text', {x: W, y: label, class: 'stage-total', 'text-anchor': 'end'}, `${nf(base)} ${stage.unit}`));
+    chart.append(svgNode('rect', {x: 0, y: top, width: W, height: BAR, rx: 5, class: 'track'}));
+    let x = 0, gone = 0;
+    for (const [color, text, value] of stage.parts) {
+      const width = base > 0 ? (value / base) * W : 0;
+      if (width >= 0.5) {
+        // Il tooltip dice solo la quota sotto il puntatore: il riepilogo intero sta nel riquadro espandibile.
+        const seg = svgNode('rect', {x, y: top, width, height: BAR, class: 'seg ' + color});
+        seg.append(svgNode('title', {}, `${stage.title} · ${text}: ${nf(value)} ${stage.unit} (${pf(value, base)})`));
+        chart.append(seg);
+        const middle = x + width / 2;
+        if (width >= 46) chart.append(svgNode('text', {x: middle, y: top + (width >= 84 ? 19 : BAR / 2 + 5), class: 'seg-label', 'text-anchor': 'middle'}, nf(value)));
+        if (width >= 84) chart.append(svgNode('text', {x: middle, y: top + 33, class: 'seg-share', 'text-anchor': 'middle'}, pf(value, base)));
+      }
+      x += width;
+      if (color === 'seg-gone') gone = x;
+    }
+    // Il bordo di chi e' uscito scivola verso destra: la riga che segue eredita il taglio della
+    // precedente. Dove il taglio non c'era ancora non si disegna nulla: una diagonale lunga tutta la
+    // pagina direbbe solo che la tappa prima non escludeva nessuno, e lo dice gia' la barra piena.
+    if (gone > 0 && previous > 0 && !stage.unit_change)
+      chart.append(svgNode('line', {x1: previous, y1: top - ROW + BAR, x2: gone, y2: top, class: 'gone-edge'}));
+    previous = gone;
+  }
+  chart.setAttribute('aria-label', stages.map(stage =>
+    `${stage.title}: ${nf(stage.base)} ${stage.unit}, di cui ` +
+    stage.parts.map(([, text, value]) => `${nf(value)} ${text}`).join(', ')).join('. '));
+  const scroll = el('div', undefined, 'journey-scroll');
+  scroll.append(chart);
+  block.append(scroll);
+
+  const detail = el('details', undefined, 'journey-detail');
+  detail.append(el('summary', 'I numeri di ogni tappa, con le etichette per esteso'));
+  for (const stage of stages) {
+    detail.append(pipelineShares(`${stage.title} · ${stage.unit}`, stage.base, stage.parts));
+    if (stage.note) detail.append(el('p', stage.note, 'muted'));
+  }
+  if (funnel.basis) detail.append(el('p', funnel.basis, 'muted'));
+  block.append(detail);
+
+  const axes = el('section', undefined, 'metrics-block');
+  axes.append(el('h3', 'Due assi indipendenti → Tier'),
+    el('p', 'Ruolo e azienda si giudicano separatamente; il tier nasce dal loro incrocio e si ricalcola a ogni lettura.', 'hint'));
+  const axesGrid = el('div', undefined, 'metrics-grid');
+  axesGrid.append(
+    axisCard('Asse ruolo · annunci', funnel.archive.jobs, [
       ['seg-keep', 'Compatibili', funnel.ruolo.tieni],
       ['seg-review', 'Da decidere', funnel.ruolo.non_so],
-      ['seg-exclude', 'Scartati', funnel.ruolo.scarta]]),
-    pipelineShares('Asse azienda · aziende', funnel.archive.companies, [
+      ['seg-gone', 'Scartati', funnel.ruolo.scarta]]),
+    axisCard('Asse azienda · aziende', funnel.archive.companies, [
       ['seg-keep', 'Interessanti', funnel.azienda.interessante],
       ['seg-pending', 'Evidenza mancante', funnel.azienda.evidenza_mancante],
-      ['seg-exclude', 'Fuori preferenze', funnel.azienda.non_interessante]]),
-    pipelineShares('Tier · aziende', funnel.archive.companies, [
+      ['seg-gone', 'Fuori preferenze', funnel.azienda.non_interessante]]),
+    axisCard('Tier · aziende', funnel.archive.companies, [
       ['seg-keep', 'A · azienda e ruolo sì', funnel.tier.A],
       ['seg-in', 'B · attesa di un ruolo', funnel.tier['B-attesa']],
       ['seg-review', 'B · solo esperienza', funnel.tier['B-esperienza']],
       ['seg-pending', 'Evidenza mancante', funnel.tier['evidenza-mancante']],
-      ['seg-exclude', 'Scarto', funnel.tier.scarto]]));
-  const details = el('details');
-  details.append(el('summary', 'Origine dei giudizi'));
-  if (funnel.giudici) details.append(pipelineShares('Giudici · annunci', funnel.archive.jobs,
-    [['regex', 'Regex', 'seg-in'],
-     ['llm_remoto', 'Modello remoto', 'seg-review'], ['nessuno', 'Senza giudizio', 'seg-pending']]
-      .map(([key, label, color]) => [color, label, funnel.giudici[key] || 0])));
-  if (funnel.basis) details.append(el('p', funnel.basis, 'muted'));
-  area.append(details);
+      ['seg-gone', 'Scarto', funnel.tier.scarto]]),
+    axisCard('Origine dei giudizi · annunci', funnel.archive.jobs, [
+      ['seg-in', 'Regex', funnel.giudici?.regex || 0],
+      ['seg-review', 'Modello remoto', funnel.giudici?.llm_remoto || 0],
+      ['seg-pending', 'Senza giudizio', funnel.giudici?.nessuno || 0]]));
+  axes.append(axesGrid);
+  area.append(block, axes);
 }
 
-/** Il percorso come imbuto: ogni tappa larga quanto e' arrivato fin li', e chi esce esce alla sua tappa.
-
-Le quote di ogni tappa sono complementari, e il totale di una tappa e' la quota che prosegue di quella
-prima: il restringimento del disegno e' il dato, non una decorazione. La legenda ripete ogni numero,
-percio' il colore non porta mai da solo un'informazione.
-*/
-function renderJourney(stages) {
-  const area = $('pipeline-journey');
-  area.replaceChildren();
-  if (!stages?.length) {
-    area.append(el('p', 'Percorso non disponibile. Riavvia il server al termine dell’esecuzione.'));
-    return;
-  }
-  const n = value => Number(value || 0).toLocaleString('it-IT');
-  const ns = 'http://www.w3.org/2000/svg';
-  const node = (tag, attributes, text) => {
-    const element = document.createElementNS(ns, tag);
-    for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
-    if (text !== undefined) element.textContent = text;
-    return element;
-  };
-  const W = 1000, BAR = 30, GAP = 40, TOP = 20, ROW = BAR + GAP;
-  const chart = node('svg', {viewBox: `0 0 ${W} ${TOP + stages.length * ROW}`, class: 'funnel-chart', role: 'img'});
-  const boxes = [];
-  for (const [index, stage] of stages.entries()) {
-    const y = TOP + index * ROW;
-    const width = stage.scale > 0 ? Math.max(2, (stage.total / stage.scale) * W) : 0;
-    const left = (W - width) / 2;
-    boxes.push({left, width, y});
-    // Il flusso collega solo tappe della stessa unita': un annuncio non "diventa" un'azienda.
-    const before = boxes[index - 1];
-    if (before && !stage.unit_change)
-      chart.append(node('polygon', {class: 'flow', points:
-        `${before.left},${before.y + BAR} ${before.left + before.width},${before.y + BAR} ${left + width},${y} ${left},${y}`}));
-    chart.append(node('text', {x: 0, y: y - 7, class: 'stage-label'}, stage.title));
-    chart.append(node('text', {x: W, y: y - 7, class: 'stage-total', 'text-anchor': 'end'}, `${n(stage.total)} ${stage.unit}`));
-    chart.append(node('rect', {x: left, y, width, height: BAR, rx: 5, class: 'track'}));
-    let x = left;
-    for (const [color, label, value] of stage.parts) {
-      const part = stage.total > 0 ? (value / stage.total) * width : 0;
-      if (part >= 1) {
-        chart.append(node('rect', {x, y, width: part, height: BAR, class: 'seg ' + color}));
-        if (part >= 70) chart.append(node('text', {x: x + part / 2, y: y + BAR / 2 + 4, class: 'seg-label', 'text-anchor': 'middle'}, n(value)));
-      }
-      x += part;
-    }
-  }
-  chart.append(node('title', {}, stages.map(stage =>
-    `${stage.title}: ${n(stage.total)} ${stage.unit}, di cui ` +
-    stage.parts.map(([, label, value]) => `${n(value)} ${label}`).join(', ')).join('. ')));
-  const scroll = el('div', undefined, 'journey-scroll');
-  scroll.append(chart);
-  area.append(scroll);
-  for (const stage of stages) {
-    area.append(pipelineShares(`${stage.title} · ${stage.unit}`, stage.total, stage.parts));
-    if (stage.note) area.append(el('p', stage.note, 'muted'));
-  }
+/** Una partizione completa: la barra impilata per il colpo d'occhio, i metri sotto per i confronti fini. */
+function axisCard(title, total, parts) {
+  const section = el('section', undefined, 'metric-section');
+  section.append(pipelineShares(title, total, parts, false));
+  for (const [color, label, value] of parts) section.append(meter(label, value, total, color));
+  return section;
 }
 
 /** Read the two live progress shapes: companies for Qwen, single records for the descriptions. */

@@ -10,7 +10,7 @@ Le operazioni disponibili sono raccolta per fonte, filtri locali, recupero descr
 
 “Continua da qui” avvia in sequenza i passaggi principali successivi. La finestra mostra l'elenco e permette di impostare il successivo passaggio LLM remoto, comprese le chiamate contemporanee. Se il recupero descrizioni è successivo al passaggio scelto, considera tutte le descrizioni eleggibili. Il recupero mantiene esclusioni, cooldown e limiti della fonte già previsti dalla pipeline.
 
-La sequenza si ferma al primo risultato parziale o errore. “Riprova” significa riaprire il passaggio, verificare i parametri e avviarlo di nuovo: i risultati validi già salvati vengono riutilizzati dove previsto dai rispettivi task. Non esistono retry automatici a pagamento.
+La sequenza si ferma al primo risultato parziale o errore. “Riprova” significa riaprire il passaggio, verificare i parametri e avviarlo di nuovo: i risultati validi già salvati vengono riutilizzati dove previsto dai rispettivi task. Non esistono retry automatici a pagamento. Il passaggio remoto ritenta da solo la sola richiesta che il provider ha **rifiutato** (HTTP 429 o 5xx): non ha generato niente, quindi non c'è spesa da duplicare. Un fallimento di trasporto, dove l'esito di fatturazione è ignoto, ferma la run come prima.
 
 ## Pilot Qwen e ordine dei passaggi
 
@@ -26,7 +26,7 @@ Le esclusioni Qwen governano la spesa di arricchimento ma restano proposte nella
 
 ## Stato, persistenza e interruzioni
 
-Il funnel mostra una barra per asse e per tier, con etichette e conteggi direttamente sotto ogni barra. Anche le quote nulle o molto piccole mantengono un conteggio leggibile. Le card usano lo stesso formato per lavoro completato e rimanente. Il pannello attivo mostra avanzamento e nuovi esiti; consumi e contatori aggiuntivi sono in «Consumi e dettagli». L'origine dei giudizi è espandibile nel funnel. I conteggi dell'archivio e quelli della singola esecuzione restano distinti.
+Il funnel, gli assi e il percorso vivono ora tutti nella tab Metriche: la pagina Pipeline resta il pannello operativo. Ogni card si apre dichiarando quanti elementi ha ricevuto e da quale passaggio: e' l'unico posto in cui un totale nato da una sottrazione viene spiegato, e in cui un cambio di unita di misura fra annunci e aziende si dichiara invece di lasciare il salto al lettore. Il giudice 2 disegna una barra sola, sui «non so» che il regex gli ha passato; la copertura resta pero misurata sugli annunci chiamabili, perche una quota ferma per descrizione mancante non deve tenere la card per sempre su copertura parziale. La coda mostra prima le aziende eleggibili che ha ricevuto e poi l'archivio da cui escono. I numeri scritti nelle frasi hanno la stessa forma di quelli scritti nelle barre. Le card usano lo stesso formato per lavoro completato e rimanente. Il pannello attivo mostra avanzamento e nuovi esiti; consumi e contatori aggiuntivi sono in «Consumi e dettagli». I conteggi dell'archivio e quelli della singola esecuzione restano distinti.
 
 La pagina aggiorna lo stato ogni trenta secondi mentre è aperta. La frequenza limita il lavoro del monitor sull'intero archivio; il pulsante Aggiorna stato permette una lettura manuale. Le esecuzioni vengono salvate in SQLite nella tabella `pipeline_jobs`: parametri, orario, stato, progressi, risultato e impronta degli input. Chiudere la scheda del browser non ferma il worker. Il server deve rimanere attivo.
 
@@ -55,7 +55,20 @@ Le chiamate Qwen restano sequenziali, con pausa configurata in remote_llm.json. 
 Lo step attivo ha sfondo e bordo evidenziati, etichetta e barra per aziende attraversate. I dettagli mostrano azienda corrente, annunci valutati, keep/review/exclude, cache, esclusioni locali, chiamate API, input/output token della sola run e aziende differite. Le vecchie run indicano i contatori non disponibili. Il nuovo raggruppamento richiede il riavvio del server dopo la run corrente.
 
 
-### Funnel e unita di misura
-Il funnel globale espone aziende e annunci come barre proporzionali: archivio, esclusi locali e rimasti, seguiti dalla divisione dei rimasti fra tenere, verificare, escludere e senza giudizio remoto. Le percentuali sono calcolate sul totale della sezione. Una azienda e esclusa localmente solo se non ha annunci rimasti. Cache locale mancante o scaduta non causa esclusioni implicite.
+### La tab Metriche: percorso, assi e distribuzioni
+
+Tutte le metriche dell'archivio stanno in una pagina sola. Si apre con il percorso degli annunci: cinque tappe, dalla raccolta alle aziende risultanti. Ogni tappa è una barra larga quanto l'intero archivio, sempre lo stesso denominatore. Il numero e la percentuale sono scritti dentro ogni quota, così una quota di una tappa si confronta a occhio con quella di un'altra senza rifare il conto.
+
+La fascia scura a sinistra è chi è già uscito nelle tappe precedenti: cresce da una riga alla successiva, e quel bordo che scivola verso destra è il funnel. Quello che resta a destra è ciò che prosegue: compatibili in verde, ancora da decidere in ambra, fermi per informazione mancante in grigio. Nessuna quota è mai affidata al solo colore: il numero è nella barra quando ci sta, e comunque nel riepilogo espandibile sotto il disegno, con le etichette per esteso e le note di ogni tappa. La quinta tappa cambia unità di misura e lo dichiara: lì il totale sono le aziende.
+
+Un annuncio senza esito locale salvato resta un residuo visibile invece di sparire dal conto: la somma delle quote di ogni tappa è sempre l'archivio intero. Le tappe sugli annunci sono monotone, chi è uscito non rientra. Il percorso riguarda sempre tutto l'archivio, anche quando il filtro della pagina è attivo, e la pagina lo dichiara.
+
+Seguono i due assi indipendenti e il tier, ciascuno come partizione completa: una barra impilata per il colpo d'occhio e sotto un metro per quota, con conteggio e percentuale. Poi la qualità e la composizione della selezione, che seguono il filtro della pagina: completezza dei dati, esito dei filtri locali, categorie aziendali e distribuzione geografica. Ogni metro è disegnato contro il totale della scheda, mai contro il massimo della lista, così due voci di schede diverse restano confrontabili. Le distribuzioni lunghe mostrano le prime voci e raccolgono la coda in una riga sola invece di troncarla.
+
+Gli esiti dei modelli sono quelli salvati da tutte le esecuzioni: sono proposte, non esclusioni definitive. Nessuna operazione di filtraggio o API viene avviata dalla lettura.
+
+### Unita di misura
+
+Una azienda e esclusa localmente solo se non ha annunci rimasti. Cache locale mancante o scaduta non causa esclusioni implicite.
 I giudizi Qwen salvati sui soli annunci rimasti formano quattro gruppi disgiunti: keep, review, exclude, senza giudizio. La loro somma coincide con gli annunci rimasti. Sono risultati storici salvati, non una certificazione di validita con il prompt corrente; la UI esplicita questo limite. Gli audit di annunci esclusi localmente non rientrano nella partizione. La presenza di schede aziendali non misura la selezione.
 La run corrente rimane separata: aziende attraversate includono quelle saltate; risultati in cache nelle vecchie run possono comprendere piu elaborazioni dello stesso annuncio. Token input/output riguardano solo la run. Nessuna operazione di filtraggio o API viene avviata dal monitor.

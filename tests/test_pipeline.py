@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
-from jobhunter.pipeline import summary
+from jobhunter.pipeline import it, summary
 from jobhunter.workspace import Archive, identity, settings
 
 
@@ -45,6 +45,44 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual((f['tier']['B-esperienza'], f['tier']['evidenza-mancante']), (1, 1))
             # Il regex ha già deciso ogni ruolo: nessun giudizio remoto entra nella cascata.
             self.assertEqual(f['giudici'], {'regex': 4})
+            # Il denominatore non cambia mai fra le tappe: ogni quota si legge contro lo stesso totale.
+            for stage in f['percorso']:
+                expected = 2 if stage.get('unit_change') else 4
+                self.assertEqual(stage['base'], expected, stage['title'])
+                self.assertEqual(sum(value for _, _, value in stage['parts']), expected, stage['title'])
+            # Chi e' uscito non rientra: la fascia scura puo' solo crescere lungo le tappe sugli annunci.
+            usciti = [sum(v for c, _, v in stage['parts'] if c == 'seg-gone')
+                      for stage in f['percorso'] if not stage.get('unit_change')]
+            self.assertEqual(usciti, sorted(usciti))
+
+    def test_every_card_declares_the_population_it_received(self):
+        """Un totale che nasce da una sottrazione va spiegato, e la barra va disegnata sulla sua base."""
+        with tempfile.TemporaryDirectory() as directory, closing(Archive(Path(directory)/'a.db')) as a:
+            a.ingest([{'company_name': 'Example', 'title': title, 'description': text,
+                       'source_url': f'https://example.org/{i}'} for i, (title, text) in enumerate([
+                           ('Data Scientist', 'Build models'), ('Growth Hacker', ''),
+                           ('Growth Hacker', 'Grow the funnel'), ('HR Manager', 'Manage recruitment')])], 'test')
+            a.evaluations()
+            steps = {step['id']: step for step in summary(a, settings(), Path(directory))['steps']}
+            # Ogni card dice da dove arriva; solo la prima non ha nulla a monte.
+            for key, step in steps.items():
+                self.assertEqual(bool(step['inflow']), key != 'collection', key)
+            # La barra del giudice 2 sta sui «non so» del regex, non su una popolazione derivata in silenzio.
+            regex = next(bar for bar in steps['filters']['extra'] if bar['title'] == 'Esito del regex')
+            non_so = next(value for _, label, value in regex['parts'] if 'giudici successivi' in label)
+            remote = steps['remote']
+            self.assertEqual(remote['base'], non_so)
+            self.assertEqual(sum(value for _, _, value in remote['parts']), non_so)
+            # La copertura resta sulle chiamate possibili: una quota ferma non blocca lo stato per sempre.
+            fermi = next(value for _, label, value in remote['parts'] if 'manca la descrizione' in label)
+            self.assertEqual(remote['total'], non_so - fermi)
+            # I numeri della frase hanno la stessa forma di quelli della barra, o non si agganciano a occhio.
+            self.assertIn(it(non_so), remote['inflow'])
+            self.assertIn(it(remote['total']), remote['inflow'])
+            self.assertEqual((it(23049), it(5908)), ('23.049', '5908'))
+            # Dove cambia l'unita' di misura la card lo dichiara invece di lasciare il salto al lettore.
+            for key in ('descriptions', 'queue'):
+                self.assertIn('Cambia unità di misura', steps[key]['inflow'], key)
 
     def test_description_card_counts_company_coverage(self):
         """DESIGN §4: la copertura si misura sulle aziende, non sui ruoli sopravvissuti ai filtri."""

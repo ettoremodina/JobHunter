@@ -60,7 +60,9 @@
     "max_input_chars": 80000,
     "max_jobs": 30,
     "max_tokens": 12000,
-    "workers": 4,
-    "max_workers": 8
+    "workers": 50,
+    "max_workers": 200,
+    "max_attempts": 4,
+    "checkpoint_seconds": 2
   }
 }

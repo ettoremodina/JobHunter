@@ -415,7 +415,7 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
   border-radius: var(--radius-sm);
 }
 #pipeline-steps { margin: 28px 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 44px 34px; }
-.pipeline-step { position: relative; min-width: 0; }
+.pipeline-step { position: relative; min-width: 0; display: flex; flex-direction: column; }
 .pipeline-step:not(:last-child)::after {
   content: ''; position: absolute; right: -24px; top: 50%;
   width: 11px; height: 11px; border-top: 2px solid var(--ink-faint); border-right: 2px solid var(--ink-faint); transform: rotate(45deg);
@@ -430,7 +430,7 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 .pipeline-step:nth-child(4)::after, .pipeline-step:nth-child(5)::after { right: auto; left: -24px; transform: rotate(-135deg); }
 .pipeline-card {
   display: flex; flex-direction: column; align-items: flex-start; text-align: left;
-  width: 100%; height: 100%; padding: 20px; gap: 6px;
+  width: 100%; flex: 1 1 auto; padding: 20px; gap: 6px;
   border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--surface); box-shadow: var(--shadow);
 }
@@ -450,6 +450,9 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 #pipeline-active p { margin: 6px 0; }
 .pipeline-history { display: block; text-align: left; margin: 8px 0; max-width: 100%; }
 .pipeline-stop { margin-top: .5rem; width: 100%; }
+.pipeline-about { margin-top: 8px; padding: 0 4px; font-size: .86rem; color: var(--ink-soft); }
+.pipeline-about > summary { cursor: pointer; font-weight: 600; color: var(--brand); }
+.pipeline-about > p { margin: 6px 0 0; line-height: 1.45; }
 .pipeline-card progress { width: 100%; height: .7rem; accent-color: var(--brand); }
 .pipeline-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .pipeline-heading h3 { margin: 0; font-size: 1.1rem; }
@@ -475,7 +478,7 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 #pipeline-dialog .actions { flex-wrap: wrap; margin-top: 20px; }
 
 /* Funnel: complementary shares of one whole, drawn as SVG so no inline style is needed. */
-#pipeline-funnel {
+.metrics-block {
   margin-block: 1.25rem 1.75rem;
   padding: 22px;
   background: var(--surface);
@@ -483,9 +486,9 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
-#pipeline-funnel h3 { margin-top: 0; }
-#pipeline-funnel h4 { margin: 1.4rem 0 .5rem; font-size: .95rem; }
-#pipeline-funnel p { max-width: 80ch; }
+.metrics-block h3 { margin-top: 0; }
+.metrics-block h4 { margin: 1.4rem 0 .5rem; font-size: .95rem; }
+.metrics-block p { max-width: 80ch; }
 .funnel-chart { display: block; width: 100%; height: auto; overflow: visible; }
 .funnel-chart .stage-label { fill: var(--ink); font-size: 17px; font-weight: 700; }
 .funnel-chart .stage-total { fill: var(--ink-soft); font-size: 15px; }
@@ -500,6 +503,8 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 .seg-review { fill: #b07206; }
 .seg-exclude { fill: #a03028; }
 .seg-pending { fill: #8d9bab; }
+.seg-gone { fill: #1c222b; }
+.seg-rank { fill: #3f6fa8; }
 @media (prefers-color-scheme: dark) {
   .seg-out { fill: #5b6a7c; }
   .seg-in { fill: #3f7fcc; }
@@ -507,6 +512,8 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
   .seg-review { fill: #c08a2a; }
   .seg-exclude { fill: #c2564c; }
   .seg-pending { fill: #56646f; }
+  .seg-gone { fill: #0a0f16; }
+  .seg-rank { fill: #6ea8ee; }
 }
 .funnel-legend { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin: .6rem 0 1rem; padding: 0; list-style: none; font-size: .87rem; }
 .funnel-legend li { display: flex; align-items: baseline; gap: .45rem; }
@@ -517,6 +524,8 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 .funnel-legend .swatch.seg-review { background: #b07206; }
 .funnel-legend .swatch.seg-exclude { background: #a03028; }
 .funnel-legend .swatch.seg-pending { background: #8d9bab; }
+.funnel-legend .swatch.seg-gone { background: #1c222b; }
+.funnel-legend .swatch.seg-rank { background: #3f6fa8; }
 @media (prefers-color-scheme: dark) {
   .funnel-legend .swatch.seg-out { background: #5b6a7c; }
   .funnel-legend .swatch.seg-in { background: #3f7fcc; }
@@ -524,6 +533,8 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
   .funnel-legend .swatch.seg-review { background: #c08a2a; }
   .funnel-legend .swatch.seg-exclude { background: #c2564c; }
   .funnel-legend .swatch.seg-pending { background: #56646f; }
+  .funnel-legend .swatch.seg-gone { background: #0a0f16; }
+  .funnel-legend .swatch.seg-rank { background: #6ea8ee; }
 }
 .funnel-legend .count { font-variant-numeric: tabular-nums; font-weight: 650; }
 .funnel-companies { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: .5rem 0 0; padding: 0; list-style: none; font-size: .9rem; }
@@ -554,7 +565,7 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
   .filters { gap: 10px; padding: 14px; }
   .filters label { min-width: 140px; }
   .toolbar { align-items: start; flex-wrap: wrap; }
-  #results, #detail, #pipeline-funnel { padding: 14px; }
+  #results, #detail, .metrics-block { padding: 14px; }
   .source { align-items: start; flex-direction: column; }
   #message { margin-left: 16px; margin-right: 16px; }
   th, td { padding: 8px 6px; }
@@ -596,6 +607,7 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 .pipeline-measure .funnel-legend { display: grid; gap: 6px; }
 .pipeline-measure .funnel-legend li { display: grid; grid-template-columns: 12px 1fr auto; align-items: start; }
 .pipeline-measure .funnel-chart { height: 14px; }
+.pipeline-inflow { margin: 0 0 12px; padding-left: 10px; border-left: 3px solid var(--line); font-size: .82rem; color: var(--ink-soft); }
 .run-progress { max-width: 900px; }
 .run-progress > details { margin-top: 16px; }
 @media (max-width: 640px) {
@@ -606,8 +618,8 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 /* Il percorso: sotto una certa larghezza il disegno scorre invece di diventare illeggibile. */
 .journey-scroll { overflow-x: auto; margin: 12px 0 20px; }
 .journey-scroll .funnel-chart { min-width: 640px; }
-#pipeline-journey .pipeline-shares { margin: 22px 0 0; }
-#pipeline-journey > p { margin: 6px 0 0; font-size: .85rem; }
+.journey-detail .pipeline-shares { margin: 22px 0 0; }
+.journey-detail > p { margin: 6px 0 0; font-size: .85rem; }
 
 /* L'attività dell'azienda è prosa: due righe bastano, il resto sta nella scheda. */
 .company-activity {
@@ -616,3 +628,54 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Metriche: una lingua sola per tutta la tab, percorso e distribuzioni. */
+.metrics-block + .metrics-block { margin-top: 1.25rem; }
+.metrics-block > .metrics-grid { margin-top: 16px; }
+.metrics-block > .hint { margin-top: 0; }
+#analytics-view > .hint { max-width: 80ch; }
+.journey-key { margin: .75rem 0 0; font-size: .85rem; }
+.journey-chart .stage-label { font-size: 16px; }
+.journey-chart .seg-share { fill: #fff; font-size: 12px; opacity: .8; }
+.journey-chart .gone-edge { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: .45; }
+.journey-detail { margin-top: 1rem; }
+.journey-detail > summary { cursor: pointer; font-weight: 600; }
+
+/* Un metro: quota a sinistra, denominatore dichiarato dalla scheda, mai una barra lunga quanto il massimo. */
+.meter + .meter { margin-top: 12px; }
+.meter-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: .88rem; }
+.meter-label { min-width: 0; overflow-wrap: anywhere; }
+.meter-value { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 650; color: var(--ink-soft); }
+.meter-bar { height: 10px; margin-top: 5px; background: var(--surface-sunken); border-radius: 3px; overflow: hidden; }
+.metric-section > .share-heading { margin-bottom: 4px; }
+.metric-section > .hint { margin: 0 0 14px; }
+.metric-section > .pipeline-shares { margin-bottom: 16px; }
+
+/* Ciambelle: stessi colori delle barre (fill), piu' cinque tinte categoriche validate per le categorie. */
+.donut { display: block; flex: 0 0 auto; width: 132px; height: 132px; }
+.donut .track { fill: var(--line); }
+.donut path.seg { stroke: var(--surface); stroke-width: 1; }
+.donut-center { fill: var(--ink); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.donut-body { display: flex; align-items: center; flex-wrap: wrap; gap: 16px 22px; }
+.donut-legend { display: grid; gap: 6px; flex: 1 1 12rem; margin: 0; }
+.donut-legend li { display: grid; grid-template-columns: 12px 1fr auto; align-items: center; gap: 8px; }
+.funnel-legend .swatch.track { background: var(--line); }
+.gauge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 16px 12px; }
+.gauge { margin: 0; text-align: center; }
+.gauge .donut { width: 88px; height: 88px; margin: 0 auto 6px; }
+.gauge .donut-center { font-size: 17px; }
+.gauge figcaption { font-size: .82rem; color: var(--ink-soft); line-height: 1.35; }
+.cat-1 { fill: #2a78d6; background: #2a78d6; }
+.cat-2 { fill: #eb6834; background: #eb6834; }
+.cat-3 { fill: #1baf7a; background: #1baf7a; }
+.cat-4 { fill: #eda100; background: #eda100; }
+.cat-5 { fill: #e87ba4; background: #e87ba4; }
+@media (prefers-color-scheme: dark) {
+  .cat-1 { fill: #3987e5; background: #3987e5; }
+  .cat-2 { fill: #d95926; background: #d95926; }
+  .cat-3 { fill: #199e70; background: #199e70; }
+  .cat-4 { fill: #c98500; background: #c98500; }
+  .cat-5 { fill: #d55181; background: #d55181; }
+}
+/* Il tooltip del percorso sta sulla quota: i numeri scritti sopra non devono coprirlo. */
+.journey-chart text { pointer-events: none; }

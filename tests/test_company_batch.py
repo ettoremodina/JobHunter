@@ -1,12 +1,13 @@
 """Check company batching without contacting a paid provider."""
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 from jobhunter.workspace import Archive
 from jobhunter.company_batch import run, response_schema
-from jobhunter.remote_llm import inputs, request as request_remote, validate
+from jobhunter.remote_llm import digest, inputs, request as request_remote, validate
 
 
 class BatchTests(unittest.TestCase):
@@ -127,6 +128,8 @@ class BatchTests(unittest.TestCase):
                 self.assertEqual(arc.db.execute("SELECT count(*) FROM enrichments WHERE task='remote:company-summary'").fetchone()[0], 0)
                 errors = [r['error'] for item in result['items'] for r in item.get('rejected', [])]
                 self.assertEqual(len(errors), 2)
+                # La risposta grezza rifiutata resta nel report: senza, non si puo' diagnosticare perche'.
+                self.assertTrue(any('rejected_answer' in item for item in result['items'] if item.get('rejected')))
             finally:
                 arc.close()
 
@@ -288,5 +291,134 @@ class BatchTests(unittest.TestCase):
                     validate('company-summary', {'summary': 'Made up', 'category': 'Da classificare',
                         'facts': [{'section': 'business', 'text': 'Made up', 'quote': 'S0'}],
                         'missing_information': []}, payload['source'])
+            finally:
+                arc.close()
+
+    def test_a_slow_company_never_holds_the_pool_and_a_rejected_call_is_retried(self):
+        """Le chiamate in volo si rimpiazzano una a una, e un 429 non ha generato niente: si ritenta.
+
+        La prima chiamata non rientra finche' le altre quattro non sono passate: con le ondate di
+        `workers` questa attesa non finirebbe mai, perche' nessuna partiva prima che la piu' lenta
+        del gruppo fosse rientrata.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            arc = Archive(Path(folder)/'db.sqlite3')
+            try:
+                arc.ingest([{'company_name': 'Company '+str(i), 'title': 'Analyst', 'description': 'Build models.',
+                             'source_url': 'https://example.org/'+str(i)} for i in range(5)], 'test')
+                cfg = json.loads(Path('config/remote_llm.json').read_text())
+                cfg['output_directory'] = folder
+                original = json.loads
+                def config_read(value, *args, **kwargs):
+                    """Redirect reports to the disposable test directory."""
+                    result = original(value, *args, **kwargs)
+                    return cfg if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY' else result
+                lock, released, slow, done, throttled = threading.Lock(), threading.Event(), [], set(), []
+                def response(config, prompt, payload, key):
+                    """Hold the first request open; reject exactly one other with a provider 429."""
+                    oid = sorted(payload['jobs'])[0]
+                    with lock:
+                        if not slow:
+                            slow.append(oid)
+                        first = slow[0] == oid
+                    if first:
+                        self.assertTrue(released.wait(20), 'una chiamata lenta ha bloccato le altre')
+                    else:
+                        with lock:
+                            reject = not throttled
+                            throttled.append(oid) if reject else None
+                        if reject:
+                            error = ValueError('Remote HTTP 429; request rejected by the provider')
+                            error.status = 429
+                            raise error
+                        with lock:
+                            done.add(oid)
+                            if len(done) == 4:
+                                released.set()
+                    empty = {'summary': '', 'facts': [], 'missing_information': ['Dati insufficienti']}
+                    company = {**empty, 'category': 'Da classificare'} if payload['company_requested'] else None
+                    return ({'company': company, 'jobs': [{'id': oid, 'selection': {'decision': 'review', 'rationale': 'Da verificare', 'evidence': [], 'missing_information': []}, 'summary': None} for oid in payload['jobs']]},
+                            {'total_tokens': 10}, [])
+                values = {'all_companies': True, 'mode': 'execute', 'workers': 2}
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.remote_llm.api_key', return_value='test'), \
+                     patch('jobhunter.remote_llm.request', side_effect=response), patch('jobhunter.company_batch.time.sleep'):
+                    report = run(arc, values, lambda d: None)
+                self.assertTrue(released.is_set())
+                self.assertEqual(report['status'], 'success')
+                self.assertEqual(report['counts']['evaluated_jobs'], 5)
+                self.assertEqual(report['counts']['api_calls'], 5)
+                self.assertEqual(report['counts']['throttled_retries'], 1)
+                self.assertEqual(report['completed_companies'], 5)
+            finally:
+                arc.close()
+
+    def test_shared_company_evidence_does_not_change_what_is_sent(self):
+        """La cache di preparazione risparmia una rilettura, non deve cambiare di un byte la richiesta.
+
+        `company_input` viene restituito a piu' ruoli della stessa azienda: se fosse lo stesso
+        oggetto, l'arricchimento di un ruolo comparirebbe nella richiesta dell'altro e la firma
+        della cache dei risultati cambierebbe senza che nulla sia cambiato davvero.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            arc = Archive(Path(folder)/'db.sqlite3')
+            try:
+                arc.ingest([{'company_name': 'Example', 'title': 'Analyst '+str(i), 'description': 'We build models. Looking for an analyst.',
+                             'source_url': 'https://example.org/'+str(i)} for i in range(3)], 'test')
+                cfg = json.loads(Path('config/remote_llm.json').read_text())
+                cid = arc.db.execute('SELECT id FROM companies').fetchone()[0]
+                ids = [r[0] for r in arc.db.execute('SELECT id FROM opportunities ORDER BY id')]
+                shared = {}
+                for oid in ids:
+                    for task in ('selection', 'job-summary'):
+                        self.assertEqual(digest(inputs(arc, task, oid, cfg, cache=shared)),
+                                         digest(inputs(arc, task, oid, cfg)))
+                self.assertEqual(digest(inputs(arc, 'company-summary', cid, cfg, cache=shared)),
+                                 digest(inputs(arc, 'company-summary', cid, cfg)))
+                self.assertEqual(list(shared), [cid])
+                first = inputs(arc, 'selection', ids[0], cfg, cache=shared)['company_context']
+                first['verified_web_facts'] = ['inventato']
+                self.assertNotIn('verified_web_facts', inputs(arc, 'selection', ids[1], cfg, cache=shared)['company_context'])
+            finally:
+                arc.close()
+
+    def test_a_null_judgement_rejects_one_role_and_never_aborts_a_paid_run(self):
+        """Visto in produzione: `selection: null` su un ruolo richiesto fermava tutta la run.
+
+        Le risposte gia' pagate e ancora in volo venivano buttate via insieme all'eccezione. Una
+        forma inattesa nella risposta del provider deve scartare *quel* pezzo e basta.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            arc = Archive(Path(folder)/'db.sqlite3')
+            try:
+                arc.ingest([{'company_name': 'Company '+str(i), 'title': 'Analyst', 'description': 'Build models.',
+                             'source_url': 'https://example.org/'+str(i)} for i in range(4)], 'test')
+                cfg = json.loads(Path('config/remote_llm.json').read_text())
+                cfg['output_directory'] = folder
+                original = json.loads
+                def config_read(value, *args, **kwargs):
+                    """Redirect reports to the disposable test directory."""
+                    result = original(value, *args, **kwargs)
+                    return cfg if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY' else result
+                answered = []
+                def response(config, prompt, payload, key):
+                    """Null the judgement of the first company only; the others answer normally."""
+                    ids = sorted(payload['jobs'])
+                    answered.append(ids[0])
+                    null = len(answered) == 1
+                    empty = {'summary': '', 'facts': [], 'missing_information': ['Dati insufficienti']}
+                    company = {**empty, 'category': 'Da classificare'} if payload['company_requested'] else None
+                    return ({'company': company, 'jobs': [{'id': oid, 'selection': None if null else {'decision': 'review', 'rationale': 'Da verificare', 'evidence': [], 'missing_information': []}, 'summary': None} for oid in ids]},
+                            {'total_tokens': 10}, [])
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.remote_llm.api_key', return_value='k'), \
+                     patch('jobhunter.remote_llm.request', side_effect=response), patch('jobhunter.company_batch.time.sleep'):
+                    report = run(arc, {'all_companies': True, 'mode': 'execute', 'workers': 1}, lambda d: None)
+                self.assertEqual(report['status'], 'partial')
+                self.assertEqual(report['counts']['api_calls'], 4)
+                self.assertEqual(report['counts']['evaluated_jobs'], 3)
+                self.assertEqual(report['counts']['rejected_jobs'], 1)
+                self.assertEqual(report['counts']['rejected_companies'], 0)
+                self.assertEqual([r['error'] for item in report['items'] for r in item.get('rejected', [])],
+                                 ['Selection requested but not returned'])
+                self.assertEqual(arc.db.execute("SELECT count(*) FROM enrichments WHERE task='remote:selection'").fetchone()[0], 3)
             finally:
                 arc.close()

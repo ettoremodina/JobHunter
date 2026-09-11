@@ -116,8 +116,15 @@ def main():
                 page.get_by_role("button", name="Azzera", exact=True).click()
                 expect(page.locator("#rows .company-link")).to_have_count(1)
                 page.get_by_role("button", name="Metriche", exact=True).click()
-                page.get_by_role("heading", name="Completezza dei dati", exact=True).wait_for()
+                page.get_by_role("heading", name="Il percorso degli annunci", exact=True).wait_for()
                 expect(page.locator("#analytics-status")).to_contain_text("3 annunci")
+                expect(page.locator("#analytics-content")).to_contain_text("Completezza dei dati")
+                expect(page.locator("#analytics-content")).to_contain_text("Esclusi dai filtri locali")
+                expect(page.locator("#analytics-content")).to_contain_text("Senza giudizio")
+                # I grafici sono SVG con soli attributi geometrici: uno stile inline bloccato non puo' nascondere una quota.
+                expect(page.locator("#analytics-content svg.funnel-chart rect.seg")).not_to_have_count(0)
+                # Ogni tappa del percorso e' larga quanto l'archivio: il denominatore non cambia mai.
+                assert page.evaluate("""[...document.querySelectorAll('.journey-chart rect.track')].every(r => r.getAttribute('width') === '1000')""")
                 page.screenshot(path=str(destination / "metrics-desktop.png"), full_page=True)
                 page.locator("#analytics-scope").select_option("potential")
                 expect(page.locator("#analytics-status")).to_contain_text("1 annunci")
@@ -172,10 +179,6 @@ def main():
                 page.screenshot(path=str(destination / "pipeline-mobile.png"), full_page=True)
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
                 page.set_viewport_size({"width": 1440, "height": 1050})
-                expect(page.locator('#pipeline-funnel')).to_contain_text('Esclusi dai filtri locali')
-                expect(page.locator('#pipeline-funnel')).to_contain_text('Ancora senza giudizio')
-                # The funnel is SVG: geometry attributes only, so a blocked inline style cannot hide a share.
-                expect(page.locator('#pipeline-funnel svg.funnel-chart rect.seg')).not_to_have_count(0)
                 page.screenshot(path=str(destination / "pipeline-desktop.png"), full_page=True)
                 page.get_by_role('button', name='Apri Selezione e schede con Qwen', exact=True).click()
                 expect(page.locator('#pipeline-dialog')).to_be_visible()

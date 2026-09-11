@@ -52,8 +52,7 @@
             >Località dell'annuncio<input
               id="location"
               type="search"
-              placeholder="Es. Milano"
-              aria-describedby="location-help" /><small id="location-help">Località dichiarata nell'annuncio, non sede aziendale verificata. Usa questo campo per la città.</small></label
+              placeholder="Es. Milano" /></label
           ><label
             >Stato<select id="status">
               <option value="">Tutti</option>
@@ -112,6 +111,7 @@
       </section>
       <section id="analytics-view" hidden>
         <h2>Metriche dell'archivio</h2>
+        <p class="hint">Una pagina sola: il percorso degli annunci dall'archivio al tier, poi la qualità e la composizione della selezione.</p>
         <div class="toolbar"><label>Annunci da analizzare<select id="analytics-scope"><option value="">Tutto l'archivio</option><option value="potential">Potenzialmente compatibili</option><option value="review">Da verificare</option><option value="excluded">Esclusi dai filtri</option></select></label><button id="refresh-analytics">Aggiorna metriche</button></div>
         <p id="analytics-status" role="status" aria-live="polite"></p>
         <div id="analytics-content"></div>
@@ -120,10 +120,9 @@
         <div class="toolbar"><h2>Pipeline dell'archivio</h2><button id="refresh-pipeline">Aggiorna stato</button></div>
         <p>Apri un passaggio per impostare i parametri e avviarlo.</p>
         <p id="pipeline-status" role="status" aria-live="polite"></p>
-        <section id="pipeline-funnel" aria-label="Funnel degli annunci"></section>
         <div id="pipeline-active" role="status" aria-live="polite"></div>
         <ol id="pipeline-steps" aria-label="Fasi della pipeline"></ol>
-        <details id="pipeline-journey-box"><summary>Il percorso degli annunci, passaggio per passaggio</summary><div id="pipeline-journey"></div></details>
+        <p class="hint">Il percorso completo degli annunci e tutte le distribuzioni dell'archivio sono nella tab Metriche.</p>
         <details><summary>Workflow esterni e copertura</summary><div id="pipeline-workflow"></div></details>
         <details class="queue-help"><summary>Ultime esecuzioni registrate</summary><div id="pipeline-runs"></div></details>
       </section>
