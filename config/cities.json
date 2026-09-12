@@ -126,6 +126,12 @@
         ]
       },
       {
+        "name": "Łódź",
+        "aliases": [
+          "Łódź"
+        ]
+      },
+      {
         "name": "Poznań",
         "aliases": [
           "Poznan"
@@ -143,12 +149,6 @@
         "name": "Wrocław",
         "aliases": [
           "Wrocław"
-        ]
-      },
-      {
-        "name": "Łódź",
-        "aliases": [
-          "Łódź"
         ]
       }
     ],
@@ -1216,16 +1216,10 @@
     ],
     "Danimarca": [
       {
-        "name": "Copenhagen",
-        "aliases": [
-          "Copenhagen",
-          "kobenhavn"
-        ]
-      },
-      {
         "name": "København",
         "aliases": [
           "Copenaghen",
+          "Copenhagen",
           "København",
           "København SV"
         ]

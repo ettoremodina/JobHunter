@@ -34,6 +34,30 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual([row['raw'] for row in rows if row['to_map']], ['Kigali, Rwanda'])
 
 
+class MappingTests(unittest.TestCase):
+    """La mappa è fatta per essere estesa a mano: questi controlli tengono lontani i doppioni."""
+
+    def test_letters_with_a_stroke_fold_like_their_plain_form(self):
+        """«ø» e «ł» non sono una vocale più un accento: senza tabella resterebbero città diverse."""
+        self.assertEqual(places.fold('København'), 'kobenhavn')
+        self.assertEqual(places.fold('Wrocław'), places.fold('Wroclaw'))
+        self.assertEqual(places.fold('Łódź'), places.fold('Lodz'))
+
+    def test_no_city_is_written_twice_in_the_same_country(self):
+        """Due voci per la stessa città spezzerebbero i conteggi e il menu: una città, una voce."""
+        for country, cities in places.mapping()['by_country'].items():
+            owners = {}
+            for city in cities:
+                for alias in {*city['aliases'], city['name']}:
+                    other = owners.setdefault(places.fold(alias), city['name'])
+                    self.assertEqual(other, city['name'], f'{country}: «{alias}» sta in due città')
+
+    def test_the_danish_capital_answers_to_every_spelling(self):
+        """Il caso che ha fatto scoprire il difetto: tre grafie, una sola città."""
+        for raw in ('København, Denmark', 'Copenhagen, Denmark', 'København SV, Denmark', 'Copenaghen, Danimarca'):
+            self.assertEqual(places.resolve(raw), ('Danimarca', 'København'), raw)
+
+
 class CacheTests(unittest.TestCase):
     """Il calcolo si salva per annuncio e si rifà solo quando cambia il contenuto o la mappa."""
 
