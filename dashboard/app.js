@@ -344,6 +344,13 @@ function opportunityBlock(job, company, decision, id, open, context = {}) {
     body.append(fields);
     for (const missing of job.remote_summary.missing_information) body.append(el("p", "Da verificare: " + missing, "muted"));
   }
+  // La lingua dell'originale: quando l'annuncio passa viene tradotto e riassunto, e qui si perderebbe.
+  const written = job.selection?.requirements?.written_in;
+  if (written) {
+    const line = el("p", `Lingua dell'annuncio: ${written.name}`, "muted");
+    if (!written.known) line.append(el("span", "Lingua che non conosci", "badge review"));
+    body.append(line);
+  }
   if (job.verdict?.verdetto) body.append(roleVerdict(job.verdict));
   const text = el("details");
   text.append(el("summary", "Leggi descrizione"), description(job.formatted_description || job.description));
@@ -899,6 +906,67 @@ function savedBrief() {
   $("saved-brief-box").replaceChildren(copyBox("Testo da copiare nella chat di Codex", text));
 }
 
+/** Le domande di controllo sull'archivio: ognuna col suo conteggio, e i gruppi dove servono. */
+let debugLens = null;
+
+async function loadDebug() {
+  $("debug-status").textContent = "Conteggio in corso…";
+  const data = await api("/api/debug");
+  $("debug-status").textContent = "Conteggi aggiornati alle " + new Date().toLocaleTimeString("it-IT");
+  $("debug-lenses").replaceChildren();
+  for (const lens of data.lenses) {
+    const row = el("div", undefined, "debug-lens");
+    const button = el("button", `${lens.label} · ${nf(lens.count)} ${lens.unit}`, "debug-lens-open");
+    button.addEventListener("click", guarded(() => showDebugRows(lens, "")));
+    row.append(button);
+    if (lens.facets.length > 1) {
+      const list = el("div", undefined, "debug-facets");
+      for (const facet of lens.facets.slice(0, 12)) {
+        const chip = el("button", `${facet.value || "senza valore"} · ${nf(facet.count)}`, "debug-facet");
+        chip.addEventListener("click", guarded(() => showDebugRows(lens, facet.value)));
+        list.append(chip);
+      }
+      row.append(list);
+    }
+    $("debug-lenses").append(row);
+  }
+  if (debugLens) await showDebugRows(debugLens.lens, debugLens.value, debugLens.offset);
+}
+
+/** Una pagina di righe: azienda, dettaglio, link alla fonte e apertura nella tab Aziende. */
+async function showDebugRows(lens, value, offset = 0) {
+  debugLens = {lens, value, offset};
+  const data = await api("/api/debug?" + new URLSearchParams({lens: lens.id, value, offset, limit: 50}));
+  const area = $("debug-rows");
+  area.replaceChildren(el("h3", data.label + (value ? " · " + value : "")));
+  area.append(el("p", `${nf(data.total)} ${data.unit}${data.total > data.items.length ? `, mostrati ${data.items.length} da ${offset + 1}` : ""}`, "muted"));
+  const list = el("ul", undefined, "debug-list");
+  for (const item of data.items) {
+    const row = el("li");
+    const open = el("button", item.name, "company-link");
+    open.addEventListener("click", guarded(async () => {
+      document.querySelector('[data-view="companies"]').click();
+      await show(item.company_id);
+      $("detail").scrollIntoView({block: "start"});
+    }));
+    row.append(open);
+    if (item.detail) row.append(el("span", " · " + item.detail));
+    if (item.facet && !value) row.append(el("span", " · " + item.facet, "muted"));
+    if (item.url) row.append(el("span", " "), link(item.url, "fonte"));
+    list.append(row);
+  }
+  if (!data.items.length) list.append(el("li", "Nessuna riga: la domanda non ha casi."));
+  area.append(list);
+  const pager = el("div", undefined, "pager");
+  for (const [text, next] of [["Precedenti", offset - 50], ["Successive", offset + 50]]) {
+    const button = el("button", text);
+    button.disabled = next < 0 || next >= data.total;
+    button.addEventListener("click", guarded(() => showDebugRows(lens, value, next)));
+    pager.append(button);
+  }
+  area.append(pager);
+}
+
 async function init() {
   config = await api("/api/bootstrap");
   token = config.token;
@@ -919,12 +987,13 @@ async function init() {
         for (const node of document.querySelectorAll("[data-view]"))
           node.removeAttribute("aria-current");
         button.setAttribute("aria-current", "page");
-        for (const name of ["companies", "sources", "saved", "analytics", "pipeline"])
+        for (const name of ["companies", "sources", "saved", "analytics", "pipeline", "debug"])
           $(name + "-view").hidden = name !== button.dataset.view;
         if (button.dataset.view === "sources") await sources();
         if (button.dataset.view === "saved") await loadSaved();
         if (button.dataset.view === "analytics") await loadAnalytics();
         if (button.dataset.view === "pipeline") await loadPipeline();
+        if (button.dataset.view === "debug") await loadDebug();
       }),
     ),
   );
@@ -970,6 +1039,7 @@ async function init() {
   setupResize();
   $("export").addEventListener("click", guarded(exportCSV));
   $("refresh-saved").addEventListener("click", guarded(loadSaved));
+  $("refresh-debug").addEventListener("click", guarded(loadDebug));
   $("saved-brief").addEventListener("click", guarded(savedBrief));
   $("refresh-analytics").addEventListener("click", guarded(loadAnalytics));
   $("refresh-pipeline").addEventListener("click", guarded(loadPipeline));

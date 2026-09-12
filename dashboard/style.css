@@ -713,3 +713,16 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 /* I ruoli fuori dai filtri restano raggiungibili, ma non si aprono sopra a quelli cercati. */
 .other-roles { margin-top: 18px; }
 .other-roles > summary { cursor: pointer; font-weight: 600; color: var(--ink-soft); }
+
+/* Debug: le domande a sinistra, le righe a destra; nessuna decorazione, si legge e basta. */
+#debug-view { max-width: 1240px; margin: 0 auto; }
+.debug-workspace { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 14px; }
+#debug-lenses, #debug-rows { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; min-width: 0; }
+.debug-lens + .debug-lens { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.debug-lens-open { width: 100%; text-align: left; font-weight: 650; }
+.debug-facets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.debug-facet { font-size: .8rem; padding: 3px 9px; border-radius: 999px; color: var(--ink-soft); }
+.debug-list { margin: 12px 0; padding-left: 18px; font-size: .9rem; }
+.debug-list li { margin-bottom: 8px; overflow-wrap: anywhere; }
+#debug-rows h3 { margin-top: 0; }
+@media (max-width: 1000px) { .debug-workspace { grid-template-columns: 1fr; } }

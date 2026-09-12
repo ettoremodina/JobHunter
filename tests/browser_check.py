@@ -213,6 +213,15 @@ def main():
                 page.get_by_role('button', name='Chiudi parametri', exact=True).click()
                 page.get_by_role("button", name="Aggiorna stato", exact=True).click()
                 expect(page.locator("#refresh-pipeline")).to_be_enabled()
+                # La tab di controllo: una domanda per lente, e le righe aprono l'azienda.
+                page.get_by_role("button", name="Debug", exact=True).click()
+                page.locator(".debug-lens").first.wait_for()
+                page.locator(".debug-lens-open", has_text="Aziende senza descrizione").click()
+                expect(page.locator("#debug-rows h3")).to_have_text("Aziende senza descrizione")
+                assert page.locator("#debug-rows .debug-list li").count() >= 1
+                page.get_by_role("button", name="Pipeline", exact=True).click()
+                page.locator("#pipeline-steps > li").first.wait_for()
+
                 def slow_stage(archive, cfg, step, values, progress):
                     """Expose a cancellable offline operation to exercise the real stop button."""
                     import time

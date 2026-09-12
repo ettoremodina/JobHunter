@@ -39,7 +39,7 @@ def settings(path=None):
 
 def search_rules_hash(rules):
     """Invalidate decisions only for changed rules or actual extraction functions."""
-    selected = {'selection.py': {'evaluate', 'requirements'}, 'languages.py': {'language_requirements'},
+    selected = {'selection.py': {'evaluate', 'requirements'}, 'languages.py': {'language_requirements', 'detect_language'},
                 'enrichment.py': {'lines', 'TextExtractor'}}
     code = []
     for name, functions in selected.items():
