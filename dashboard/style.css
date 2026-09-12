@@ -186,10 +186,13 @@ main { padding: 26px 32px 48px; }
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(500px, 1.25fr) minmax(350px, 1fr);
-  gap: 24px;
+  /* La terza colonna e' la scheda azienda: la sua larghezza e' una misura che l'utente trascina. */
+  grid-template-columns: minmax(0, 1fr) 10px var(--detail-width, minmax(350px, 1fr));
+  gap: 0 14px;
   align-items: start;
 }
+#detail-resize { align-self: stretch; min-height: 140px; justify-self: center; width: 10px; border-radius: 999px; background: var(--line); cursor: col-resize; touch-action: none; }
+#detail-resize:hover, #detail-resize:focus-visible { background: var(--brand); }
 #results, #detail {
   background: var(--surface);
   padding: 22px;
@@ -218,11 +221,16 @@ tr.selected { background: var(--brand-tint); box-shadow: inset 3px 0 0 var(--bra
 tr.selected:hover { background: var(--brand-tint); }
 .table-scroll { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: var(--radius-sm); }
 .pager { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; gap: 8px; }
-th:first-child { width: 27%; }
-th:nth-child(2) { width: 20%; }
-th:nth-child(3) { width: 26%; }
-th:nth-child(4) { width: 9%; }
-th:nth-child(5) { width: 18%; }
+/* Le larghezze seguono la colonna, non la sua posizione: nasconderne una non sposta le altre. */
+th.col-azienda { width: 29%; }
+th.col-categoria { width: 16%; }
+th.col-tier { width: 14%; }
+th.col-localita { width: 20%; }
+th.col-ruoli { width: 11%; }
+th.col-stato { width: 10%; }
+td.col-ruoli { white-space: nowrap; }
+/* «evidenza-mancante» spezzato lettera per lettera non si legge: il trattino è il punto giusto. */
+td.col-tier { overflow-wrap: normal; word-break: normal; }
 td { overflow-wrap: anywhere; }
 
 /* Status badges */
@@ -547,6 +555,7 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 @media (max-width: 1000px) {
   .workspace { grid-template-columns: 1fr; }
   #detail { position: static; max-height: none; }
+  #detail-resize { display: none; }
   header { align-items: start; flex-wrap: wrap; position: static; }
 }
 @media (max-width: 850px) {
@@ -679,3 +688,19 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 }
 /* Il tooltip del percorso sta sulla quota: i numeri scritti sopra non devono coprirlo. */
 .journey-chart text { pointer-events: none; }
+
+/* Tabella aziende: colonne facoltative, ordinamento e ruoli fuori dai filtri. */
+#results-table.hide-categoria .col-categoria,
+#results-table.hide-tier .col-tier,
+#results-table.hide-localita .col-localita,
+#results-table.hide-ruoli .col-ruoli,
+#results-table.hide-stato .col-stato { display: none; }
+.inline-field { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--ink-soft); }
+#columns-box { margin: 10px 0 4px; font-size: .85rem; }
+#columns-box > summary { cursor: pointer; color: var(--brand); font-weight: 600; }
+.columns-choice { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; }
+.column-choice { display: flex; align-items: center; gap: 6px; }
+.column-choice input { width: 16px; height: 16px; }
+/* I ruoli fuori dai filtri restano raggiungibili, ma non si aprono sopra a quelli cercati. */
+.other-roles { margin-top: 18px; }
+.other-roles > summary { cursor: pointer; font-weight: 600; color: var(--ink-soft); }

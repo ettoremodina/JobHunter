@@ -281,10 +281,17 @@ class Archive:
             rows = self.db.execute(sql + ' WHERE o.company_id IN (SELECT value FROM json_each(?))', (json.dumps(sorted(cid)),))
         return {r[0]: json.loads(r[1]) for r in rows}
 
-    def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility="", tier=""):
+    # L'ordinamento vive in SQL, non sulla pagina: ordinare i trenta risultati gia' scelti darebbe
+    # una classifica diversa a ogni pagina. Il tier non c'e': non e' salvato, si calcola in lettura.
+    SORTS = {"recenti": "c.last_seen DESC", "nome": "c.name COLLATE NOCASE",
+             "ruoli": "matching_roles DESC", "categoria": "category COLLATE NOCASE"}
+
+    def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility="", tier="", sort="recenti"):
         """Paginate companies, requiring role filters to match the same saved opportunity."""
         if status and status not in STATUSES:
             raise ValueError("Unknown status")
+        if sort not in self.SORTS:
+            raise ValueError("Unknown sort order")
         conditions, args = [], []
         qualifying = None
         if tier:
@@ -338,11 +345,17 @@ class Archive:
             args.append(status)
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         total = self.db.execute("SELECT count(*) FROM companies c" + where, args).fetchone()[0]
-        sql = "SELECT c.*, " + status_sql + " AS status, (SELECT count(*) FROM opportunities o WHERE o.company_id=c.id) AS opportunity_count FROM companies c" + where + " ORDER BY c.last_seen DESC,c.name COLLATE NOCASE,c.id LIMIT ? OFFSET ?"
-        items = [dict(r) for r in self.db.execute(sql, args + [min(max(int(limit), 1), 500), max(int(offset), 0)])]
+        # I ruoli che passano i filtri si contano gia' qui: servono a ordinare tutto l'insieme, non la pagina.
+        selected = ("SELECT c.*, " + status_sql + " AS status, "
+                    "(SELECT count(*) FROM opportunities o WHERE o.company_id=c.id) AS opportunity_count, "
+                    "(SELECT count(*) FROM opportunities o WHERE o.company_id=c.id" + role_where + ") AS matching_roles, "
+                    "COALESCE((SELECT category FROM categories WHERE company_id=c.id),'Da classificare') AS category")
+        sql = selected + " FROM companies c" + where + " ORDER BY " + self.SORTS[sort] + ",c.name COLLATE NOCASE,c.id LIMIT ? OFFSET ?"
+        items = [dict(r) for r in self.db.execute(sql, role_args + args + [min(max(int(limit), 1), 500), max(int(offset), 0)])]
         from jobhunter import tier as tiers
         from jobhunter.selection import verdicts
         assessment = verdicts(self, [item["id"] for item in items]) if items else {}
+        text = query.strip().casefold()
         for item in items:
             item.update(self.category(item["id"]))
             state = assessment[item["id"]]
@@ -353,9 +366,18 @@ class Archive:
             # Eccezione: «B-attesa» significa gia' «nessun ruolo adatto ora». Nascondere gli scartati
             # lascerebbe la scheda vuota proprio dove sono l'unica cosa che l'azienda ha.
             hide_dropped = bool(tier) and tier != 'B-attesa'
-            jobs = [json.loads(r["data"]) for r in rows
-                    if not hide_dropped or state["ruoli"].get(r["id"], {}).get("verdetto") != tiers.DROP]
-            if role_conditions or hide_dropped:
+            kept = [r for r in rows if not hide_dropped or state["ruoli"].get(r["id"], {}).get("verdetto") != tiers.DROP]
+            filtered = bool(role_conditions) or hide_dropped
+            # Il testo cercato puo' stare nell'azienda o nell'annuncio. Se qualche annuncio lo contiene
+            # sono quelli i ruoli cercati; se nessuno lo contiene l'azienda e' entrata per nome o
+            # descrizione, e allora valgono tutti i suoi ruoli.
+            wanted = [r for r in kept if text in r["data"].casefold()] if text else []
+            if wanted:
+                kept, filtered = wanted, True
+            jobs = [json.loads(r["data"]) for r in kept]
+            # Quali ruoli rispondono ai filtri: la scheda mostra prima questi e tiene gli altri da parte.
+            item["matching_ids"] = [r["id"] for r in kept]
+            if filtered:
                 item["archive_opportunity_count"] = item["opportunity_count"]
                 item["opportunity_count"] = len(jobs)
             item["locations"] = sorted({x for j in jobs for x in j["locations"]})

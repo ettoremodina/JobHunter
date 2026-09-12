@@ -78,9 +78,21 @@ function params(start = offset, size = config.page_size) {
     category: $("category").value,
     eligibility: $("eligibility").value,
     tier: $("tier-scope").value,
+    sort: $("sort").value,
     offset: start,
     limit: size,
   });
+}
+
+/** Ruoli che rispondono ai filtri, per azienda della pagina corrente: li decide il server insieme ai risultati. */
+const matchingRoles = new Map();
+
+/** Preferenze di sola vista: se il browser blocca lo storage la pagina deve funzionare lo stesso. */
+function remember(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* modalità privata o storage negato */ }
+}
+function remembered(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
 }
 
 /** Keep list rows short even when a source stores many places in one string. */
@@ -144,12 +156,14 @@ async function load() {
   }
   if (request !== requestNumber) return;
   total = data.total;
+  matchingRoles.clear();
   $("rows").replaceChildren();
   $("count").textContent = `${total.toLocaleString("it-IT")} aziende`;
   for (const company of data.items) {
+    matchingRoles.set(company.id, company.matching_ids || []);
     const tr = el("tr");
     if (company.id === selected) tr.className = "selected";
-    const name = el("td");
+    const name = el("td", undefined, "col-azienda");
     const button = el("button", company.name, "company-link");
     button.addEventListener(
       "click",
@@ -170,11 +184,11 @@ async function load() {
         activity ? "company-activity" : undefined,
       ),
     );
-    const status = el("td");
+    const status = el("td", undefined, "col-stato");
     status.append(
       el("span", labels[company.status], `badge ${company.status}`),
     );
-    const category = el("td");
+    const category = el("td", undefined, "col-categoria");
     category.append(el("span", company.category || "Da classificare"));
     if (company.category && company.category !== "Da classificare") {
       category.append(el("small", categoryMethods[company.category_method] || company.category_method));
@@ -182,11 +196,11 @@ async function load() {
     tr.append(
       name,
       category,
-      el("td", company.tier_label ? company.tier : company.tier || "—"),
-      el("td", locationPreview(company.locations)),
+      el("td", company.tier_label ? company.tier : company.tier || "—", "col-tier"),
+      el("td", locationPreview(company.locations), "col-localita"),
       el("td", company.archive_opportunity_count
         ? `${company.opportunity_count} di ${company.archive_opportunity_count}`
-        : String(company.opportunity_count)),
+        : String(company.opportunity_count), "col-ruoli"),
       status,
     );
     $("rows").append(tr);
@@ -489,17 +503,17 @@ async function show(id) {
     }
     panel.append(research);
   }
-  const scope = $("eligibility").value;
-  const tierScope = $("tier-scope").value;
-  // Un tier filtra le aziende, ma la scheda deve mostrare i ruoli che quel tier riguarda:
-  // elencare gli scartati di un'azienda in Tier A e' rumore. Stessa regola lato server in search().
-  const visible = company.opportunities.filter(job =>
-    (!scope || job.selection?.status === scope) &&
-    (!tierScope || tierScope === "B-attesa" || job.verdict?.verdetto !== "scarta"));
-  const hidden = company.opportunities.length - visible.length;
+  // Quali ruoli hanno fatto entrare l'azienda nei risultati lo ha già deciso il server con i filtri
+  // della ricerca: la scheda mostra quelli, gli altri restano a portata di clic. Senza, filtrare per
+  // «Milano» un'azienda con venti annunci apriva comunque tutti e venti.
+  const matching = matchingRoles.get(id);
+  const visible = matching ? company.opportunities.filter(job => matching.includes(job.id)) : [...company.opportunities];
+  const others = matching ? company.opportunities.filter(job => !matching.includes(job.id)) : [];
   // Compatibili in cima: l'ordine per data mette gli scarti davanti a ciò che conta.
   const rank = {tieni: 0, non_so: 1, scarta: 2};
-  visible.sort((a, b) => (rank[a.verdict?.verdetto] ?? 1) - (rank[b.verdict?.verdetto] ?? 1));
+  const byVerdict = (a, b) => (rank[a.verdict?.verdetto] ?? 1) - (rank[b.verdict?.verdetto] ?? 1);
+  visible.sort(byVerdict);
+  others.sort(byVerdict);
   const tally = {tieni: 0, non_so: 0, scarta: 0};
   for (const job of visible) tally[job.verdict?.verdetto || "non_so"]++;
   const rolesHeading = el("div", undefined, "roles-heading");
@@ -507,19 +521,17 @@ async function show(id) {
   for (const [key, one, many] of [["tieni", "compatibile", "compatibili"], ["non_so", "da decidere", "da decidere"], ["scarta", "scartato", "scartati"]])
     if (tally[key]) rolesHeading.append(el("span", `${tally[key]} ${tally[key] === 1 ? one : many}`, "badge " + {tieni: "saved", non_so: "review", scarta: "discarded"}[key]));
   panel.append(rolesHeading);
-  if (hidden) {
-    const reasons = [];
-    if (scope) reasons.push({potential: "compatibili con i filtri", review: "da verificare", excluded: "esclusi dai filtri"}[scope]);
-    if (tierScope && tierScope !== "B-attesa") reasons.push("non scartati sull'asse ruolo");
-    const filtered = el("p", `${visible.length} di ${company.opportunities.length} ruoli: sono mostrati solo quelli ${reasons.join(" e ")}. `, "muted");
-    const showAll = el("button", "Mostra tutti i ruoli");
-    showAll.addEventListener("click", guarded(async () => { $("eligibility").value = ""; $("tier-scope").value = ""; offset = 0; await show(id); }));
-    filtered.append(showAll);
-    panel.append(filtered);
-  }
   const decisions = roleDecisions(company);
+  if (others.length)
+    panel.append(el("p", `${visible.length} di ${company.opportunities.length} ruoli rispondono ai filtri attivi. Gli altri restano qui sotto.`, "muted"));
   for (const job of visible)
     panel.append(opportunityBlock(job, company, decisions.get(job.id), id, visible.length === 1));
+  if (others.length) {
+    const rest = el("details", undefined, "other-roles");
+    rest.append(el("summary", `Altri ${others.length} ruoli dell'azienda, fuori dai filtri`));
+    for (const job of others) rest.append(opportunityBlock(job, company, decisions.get(job.id), id, false));
+    panel.append(rest);
+  }
   if (company.feedback.length) {
     const history = el("details");
     history.append(el("summary", "Storico decisioni"));
@@ -542,6 +554,54 @@ async function show(id) {
   }
   await load();
 }
+/** Colonne facoltative della tabella: la prima resta sempre, è quella che apre l'azienda. */
+const optionalColumns = [["categoria", "Categoria"], ["tier", "Tier"], ["localita", "Località"], ["ruoli", "Ruoli"], ["stato", "Stato"]];
+
+function setupColumns() {
+  const hidden = new Set((remembered("columns-hidden") || "").split(",").filter(Boolean));
+  const apply = () => {
+    for (const [key] of optionalColumns) $("results-table").classList.toggle("hide-" + key, hidden.has(key));
+    remember("columns-hidden", [...hidden].join(","));
+  };
+  for (const [key, title] of optionalColumns) {
+    const label = el("label", undefined, "column-choice");
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = !hidden.has(key);
+    box.addEventListener("change", () => { box.checked ? hidden.delete(key) : hidden.add(key); apply(); });
+    label.append(box, el("span", title));
+    $("columns").append(label);
+  }
+  apply();
+}
+
+/** Larghezza della scheda azienda: si trascina il bordo, e la misura resta per la prossima visita. */
+function setupResize() {
+  const handle = $("detail-resize");
+  const width = () => Number(remembered("detail-width")) || $("detail").getBoundingClientRect().width;
+  const setWidth = (value) => {
+    const size = Math.round(Math.min(Math.max(value, 320), Math.max(320, document.querySelector(".workspace").getBoundingClientRect().width - 420)));
+    document.documentElement.style.setProperty("--detail-width", size + "px");
+    handle.setAttribute("aria-valuenow", String(size));
+    remember("detail-width", String(size));
+  };
+  if (remembered("detail-width")) setWidth(width());
+  handle.addEventListener("pointerdown", (event) => {
+    handle.setPointerCapture(event.pointerId);
+    const move = (e) => setWidth(document.querySelector(".workspace").getBoundingClientRect().right - e.clientX);
+    const stop = () => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", stop); };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", stop);
+    event.preventDefault();
+  });
+  handle.addEventListener("keydown", (event) => {
+    const step = {ArrowLeft: 24, ArrowRight: -24}[event.key];
+    if (!step) return;
+    setWidth(width() + step);
+    event.preventDefault();
+  });
+}
+
 async function sources() {
   const stats = await api("/api/stats");
   $("archive-provenance").textContent = `${stats.companies.toLocaleString("it-IT")} aziende e ${stats.opportunities.toLocaleString("it-IT")} opportunità in archivio.` + (stats.first_import_at ? ` Primo inserimento: ${date(stats.first_import_at)}.` : " Archivio vuoto.");
@@ -793,6 +853,7 @@ async function init() {
     "click",
     guarded(async () => {
       HTMLFormElement.prototype.reset.call($("filters"));
+      // L'ordinamento non è un filtro: Azzera pulisce la ricerca, non il modo di guardarla.
       offset = 0;
       await load();
     }),
@@ -811,6 +872,14 @@ async function init() {
       await load();
     }),
   );
+  $("sort").value = remembered("sort") || "recenti";
+  $("sort").addEventListener("change", guarded(async () => {
+    remember("sort", $("sort").value);
+    offset = 0;
+    await load();
+  }));
+  setupColumns();
+  setupResize();
   $("export").addEventListener("click", guarded(exportCSV));
   $("refresh-queue").addEventListener("click", guarded(loadQueue));
   $("refresh-analytics").addEventListener("click", guarded(loadAnalytics));

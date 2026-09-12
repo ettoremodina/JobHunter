@@ -74,22 +74,35 @@
           <section id="results" aria-label="Risultati aziende">
             <div class="toolbar">
               <p id="count" aria-live="polite">Caricamento…</p>
-              <button id="export">Esporta risultati CSV</button>
+              <div class="actions">
+                <label class="inline-field"
+                  >Ordina per<select id="sort">
+                    <option value="recenti">Osservate di recente</option>
+                    <option value="nome">Nome A-Z</option>
+                    <option value="ruoli">Più ruoli nel filtro</option>
+                    <option value="categoria">Categoria</option>
+                  </select></label
+                ><button id="export">Esporta risultati CSV</button>
+              </div>
             </div>
+            <details id="columns-box">
+              <summary>Colonne da mostrare</summary>
+              <div id="columns" class="columns-choice"></div>
+            </details>
             <p class="hint">
               Una riga per azienda. Conteggi, sedi e ruoli nel dettaglio riguardano
               la selezione scelta. Nulla viene cancellato: «Tutto l'archivio» li mostra di nuovo.
             </p>
             <div class="table-scroll">
-              <table>
+              <table id="results-table">
                 <thead>
                   <tr>
-                    <th>Azienda e attività</th>
-                    <th>Categoria</th>
-                    <th>Tier</th>
-                    <th>Località</th>
-                    <th>Ruoli</th>
-                    <th>Stato</th>
+                    <th class="col-azienda">Azienda e attività</th>
+                    <th class="col-categoria">Categoria</th>
+                    <th class="col-tier">Tier</th>
+                    <th class="col-localita">Località</th>
+                    <th class="col-ruoli">Ruoli</th>
+                    <th class="col-stato">Stato</th>
                   </tr>
                 </thead>
                 <tbody id="rows"></tbody>
@@ -100,6 +113,12 @@
               ><button id="next">Successive</button>
             </div>
           </section>
+          <div
+            id="detail-resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Larghezza della scheda azienda: frecce sinistra e destra per regolare"
+            tabindex="0"></div>
           <aside id="detail" aria-label="Dettaglio azienda">
             <h2>Scegli un’azienda</h2>
             <p>
