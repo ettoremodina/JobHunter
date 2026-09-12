@@ -77,7 +77,6 @@ function params(start = offset, size = config.page_size) {
     country: $("country").value,
     city: $("city").value,
     category: $("category").value,
-    eligibility: $("eligibility").value,
     tier: $("tier-scope").value,
     sort: $("sort").value,
     offset: start,

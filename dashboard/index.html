@@ -50,7 +50,6 @@
       </section>
       <section id="companies-view">
         <form id="filters" class="filters">
-          <label>Asse ruolo<select id="eligibility"><option value="">Tutto l'archivio</option><option value="potential">Ruoli compatibili</option><option value="review">Ruoli ancora da decidere</option><option value="excluded">Ruoli scartati dal regex</option></select></label>
           <label>Tier<select id="tier-scope"><option value="">Tutti i tier</option><option value="A">Tier A</option><option value="B-attesa">Tier B · attesa</option><option value="B-esperienza">Tier B · esperienza</option><option value="evidenza-mancante">Evidenza mancante</option><option value="scarto">Scarto</option></select></label>
           <label
             >Cerca azienda, attività o ruolo<input
@@ -103,7 +102,7 @@
             </details>
             <p class="hint">
               Una riga per azienda. Conteggi, sedi e ruoli nel dettaglio riguardano
-              la selezione scelta. Nulla viene cancellato: «Tutto l'archivio» li mostra di nuovo.
+              i filtri attivi. Nulla viene cancellato: azzerando i filtri tornano tutti.
             </p>
             <div class="table-scroll">
               <table id="results-table">

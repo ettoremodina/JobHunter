@@ -46,12 +46,6 @@
         ]
       },
       {
-        "name": "Greater London",
-        "aliases": [
-          "Greater London"
-        ]
-      },
-      {
         "name": "Leeds",
         "aliases": [
           "Leeds"
@@ -66,6 +60,7 @@
       {
         "name": "London",
         "aliases": [
+          "Greater London",
           "London",
           "London Area",
           "London London",
@@ -618,16 +613,11 @@
         ]
       },
       {
-        "name": "Frankfurt",
+        "name": "Frankfurt am Main",
         "aliases": [
           "Francoforte",
           "Frankfurt",
-          "Frankfurt a. M."
-        ]
-      },
-      {
-        "name": "Frankfurt am Main",
-        "aliases": [
+          "Frankfurt a. M.",
           "Frankfurt am Main"
         ]
       },
@@ -857,12 +847,8 @@
       {
         "name": "Gent",
         "aliases": [
-          "Gent"
-        ]
-      },
-      {
-        "name": "Ghent",
-        "aliases": [
+          "Gand",
+          "Gent",
           "Ghent"
         ]
       },
@@ -875,9 +861,10 @@
     ],
     "Portogallo": [
       {
-        "name": "LISBOA",
+        "name": "Lisboa",
         "aliases": [
           "LISBOA",
+          "Lisboa",
           "Lisbon"
         ]
       },
