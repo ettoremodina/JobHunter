@@ -72,7 +72,6 @@ function link(address, text) {
 function params(start = offset, size = config.page_size) {
   return new URLSearchParams({
     query: $("query").value,
-    status: $("status").value,
     source: $("source").value,
     country: $("country").value,
     city: $("city").value,
