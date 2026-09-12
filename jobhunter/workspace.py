@@ -100,10 +100,20 @@ class Archive:
         CREATE TABLE IF NOT EXISTS description_attempts(opportunity_id TEXT PRIMARY KEY REFERENCES opportunities(id) ON DELETE CASCADE,
           status TEXT NOT NULL, checked_at TEXT NOT NULL, last_success_at TEXT, retry_after TEXT,
           parser_version TEXT NOT NULL, source_url TEXT NOT NULL, error TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS places(opportunity_id TEXT NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+          raw TEXT NOT NULL, country TEXT NOT NULL, city TEXT NOT NULL, to_map INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY(opportunity_id,raw));
+        CREATE INDEX IF NOT EXISTS places_where ON places(country,city);
+        CREATE TABLE IF NOT EXISTS place_index(opportunity_id TEXT PRIMARY KEY REFERENCES opportunities(id) ON DELETE CASCADE,
+          content_hash TEXT NOT NULL, mapping_hash TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS company_profile_attempts(company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
           strategy TEXT NOT NULL, status TEXT NOT NULL, url TEXT NOT NULL, found TEXT NOT NULL,
           detail TEXT NOT NULL, checked_at TEXT NOT NULL, retry_after TEXT, PRIMARY KEY(company_id,strategy));
         """)
+        if 'to_map' not in {r[1] for r in self.db.execute('PRAGMA table_info(places)')}:
+            # Quali località aspettano ancora una città nella mappa: prima non lo distinguevamo
+            # da «questo annuncio dichiara solo il paese», e il report era illeggibile.
+            self.db.execute('ALTER TABLE places ADD COLUMN to_map INTEGER NOT NULL DEFAULT 0')
         if 'decision' not in {r[1] for r in self.db.execute('PRAGMA table_info(search_eligibility)')}:
             self.db.execute('ALTER TABLE search_eligibility ADD COLUMN decision TEXT')
         if 'description_provenance' not in {r[1] for r in self.db.execute('PRAGMA table_info(companies)')}:
@@ -286,7 +296,7 @@ class Archive:
     SORTS = {"recenti": "c.last_seen DESC", "nome": "c.name COLLATE NOCASE",
              "ruoli": "matching_roles DESC", "categoria": "category COLLATE NOCASE"}
 
-    def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility="", tier="", sort="recenti"):
+    def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility="", tier="", sort="recenti", country="", city=""):
         """Paginate companies, requiring role filters to match the same saved opportunity."""
         if status and status not in STATUSES:
             raise ValueError("Unknown status")
@@ -326,6 +336,17 @@ class Archive:
         if location.strip():
             role_conditions.append("json_extract(o.data,'$.locations') LIKE ? ESCAPE '\\'")
             role_args.append('%' + location.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%')
+        if country or city:
+            # Paese e città sono quelli canonici: «Milano», «Milan» e «MI» sono lo stesso posto,
+            # e il confronto avviene sulla mappatura salvata, non sul testo dell'annuncio.
+            from jobhunter import places
+            places.refresh(self)
+            clause = "EXISTS(SELECT 1 FROM places p WHERE p.opportunity_id=o.id"
+            for column, value in (("country", country), ("city", city)):
+                if value:
+                    clause += f" AND p.{column}=?"
+                    role_args.append(value)
+            role_conditions.append(clause + ")")
         if source:
             role_conditions.append("EXISTS(SELECT 1 FROM observations s WHERE s.opportunity_id=o.id AND s.source=?)")
             role_args.append(source)
@@ -380,6 +401,10 @@ class Archive:
             if filtered:
                 item["archive_opportunity_count"] = item["opportunity_count"]
                 item["opportunity_count"] = len(jobs)
+            # La lista mostra la forma canonica quando la mappa la conosce: il testo grezzo della
+            # fonte resta nella scheda, dove serve come prova.
+            from jobhunter import places
+            item["places"] = places.labels(self, item["matching_ids"])
             item["locations"] = sorted({x for j in jobs for x in j["locations"]})
             item["titles"] = list(dict.fromkeys(j["title"] for j in jobs))[:5]
         return {"total": total, "items": items}

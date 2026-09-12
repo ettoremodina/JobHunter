@@ -21,7 +21,9 @@ class AnalyticsTests(unittest.TestCase):
             result = summary(archive)
             self.assertEqual(result['total'], 3)
             self.assertEqual(result['health']['with_description'], 1)
-            self.assertEqual(result['health']['country_known'], 1)
-            self.assertEqual({r['label']: r['count'] for r in result['countries']}, {'Italia': 1, 'Francia': 1, 'Non determinato': 2})
+            # Una città mappata porta con sé il suo paese: «San Jose, CA» è negli Stati Uniti.
+            # «Remote» invece non è un luogo e resta non determinato.
+            self.assertEqual(result['health']['country_known'], 2)
+            self.assertEqual({r['label']: r['count'] for r in result['countries']}, {'Italia': 1, 'Francia': 1, 'Stati Uniti': 1, 'Non determinato': 1})
             self.assertEqual(summary(archive, 'potential')['total'], 2)
             archive.close()

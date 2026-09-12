@@ -74,7 +74,8 @@ function params(start = offset, size = config.page_size) {
     query: $("query").value,
     status: $("status").value,
     source: $("source").value,
-    location: $("location").value,
+    country: $("country").value,
+    city: $("city").value,
     category: $("category").value,
     eligibility: $("eligibility").value,
     tier: $("tier-scope").value,
@@ -197,7 +198,7 @@ async function load() {
       name,
       category,
       el("td", company.tier_label ? company.tier : company.tier || "—", "col-tier"),
-      el("td", locationPreview(company.locations), "col-localita"),
+      el("td", locationPreview(company.places?.length ? company.places : company.locations), "col-localita"),
       el("td", company.archive_opportunity_count
         ? `${company.opportunity_count} di ${company.archive_opportunity_count}`
         : String(company.opportunity_count), "col-ruoli"),
@@ -554,6 +555,43 @@ async function show(id) {
   }
   await load();
 }
+/** Ricostruisce l'elenco città dopo un cambio di paese o un Azzera. */
+let refillCities = () => {};
+
+/** Paese e città vengono dalla mappatura: scegliere «Milano» prende anche gli annunci scritti «Milan» o «MI». */
+async function setupPlaces() {
+  // La prima lettura normalizza tutto l'archivio e ci mette un minuto: intanto la tabella è già
+  // in pagina, e i due menu dicono che stanno arrivando invece di restare vuoti.
+  const waiting = el("option", "Lettura delle località…");
+  waiting.disabled = true;
+  $("country").append(waiting);
+  const data = await api("/api/places");
+  waiting.remove();
+  const cities = new Map(data.countries.map(country => [country.name, country.cities]));
+  for (const country of data.countries) {
+    const option = el("option", `${country.name} · ${nf(country.count)}`);
+    option.value = country.name;
+    $("country").append(option);
+  }
+  const fillCities = () => {
+    const chosen = $("country").value;
+    const list = chosen ? cities.get(chosen) || [] : [...cities.values()].flat();
+    const previous = $("city").value;
+    $("city").replaceChildren(el("option", chosen ? "Tutte le città del paese" : "Tutte le città"));
+    for (const city of [...list].sort((a, b) => b.count - a.count)) {
+      const option = el("option", `${city.name} · ${nf(city.count)}`);
+      option.value = city.name;
+      $("city").append(option);
+    }
+    // Cambiando paese la città scelta prima quasi mai esiste ancora: meglio azzerarla che filtrare a vuoto.
+    $("city").value = [...$("city").options].some(o => o.value === previous) ? previous : "";
+  };
+  refillCities = fillCities;
+  fillCities();
+  $("country").addEventListener("change", guarded(async () => { fillCities(); offset = 0; await load(); }));
+  $("city").addEventListener("change", guarded(async () => { offset = 0; await load(); }));
+}
+
 /** Colonne facoltative della tabella: la prima resta sempre, è quella che apre l'azienda. */
 const optionalColumns = [["categoria", "Categoria"], ["tier", "Tier"], ["localita", "Località"], ["ruoli", "Ruoli"], ["stato", "Stato"]];
 
@@ -853,6 +891,7 @@ async function init() {
     "click",
     guarded(async () => {
       HTMLFormElement.prototype.reset.call($("filters"));
+      refillCities();
       // L'ordinamento non è un filtro: Azzera pulisce la ricerca, non il modo di guardarla.
       offset = 0;
       await load();
@@ -893,6 +932,8 @@ async function init() {
   });
   $("analytics-scope").addEventListener("change", guarded(loadAnalytics));
   await load();
+  // I risultati non aspettano i menu geografici: arrivano quando sono pronti.
+  setupPlaces().catch((error) => message(error.message, true));
 }
 init().then(() => {
   if (new URLSearchParams(location.search).get('view') === 'pipeline') document.querySelector('[data-view="pipeline"]').click();

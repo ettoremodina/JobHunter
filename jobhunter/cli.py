@@ -40,6 +40,9 @@ def parser():
     search.add_argument("--limit", type=int, default=30)
     search.add_argument("--offset", type=int, default=0)
     search.add_argument("--eligibility", choices=("potential", "review", "excluded"), default="", help="Only roles matching the current profile-filter outcome")
+    places = sub.add_parser("places", help="Canonical countries and cities, or what the mapping cannot read")
+    places.add_argument("--unmapped", action="store_true", help="Località senza città riconosciuta, per frequenza")
+    places.add_argument("--limit", type=int, default=200)
     sub.add_parser("show", help="Company with opportunities and provenance").add_argument("id")
     sub.add_parser("categories", help="List the shared category vocabulary")
     sweep = sub.add_parser("collect-all", help="Broad acquisition only: all queries, all countries, all boards")
@@ -187,6 +190,9 @@ def execute(args, archive, cfg):
         return archive.search(args.query, args.status, args.source, args.location, args.limit, args.offset, args.category, args.eligibility)
     if command == "categories":
         return {"categories": [*categories(), "Da classificare"]}
+    if command == "places":
+        from jobhunter import places
+        return places.unmapped(archive, args.limit) if args.unmapped else places.options(archive)
     if command == "categorize":
         if not args.id and (args.category or args.reason):
             raise ValueError("A company ID is required for a chat assignment")

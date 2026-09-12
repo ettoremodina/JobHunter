@@ -1,0 +1,1267 @@
+{
+  "_nota": "Città canoniche per paese, con gli alias che le fonti usano davvero. Il paese e i suoi alias stanno in geography.json. Un alias di tre caratteri o meno (MI, RM) vale solo quando è un segmento intero della località e il paese coincide. Le località che non cadono qui dentro sono elencate da «python main.py places --unmapped»: aggiungerle qui è tutto ciò che serve.",
+  "paesi": {
+    "Regno Unito": [
+      {
+        "name": "Belfast",
+        "aliases": [
+          "Belfast"
+        ]
+      },
+      {
+        "name": "Birmingham",
+        "aliases": [
+          "Birmingham"
+        ]
+      },
+      {
+        "name": "Bristol",
+        "aliases": [
+          "Bristol"
+        ]
+      },
+      {
+        "name": "Cambridge",
+        "aliases": [
+          "Cambridge"
+        ]
+      },
+      {
+        "name": "Derby",
+        "aliases": [
+          "Derby"
+        ]
+      },
+      {
+        "name": "Edinburgh",
+        "aliases": [
+          "Edimburgo",
+          "Edinburgh"
+        ]
+      },
+      {
+        "name": "Glasgow",
+        "aliases": [
+          "Glasgow"
+        ]
+      },
+      {
+        "name": "Greater London",
+        "aliases": [
+          "Greater London"
+        ]
+      },
+      {
+        "name": "Leeds",
+        "aliases": [
+          "Leeds"
+        ]
+      },
+      {
+        "name": "Liverpool",
+        "aliases": [
+          "Liverpool"
+        ]
+      },
+      {
+        "name": "London",
+        "aliases": [
+          "London",
+          "London Area",
+          "London London",
+          "Londra"
+        ]
+      },
+      {
+        "name": "Manchester",
+        "aliases": [
+          "Manchester",
+          "Manchester Area"
+        ]
+      },
+      {
+        "name": "Newcastle upon Tyne",
+        "aliases": [
+          "Newcastle Upon Tyne"
+        ]
+      },
+      {
+        "name": "Nottingham",
+        "aliases": [
+          "Nottingham"
+        ]
+      },
+      {
+        "name": "Oxford",
+        "aliases": [
+          "Oxford"
+        ]
+      },
+      {
+        "name": "Sheffield",
+        "aliases": [
+          "Sheffield"
+        ]
+      }
+    ],
+    "Polonia": [
+      {
+        "name": "Gdańsk",
+        "aliases": [
+          "Gdańsk"
+        ]
+      },
+      {
+        "name": "Katowice",
+        "aliases": [
+          "Katowice"
+        ]
+      },
+      {
+        "name": "Kraków",
+        "aliases": [
+          "Cracovia",
+          "Cracow",
+          "Krakow"
+        ]
+      },
+      {
+        "name": "Poznań",
+        "aliases": [
+          "Poznan"
+        ]
+      },
+      {
+        "name": "Warszawa",
+        "aliases": [
+          "Varsavia",
+          "Warsaw",
+          "Warszawa"
+        ]
+      },
+      {
+        "name": "Wrocław",
+        "aliases": [
+          "Wrocław"
+        ]
+      },
+      {
+        "name": "Łódź",
+        "aliases": [
+          "Łódź"
+        ]
+      }
+    ],
+    "Francia": [
+      {
+        "name": "Aix-en-Provence",
+        "aliases": [
+          "Aix-en-Provence"
+        ]
+      },
+      {
+        "name": "Bordeaux",
+        "aliases": [
+          "Bordeaux"
+        ]
+      },
+      {
+        "name": "Bourbourg",
+        "aliases": [
+          "Bourbourg"
+        ]
+      },
+      {
+        "name": "Courbevoie",
+        "aliases": [
+          "Courbevoie"
+        ]
+      },
+      {
+        "name": "Grenoble",
+        "aliases": [
+          "Grenoble"
+        ]
+      },
+      {
+        "name": "Lyon",
+        "aliases": [
+          "Lione",
+          "Lyon"
+        ]
+      },
+      {
+        "name": "Marseille",
+        "aliases": [
+          "Marseille",
+          "Marsiglia"
+        ]
+      },
+      {
+        "name": "Nanterre",
+        "aliases": [
+          "Nanterre"
+        ]
+      },
+      {
+        "name": "Nantes",
+        "aliases": [
+          "Nantes"
+        ]
+      },
+      {
+        "name": "Paris",
+        "aliases": [
+          "Parigi",
+          "Paris",
+          "Paris 17e",
+          "Paris 1er",
+          "Paris 2e",
+          "Paris 7e",
+          "Paris 8e"
+        ]
+      },
+      {
+        "name": "Puteaux",
+        "aliases": [
+          "Puteaux"
+        ]
+      },
+      {
+        "name": "Toulouse",
+        "aliases": [
+          "Toulouse"
+        ]
+      },
+      {
+        "name": "Vélizy-Villacoublay",
+        "aliases": [
+          "Vélizy-Villacoublay"
+        ]
+      }
+    ],
+    "Stati Uniti": [
+      {
+        "name": "Alameda",
+        "aliases": [
+          "Alameda"
+        ]
+      },
+      {
+        "name": "Ann Arbor",
+        "aliases": [
+          "Ann Arbor"
+        ]
+      },
+      {
+        "name": "Arlington",
+        "aliases": [
+          "Arlington"
+        ]
+      },
+      {
+        "name": "Arvada",
+        "aliases": [
+          "Arvada"
+        ]
+      },
+      {
+        "name": "Atlanta",
+        "aliases": [
+          "Atlanta"
+        ]
+      },
+      {
+        "name": "Austin",
+        "aliases": [
+          "Austin",
+          "Austin or Bryan"
+        ]
+      },
+      {
+        "name": "Bay Area",
+        "aliases": [
+          "bay",
+          "Bay Area"
+        ]
+      },
+      {
+        "name": "Bellevue",
+        "aliases": [
+          "Bellevue"
+        ]
+      },
+      {
+        "name": "Berkeley",
+        "aliases": [
+          "Berkeley"
+        ]
+      },
+      {
+        "name": "Boston",
+        "aliases": [
+          "Boston"
+        ]
+      },
+      {
+        "name": "Brighton",
+        "aliases": [
+          "Brighton"
+        ]
+      },
+      {
+        "name": "Burlington",
+        "aliases": [
+          "Burlington"
+        ]
+      },
+      {
+        "name": "Casa Grande",
+        "aliases": [
+          "Casa Grande"
+        ]
+      },
+      {
+        "name": "Chatsworth",
+        "aliases": [
+          "Chatsworth"
+        ]
+      },
+      {
+        "name": "Chicago",
+        "aliases": [
+          "Chicago"
+        ]
+      },
+      {
+        "name": "Dallas",
+        "aliases": [
+          "Dallas"
+        ]
+      },
+      {
+        "name": "Denver",
+        "aliases": [
+          "Denver",
+          "Denver United States"
+        ]
+      },
+      {
+        "name": "Devens",
+        "aliases": [
+          "Devens"
+        ]
+      },
+      {
+        "name": "El Segundo",
+        "aliases": [
+          "El Segundo"
+        ]
+      },
+      {
+        "name": "Fort Mill",
+        "aliases": [
+          "Fort Mill"
+        ]
+      },
+      {
+        "name": "Foster City",
+        "aliases": [
+          "Foster City"
+        ]
+      },
+      {
+        "name": "Fremont",
+        "aliases": [
+          "Fremont"
+        ]
+      },
+      {
+        "name": "Garden Grove",
+        "aliases": [
+          "Garden Grove"
+        ]
+      },
+      {
+        "name": "Georgetown",
+        "aliases": [
+          "Georgetown"
+        ]
+      },
+      {
+        "name": "Hayward",
+        "aliases": [
+          "Hayward"
+        ]
+      },
+      {
+        "name": "Houston",
+        "aliases": [
+          "Houston"
+        ]
+      },
+      {
+        "name": "Idaho Falls",
+        "aliases": [
+          "Idaho Falls"
+        ]
+      },
+      {
+        "name": "Irvine",
+        "aliases": [
+          "Irvine"
+        ]
+      },
+      {
+        "name": "Kearny",
+        "aliases": [
+          "Kearny"
+        ]
+      },
+      {
+        "name": "Kent",
+        "aliases": [
+          "Kent"
+        ]
+      },
+      {
+        "name": "Los Angeles",
+        "aliases": [
+          "Los Angeles"
+        ]
+      },
+      {
+        "name": "McCarran",
+        "aliases": [
+          "McCarran"
+        ]
+      },
+      {
+        "name": "Miami",
+        "aliases": [
+          "Miami"
+        ]
+      },
+      {
+        "name": "Mountain View",
+        "aliases": [
+          "Mountain View"
+        ]
+      },
+      {
+        "name": "New York",
+        "aliases": [
+          "New York",
+          "New York City"
+        ]
+      },
+      {
+        "name": "Newark",
+        "aliases": [
+          "Newark"
+        ]
+      },
+      {
+        "name": "Normal",
+        "aliases": [
+          "Normal"
+        ]
+      },
+      {
+        "name": "Oakland",
+        "aliases": [
+          "Oakland"
+        ]
+      },
+      {
+        "name": "Palo Alto",
+        "aliases": [
+          "Palo Alto"
+        ]
+      },
+      {
+        "name": "Phoenix",
+        "aliases": [
+          "Phoenix"
+        ]
+      },
+      {
+        "name": "Plymouth",
+        "aliases": [
+          "Plymouth"
+        ]
+      },
+      {
+        "name": "Portland",
+        "aliases": [
+          "Portland"
+        ]
+      },
+      {
+        "name": "Redwood City",
+        "aliases": [
+          "Redwood City"
+        ]
+      },
+      {
+        "name": "San Bruno",
+        "aliases": [
+          "San Bruno"
+        ]
+      },
+      {
+        "name": "San Diego",
+        "aliases": [
+          "San Diego"
+        ]
+      },
+      {
+        "name": "San Francisco",
+        "aliases": [
+          "San Francisco"
+        ]
+      },
+      {
+        "name": "San Jose",
+        "aliases": [
+          "San Jose"
+        ]
+      },
+      {
+        "name": "Santa Clara",
+        "aliases": [
+          "Santa Clara"
+        ]
+      },
+      {
+        "name": "Scottsdale",
+        "aliases": [
+          "Scottsdale"
+        ]
+      },
+      {
+        "name": "Seattle",
+        "aliases": [
+          "Seattle"
+        ]
+      },
+      {
+        "name": "Somerville",
+        "aliases": [
+          "Somerville"
+        ]
+      },
+      {
+        "name": "Southfield",
+        "aliases": [
+          "Southfield"
+        ]
+      },
+      {
+        "name": "Sunnyvale",
+        "aliases": [
+          "Sunnyvale"
+        ]
+      },
+      {
+        "name": "Torrance",
+        "aliases": [
+          "Torrance"
+        ]
+      },
+      {
+        "name": "Tustin",
+        "aliases": [
+          "Tustin"
+        ]
+      },
+      {
+        "name": "Washington",
+        "aliases": [
+          "Washington",
+          "Washington D.C."
+        ]
+      },
+      {
+        "name": "Weirton",
+        "aliases": [
+          "Weirton"
+        ]
+      }
+    ],
+    "Germania": [
+      {
+        "name": "Berlin",
+        "aliases": [
+          "Berlin",
+          "Berlino"
+        ]
+      },
+      {
+        "name": "Cologne",
+        "aliases": [
+          "Cologne",
+          "Colonia",
+          "Köln"
+        ]
+      },
+      {
+        "name": "Düsseldorf",
+        "aliases": [
+          "Dusseldorf"
+        ]
+      },
+      {
+        "name": "Eresing",
+        "aliases": [
+          "Eresing"
+        ]
+      },
+      {
+        "name": "Frankfurt",
+        "aliases": [
+          "Francoforte",
+          "Frankfurt",
+          "Frankfurt a. M."
+        ]
+      },
+      {
+        "name": "Frankfurt am Main",
+        "aliases": [
+          "Frankfurt am Main"
+        ]
+      },
+      {
+        "name": "Hamburg",
+        "aliases": [
+          "Amburgo",
+          "Hamburg"
+        ]
+      },
+      {
+        "name": "Munich",
+        "aliases": [
+          "Monaco di Baviera",
+          "München",
+          "Munich",
+          "Munich Hybrid",
+          "Munich Onsite"
+        ]
+      },
+      {
+        "name": "Stuttgart",
+        "aliases": [
+          "Stuttgart"
+        ]
+      }
+    ],
+    "Paesi Bassi": [
+      {
+        "name": "Amsterdam",
+        "aliases": [
+          "Amsterdam",
+          "Amsterdam Centrum",
+          "Amsterdam Oost",
+          "Amsterdam Westpoort",
+          "Amsterdam Zuid"
+        ]
+      },
+      {
+        "name": "Delft",
+        "aliases": [
+          "Delft"
+        ]
+      },
+      {
+        "name": "Eindhoven",
+        "aliases": [
+          "Eindhoven"
+        ]
+      },
+      {
+        "name": "Hoofddorp",
+        "aliases": [
+          "Hoofddorp"
+        ]
+      },
+      {
+        "name": "Rotterdam",
+        "aliases": [
+          "Rotterdam"
+        ]
+      },
+      {
+        "name": "The Hague",
+        "aliases": [
+          "Den Haag",
+          "The Hague"
+        ]
+      },
+      {
+        "name": "The Randstad",
+        "aliases": [
+          "The Randstad"
+        ]
+      },
+      {
+        "name": "Utrecht",
+        "aliases": [
+          "Utrecht",
+          "Utrecht Binnenstad",
+          "Utrecht Oost"
+        ]
+      }
+    ],
+    "Svezia": [
+      {
+        "name": "Gothenburg",
+        "aliases": [
+          "Göteborg",
+          "Gothenburg"
+        ]
+      },
+      {
+        "name": "Lund",
+        "aliases": [
+          "Lund"
+        ]
+      },
+      {
+        "name": "Solna",
+        "aliases": [
+          "Solna"
+        ]
+      },
+      {
+        "name": "Stockholm",
+        "aliases": [
+          "Stoccolma",
+          "Stockholm",
+          "Stockholm County"
+        ]
+      }
+    ],
+    "Irlanda": [
+      {
+        "name": "Cork",
+        "aliases": [
+          "Cork"
+        ]
+      },
+      {
+        "name": "Dublin",
+        "aliases": [
+          "Dublin",
+          "DUBLIN 1",
+          "DUBLIN 18",
+          "DUBLIN 2",
+          "DUBLIN 24",
+          "DUBLIN 4",
+          "DUBLIN 8",
+          "Dublino"
+        ]
+      },
+      {
+        "name": "Galway",
+        "aliases": [
+          "Galway"
+        ]
+      },
+      {
+        "name": "Limerick",
+        "aliases": [
+          "Limerick"
+        ]
+      }
+    ],
+    "Spagna": [
+      {
+        "name": "Barcelona",
+        "aliases": [
+          "Barcellona",
+          "Barcelona"
+        ]
+      },
+      {
+        "name": "Madrid",
+        "aliases": [
+          "Madrid"
+        ]
+      }
+    ],
+    "Ungheria": [
+      {
+        "name": "Budapest",
+        "aliases": [
+          "Budapest"
+        ]
+      }
+    ],
+    "Svizzera": [
+      {
+        "name": "Basel",
+        "aliases": [
+          "Basel"
+        ]
+      },
+      {
+        "name": "Bern",
+        "aliases": [
+          "Bern"
+        ]
+      },
+      {
+        "name": "Geneva",
+        "aliases": [
+          "Geneva",
+          "Genève"
+        ]
+      },
+      {
+        "name": "Lausanne",
+        "aliases": [
+          "Lausanne"
+        ]
+      },
+      {
+        "name": "Zürich",
+        "aliases": [
+          "Zurich"
+        ]
+      }
+    ],
+    "Belgio": [
+      {
+        "name": "Antwerp",
+        "aliases": [
+          "Antwerp",
+          "Anversa"
+        ]
+      },
+      {
+        "name": "Brussels",
+        "aliases": [
+          "Brussels",
+          "Brussels Region",
+          "Bruxelles",
+          "Bruxelles Ixelles",
+          "Bruxelles Watermael-Boitsfort"
+        ]
+      },
+      {
+        "name": "Diegem",
+        "aliases": [
+          "Diegem"
+        ]
+      },
+      {
+        "name": "Gent",
+        "aliases": [
+          "Gent"
+        ]
+      },
+      {
+        "name": "Ghent",
+        "aliases": [
+          "Ghent"
+        ]
+      },
+      {
+        "name": "Leuven",
+        "aliases": [
+          "Leuven"
+        ]
+      }
+    ],
+    "Portogallo": [
+      {
+        "name": "LISBOA",
+        "aliases": [
+          "LISBOA",
+          "Lisbon"
+        ]
+      },
+      {
+        "name": "Porto",
+        "aliases": [
+          "Porto",
+          "Porto Salvo"
+        ]
+      }
+    ],
+    "Italia": [
+      {
+        "name": "Ancona",
+        "aliases": [
+          "AN",
+          "Ancona"
+        ]
+      },
+      {
+        "name": "Bari",
+        "aliases": [
+          "BA",
+          "Bari"
+        ]
+      },
+      {
+        "name": "Bergamo",
+        "aliases": [
+          "Bergamo",
+          "BG"
+        ]
+      },
+      {
+        "name": "Bologna",
+        "aliases": [
+          "BO",
+          "Bologna"
+        ]
+      },
+      {
+        "name": "Bolzano",
+        "aliases": [
+          "Bolzano",
+          "BZ"
+        ]
+      },
+      {
+        "name": "Brescia",
+        "aliases": [
+          "Brescia",
+          "BS"
+        ]
+      },
+      {
+        "name": "Cagliari",
+        "aliases": [
+          "CA",
+          "Cagliari"
+        ]
+      },
+      {
+        "name": "Catania",
+        "aliases": [
+          "Catania",
+          "CT"
+        ]
+      },
+      {
+        "name": "Como",
+        "aliases": [
+          "CO",
+          "Como"
+        ]
+      },
+      {
+        "name": "Ferrara",
+        "aliases": [
+          "FE",
+          "Ferrara"
+        ]
+      },
+      {
+        "name": "Firenze",
+        "aliases": [
+          "FI",
+          "Firenze",
+          "Florence"
+        ]
+      },
+      {
+        "name": "Genova",
+        "aliases": [
+          "GE",
+          "Genoa",
+          "Genova"
+        ]
+      },
+      {
+        "name": "Lecce",
+        "aliases": [
+          "LE",
+          "Lecce"
+        ]
+      },
+      {
+        "name": "Livorno",
+        "aliases": [
+          "LI",
+          "Livorno"
+        ]
+      },
+      {
+        "name": "Milano",
+        "aliases": [
+          "MI",
+          "Milan",
+          "Milano"
+        ]
+      },
+      {
+        "name": "Modena",
+        "aliases": [
+          "MO",
+          "Modena"
+        ]
+      },
+      {
+        "name": "Monza",
+        "aliases": [
+          "MB",
+          "Monza"
+        ]
+      },
+      {
+        "name": "Napoli",
+        "aliases": [
+          "NA",
+          "Naples",
+          "Napoli"
+        ]
+      },
+      {
+        "name": "Novara",
+        "aliases": [
+          "NO",
+          "Novara"
+        ]
+      },
+      {
+        "name": "Padova",
+        "aliases": [
+          "Padova",
+          "Padua",
+          "PD"
+        ]
+      },
+      {
+        "name": "Palermo",
+        "aliases": [
+          "PA",
+          "Palermo"
+        ]
+      },
+      {
+        "name": "Parma",
+        "aliases": [
+          "Parma",
+          "PR"
+        ]
+      },
+      {
+        "name": "Pavia",
+        "aliases": [
+          "Pavia",
+          "PV"
+        ]
+      },
+      {
+        "name": "Perugia",
+        "aliases": [
+          "Perugia",
+          "PG"
+        ]
+      },
+      {
+        "name": "Pisa",
+        "aliases": [
+          "PI",
+          "Pisa"
+        ]
+      },
+      {
+        "name": "Reggio Emilia",
+        "aliases": [
+          "RE",
+          "Reggio Emilia"
+        ]
+      },
+      {
+        "name": "Roma",
+        "aliases": [
+          "RM",
+          "Roma",
+          "Rome"
+        ]
+      },
+      {
+        "name": "Salerno",
+        "aliases": [
+          "SA",
+          "Salerno"
+        ]
+      },
+      {
+        "name": "Torino",
+        "aliases": [
+          "TO",
+          "Torino",
+          "Turin"
+        ]
+      },
+      {
+        "name": "Trento",
+        "aliases": [
+          "TN",
+          "Trento"
+        ]
+      },
+      {
+        "name": "Trieste",
+        "aliases": [
+          "Trieste",
+          "TS"
+        ]
+      },
+      {
+        "name": "Udine",
+        "aliases": [
+          "UD",
+          "Udine"
+        ]
+      },
+      {
+        "name": "Varese",
+        "aliases": [
+          "VA",
+          "Varese"
+        ]
+      },
+      {
+        "name": "Venezia",
+        "aliases": [
+          "VE",
+          "Venezia",
+          "Venice"
+        ]
+      },
+      {
+        "name": "Verona",
+        "aliases": [
+          "Verona",
+          "VR"
+        ]
+      },
+      {
+        "name": "Vicenza",
+        "aliases": [
+          "VI",
+          "Vicenza"
+        ]
+      }
+    ],
+    "Norvegia": [
+      {
+        "name": "Oslo",
+        "aliases": [
+          "Oslo"
+        ]
+      }
+    ],
+    "Austria": [
+      {
+        "name": "Vienna",
+        "aliases": [
+          "Vienna",
+          "Wien"
+        ]
+      }
+    ],
+    "Romania": [
+      {
+        "name": "Bucharest",
+        "aliases": [
+          "Bucarest",
+          "Bucharest",
+          "București"
+        ]
+      },
+      {
+        "name": "Cluj-Napoca",
+        "aliases": [
+          "Cluj-Napoca"
+        ]
+      }
+    ],
+    "Finlandia": [
+      {
+        "name": "Espoo",
+        "aliases": [
+          "Espoo"
+        ]
+      },
+      {
+        "name": "Helsinki",
+        "aliases": [
+          "Helsinki"
+        ]
+      },
+      {
+        "name": "Tampere",
+        "aliases": [
+          "Tampere"
+        ]
+      }
+    ],
+    "Grecia": [
+      {
+        "name": "Athens",
+        "aliases": [
+          "Atene",
+          "Athens",
+          "athina"
+        ]
+      }
+    ],
+    "Danimarca": [
+      {
+        "name": "Copenhagen",
+        "aliases": [
+          "Copenhagen",
+          "kobenhavn"
+        ]
+      },
+      {
+        "name": "København",
+        "aliases": [
+          "Copenaghen",
+          "København",
+          "København SV"
+        ]
+      }
+    ],
+    "India": [
+      {
+        "name": "Bengaluru",
+        "aliases": [
+          "Bengaluru"
+        ]
+      }
+    ],
+    "Canada": [
+      {
+        "name": "Vancouver",
+        "aliases": [
+          "Vancouver"
+        ]
+      }
+    ],
+    "Cina": [
+      {
+        "name": "Shanghai",
+        "aliases": [
+          "Shanghai"
+        ]
+      }
+    ],
+    "Australia": [
+      {
+        "name": "Sydney",
+        "aliases": [
+          "Sydney"
+        ]
+      }
+    ]
+  }
+}
