@@ -47,7 +47,7 @@ def parser():
     sub.add_parser("categories", help="List the shared category vocabulary")
     sweep = sub.add_parser("collect-all", help="Broad acquisition only: all queries, all countries, all boards")
     sweep.add_argument("--fresh", action="store_true", help="Back up SQLite and reset acquired data while preserving personal records")
-    sub.add_parser("queue", help="Resume the personal company queue")
+    sub.add_parser("saved", help="Aziende e ruoli salvati a mano")
     sub.add_parser("metrics", help="Decision coverage and reasons")
     analytics = sub.add_parser("analytics", help="Archive distributions and data completeness; no network or LLM")
     analytics.add_argument("--eligibility", choices=("potential", "review", "excluded"), default="")
@@ -139,9 +139,9 @@ def execute(args, archive, cfg):
         if args.fresh:
             archive.reset_collection()
         return sweep(archive, cfg)
-    if command in ("queue", "metrics", "proposals", "research-brief"):
-        from jobhunter.selection import queue, metrics, proposals, research_brief
-        if command == "queue": return queue(archive)
+    if command in ("saved", "metrics", "proposals", "research-brief"):
+        from jobhunter.selection import saved, metrics, proposals, research_brief
+        if command == "saved": return saved(archive)
         if command == "metrics": return metrics(archive)
         if command == "proposals": return proposals(archive, args.id, args.state)
         return research_brief(archive, args.id)

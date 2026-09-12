@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from jobhunter.workspace import Archive, settings, ROOT, search_rules_hash
-from jobhunter.selection import evaluate, queue, shortlist, filters
+from jobhunter.selection import evaluate, saved, shortlist, filters
 from jobhunter.analytics import summary
 from jobhunter.interview import questions
 from jobhunter.dashboard import create_server
@@ -18,7 +18,7 @@ class SharedEvaluationTests(unittest.TestCase):
     """Protect fast repeated reads, exclusive server binding and company evidence."""
 
     def test_dashboard_consumers_reuse_persisted_decisions(self):
-        """Metrics, queue, review and details must not repeat description extraction."""
+        """Metrics, salvate, review and details must not repeat description extraction."""
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / 'a.db'
             with closing(Archive(path)) as a:
@@ -28,7 +28,7 @@ class SharedEvaluationTests(unittest.TestCase):
                 a.search(eligibility='potential')
             with closing(Archive(path)) as a, patch('jobhunter.selection.evaluate', wraps=evaluate) as check:
                 summary(a)
-                queue(a)
+                saved(a)
                 questions(a)
                 shortlist(a)
                 cid = a.search()['items'][0]['id']
@@ -56,7 +56,7 @@ class SharedEvaluationTests(unittest.TestCase):
             self.assertEqual(a.category(cid)['category'], 'Energia')
 
     def test_unrelated_code_does_not_invalidate_decisions(self):
-        """Changing queue code leaves filters valid; changing extraction invalidates them."""
+        """Changing unrelated code leaves filters valid; changing extraction invalidates them."""
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             (root / 'jobhunter').mkdir()

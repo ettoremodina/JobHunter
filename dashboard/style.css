@@ -375,16 +375,25 @@ footer { padding: 24px 32px 40px; color: var(--ink-soft); font-size: .85rem; }
 .compare-note { font-size: .9rem; }
 [hidden] { display: none !important; }
 
-/* Queue: stable company rows, readable roles and explicit handoff to chat. */
-#queue-view { max-width: 1120px; margin: 0 auto; }
+/* Salvate: righe azienda stabili, ruoli leggibili e passaggio esplicito alla chat. */
+#saved-view { max-width: 1240px; margin: 0 auto; }
 .queue-heading { flex-wrap: wrap; }
 .queue-heading h2 { margin: 0; }
 .queue-intro { max-width: 75ch; }
 .queue-help { padding: 14px 18px; margin: 10px 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .queue-help summary { cursor: pointer; font-weight: 600; padding: 0; }
 .queue-help p { max-width: 75ch; }
-#queue-summary { margin: 24px 0 12px; color: var(--ink-soft); }
-#queue-items { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+#saved-summary { margin: 24px 0 12px; color: var(--ink-soft); }
+#saved-items { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+/* Elenco a sinistra, scheda a destra: aprire una salvata non porta via dalla pagina. */
+.saved-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 1fr); gap: 20px; align-items: start; margin-top: 12px; }
+#saved-detail { background: var(--surface); padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); position: sticky; top: 90px; max-height: calc(100vh - 110px); overflow: auto; min-width: 0; }
+#saved-detail h3:first-child { margin-top: 0; }
+#saved-detail textarea, #saved-detail select, #saved-detail input { width: 100%; }
+#saved-brief-box textarea { width: 100%; }
+#saved-items h4 { margin: 12px 0 4px; font-size: .95rem; }
+#saved-items ul { margin: 4px 0; padding-left: 20px; }
+@media (max-width: 1000px) { .saved-workspace { grid-template-columns: 1fr; } #saved-detail { position: static; max-height: none; } }
 .queue-company { padding: 24px; overflow-wrap: anywhere; }
 .queue-company + .queue-company { border-top: 1px solid var(--line-soft); }
 .queue-company:hover { background: var(--surface-sunken); }

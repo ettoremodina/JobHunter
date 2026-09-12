@@ -15,29 +15,38 @@
         <p>Raccogli opportunità. Scegli aziende.</p>
       </div>
       <nav aria-label="Navigazione principale">
-        <button data-view="queue">La mia coda</button>
+        <button data-view="saved">Salvate</button>
         <button data-view="companies" aria-current="page">Aziende</button
         ><button data-view="analytics">Metriche</button><button data-view="pipeline">Pipeline</button>
       </nav>
     </header>
     <div id="message" role="status" aria-live="polite"></div>
     <main>
-      <section id="queue-view" hidden>
-        <div class="toolbar queue-heading"><h2>La mia coda</h2><button id="refresh-queue">Ricarica coda salvata</button></div>
-        <p class="queue-intro">Una selezione dall'archivio, costruita sul PC con i tuoi filtri. Questa pagina non chiama ChatGPT né Ollama.</p>
-        <details class="queue-help"><summary>Come usarla con la chat</summary><p>Apri un'azienda per verificare i ruoli e registrare una decisione. Oppure prepara il testo da copiare nella chat di Codex per un approfondimento. Nulla viene inviato automaticamente.</p><p>La coda mantiene le aziende già proposte. Una decisione libera spazio; al prossimo caricamento entrano altre aziende. Ricaricare non estrae dieci nomi nuovi.</p></details>
-        <p id="queue-summary" role="status"></p>
-        <h3>Due code, due ritmi</h3>
-        <p>Tier A è cosa guardare questa settimana. Tier B è una mappa senza urgenza: aziende interessanti senza ruoli aperti, e ruoli che valgono da soli in aziende fuori dalle categorie preferite. Le preferenze vivono in <code>config/role_filters.json</code>.</p>
-        <div id="queue-items" aria-label="Aziende da valutare"></div>
-        <section aria-labelledby="uncertainty-heading">
-          <h3 id="uncertainty-heading">Da chiarire insieme</h3>
+      <section id="saved-view" hidden>
+        <div class="toolbar queue-heading"><h2>Salvate</h2><button id="refresh-saved">Ricarica</button></div>
+        <p class="queue-intro">Le aziende e i ruoli che hai messo da parte a mano dalla tab Aziende. È una scelta tua, separata dai giudizi della pipeline: non li sovrascrive e non li cancella.</p>
+        <p id="saved-summary" role="status"></p>
+        <div class="actions">
+          <button id="saved-brief">Prepara il controllo di tutte le salvate</button>
+          <small>Prepara un testo da copiare. Non invia messaggi e non avvia un modello.</small>
+        </div>
+        <div id="saved-brief-box"></div>
+        <div class="saved-workspace">
+          <div id="saved-items" aria-label="Aziende salvate"></div>
+          <aside id="saved-detail" aria-label="Dettaglio azienda salvata">
+            <h3>Scegli un'azienda salvata</h3>
+            <p>Si apre qui, senza passare dalla tab Aziende e senza i filtri che hai attivo lì.</p>
+          </aside>
+        </div>
+        <details class="queue-help">
+          <summary>Da chiarire insieme e preferenze proposte</summary>
+          <h3>Da chiarire insieme</h3>
           <p>Una tua risposta può orientare la selezione di altri annunci simili. I conteggi indicano i casi interessati, non esclusioni automatiche.</p>
           <div id="queue-questions" aria-live="polite"></div>
           <details class="queue-help"><summary>Informazioni da cercare nelle fonti</summary><p>Qui la preferenza è nota: servono fatti sul singolo annuncio.</p><div id="queue-evidence"></div></details>
-        </section>
-        <details class="queue-help"><summary>Le tue decisioni e preferenze</summary><h3>Le tue decisioni</h3><p id="queue-metrics"></p>
-        <h3>Preferenze proposte</h3><p>Derivano da scelte ripetute. Si applicano solo dopo la tua conferma.</p><div id="queue-proposals"></div></details>
+          <h3>Le tue decisioni</h3><p id="queue-metrics"></p>
+          <h3>Preferenze proposte</h3><p>Derivano da scelte ripetute. Restano un promemoria: da quando la coda non c'è più, accettarle non cambia niente in automatico.</p><div id="queue-proposals"></div>
+        </details>
       </section>
       <section id="companies-view">
         <form id="filters" class="filters">
@@ -156,7 +165,7 @@
           <p id="pipeline-dialog-state"></p>
           <p id="pipeline-error" role="alert" class="error"></p>
           <div id="pipeline-last-result"></div>
-          <div class="actions"><button type="submit" id="pipeline-start" class="primary">Avvia</button><button type="button" id="pipeline-stop" disabled>Interrompi</button><button type="button" id="pipeline-go-feedback" hidden>Apri la coda</button></div>
+          <div class="actions"><button type="submit" id="pipeline-start" class="primary">Avvia</button><button type="button" id="pipeline-stop" disabled>Interrompi</button></div>
         </form>
       </dialog>
       <section id="sources-view" hidden>

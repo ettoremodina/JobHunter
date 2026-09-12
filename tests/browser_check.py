@@ -53,16 +53,22 @@ def main():
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 page.goto(f"http://127.0.0.1:{server.server_port}")
                 page.wait_for_load_state("networkidle")
-                expect(page.locator("#eligibility")).to_have_value("potential")
-                expect(page.locator("#rows .company-link")).to_have_count(1)
+                # La pagina si apre su tutto l'archivio: il filtro sull'asse ruolo lo sceglie l'utente.
+                expect(page.locator("#eligibility")).to_have_value("")
+                expect(page.locator("#rows .company-link")).to_have_count(2)
                 page.locator("#eligibility").select_option("")
                 page.get_by_role("button", name="Cerca", exact=True).click()
                 page.get_by_role("button", name="Energy Lab", exact=True).click()
                 page.get_by_role("heading", name="Energy Lab", exact=True).wait_for()
                 expect(page.get_by_role("button", name="Azienda non interessante", exact=True)).to_be_visible()
                 expect(page.get_by_role("button", name="Nessun ruolo adatto adesso", exact=True)).to_be_visible()
-                assert page.get_by_role("link", name="Sito aziendale").count() == 1
-                assert page.get_by_role("heading", name="Senior engineer", exact=True).count() == 1
+                # Il collegamento porta il nome del dominio, non un'etichetta generica.
+                assert page.get_by_role("link", name="example.org", exact=True).count() == 1
+                # Ogni ruolo è un blocco richiudibile: il titolo sta nella sua riga di apertura.
+                assert page.locator("#detail .job-title", has_text="Senior engineer").count() == 1
+                # Con più ruoli i blocchi restano chiusi: si aprono per leggere sintesi e campi.
+                for summary in page.locator("#detail details.opportunity > summary").all():
+                    summary.click()
                 expect(page.get_by_text('Analisi dati e miglioramento dei modelli.', exact=True)).to_be_visible()
                 expect(page.locator('#detail dt').filter(has_text='Competenze obbligatorie')).to_have_count(1)
                 assert page.locator('#detail dd').filter(has_text='Non indicato').count() == len(field_labels)-1
@@ -76,6 +82,8 @@ def main():
                 expect(page.locator(".description li")).to_have_count(2)
                 assert "\\-" not in page.locator(".description").first.inner_text()
                 page.locator("#detail .locations summary").click()
+                # Il modulo completo sta dietro un blocco richiudibile: le scelte rapide restano a vista.
+                page.get_by_text("Registra una decisione con motivo e nota", exact=True).click()
                 page.locator("#detail-status").select_option("saved")
                 page.locator("#detail-note").fill("Interesting company, keep both opportunities")
                 page.get_by_role("button", name="Salva decisione", exact=True).click()
@@ -87,20 +95,25 @@ def main():
                 page.get_by_text("Storico decisioni", exact=True).click()
                 page.get_by_role("button", name="Annulla", exact=True).click()
                 page.get_by_text("Decisione annullata.", exact=True).wait_for()
-                page.get_by_role("button", name="La mia coda", exact=True).click()
-                expect(page.get_by_role("heading", name="Da chiarire insieme", exact=True)).to_be_visible()
-                page.screenshot(path=str(destination / "queue-desktop.png"), full_page=True)
+                # La scelta manuale vive in una tab sua: qui si salva, e la scheda si apre lì dentro.
+                page.get_by_role("button", name="Salva azienda", exact=True).click()
+                page.get_by_text("Salvato l'azienda: lo trovi nella tab Salvate.", exact=True).wait_for()
+                page.get_by_role("button", name="Salvate", exact=True).click()
+                expect(page.locator("#saved-summary")).to_contain_text("1 aziende salvate")
+                page.screenshot(path=str(destination / "saved-desktop.png"), full_page=True)
                 page.set_viewport_size({"width": 390, "height": 844})
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-                page.screenshot(path=str(destination / "queue-mobile.png"), full_page=True)
+                page.screenshot(path=str(destination / "saved-mobile.png"), full_page=True)
                 page.set_viewport_size({"width": 1440, "height": 1050})
-                expect(page.get_by_role("button", name="Apri e valuta Energy Lab", exact=True)).to_have_count(1)
-                expect(page.get_by_text("Questa pagina non chiama ChatGPT né Ollama.", exact=False)).to_be_visible()
                 page.get_by_role("button", name="Prepara testo per la chat", exact=True).click()
-                expect(page.get_by_role("textbox", name="Brief da copiare nella chat")).to_be_visible()
-                expect(page.get_by_role("textbox", name="Brief da copiare nella chat")).to_have_value(__import__("re").compile("Usa la skill jobhunter"))
-                page.get_by_role("button", name="Apri e valuta Energy Lab", exact=True).click()
-                expect(page.locator("#detail-status")).to_have_value("new")
+                expect(page.get_by_role("textbox", name="Testo da copiare nella chat di Codex").first).to_have_value(__import__("re").compile("Usa la skill jobhunter"))
+                page.get_by_role("button", name="Apri Energy Lab", exact=True).click()
+                expect(page.locator("#saved-detail")).to_contain_text("Energy Lab")
+                page.get_by_role("button", name="Rimuovi dalle salvate").first.click()
+                page.get_by_text("Nessuna azienda salvata.", exact=False).wait_for()
+                # Domande e preferenze non si perdono con la coda: vivono nel riquadro in fondo.
+                page.get_by_text("Da chiarire insieme e preferenze proposte", exact=True).click()
+                expect(page.get_by_role("heading", name="Da chiarire insieme", exact=True)).to_be_visible()
                 page.get_by_role("button", name="Aziende", exact=True).click()
                 page.locator("#query").fill("no-such-company")
                 page.get_by_role("button", name="Cerca", exact=True).click()
@@ -136,10 +149,6 @@ def main():
                 page.get_by_role("heading", name="Fonti e raccolta").wait_for()
                 expect(page.get_by_role("button", name="Avvia raccolta limitata", exact=True)).to_have_count(4)
                 assert page.get_by_role("button", name="Avvia raccolta limitata", exact=True).last.is_disabled()
-                page.get_by_role("button", name="Profilo", exact=True).click()
-                page.locator("#preference-note").fill("QA preference")
-                page.get_by_role("button", name="Salva preferenza").click()
-                page.get_by_text("QA preference", exact=True).wait_for()
                 page.get_by_role("button", name="Aziende", exact=True).click()
                 page.set_viewport_size({"width": 390, "height": 844})
                 page.screenshot(path=str(destination / "mobile.png"), full_page=True)
@@ -154,8 +163,11 @@ def main():
                     {"company_name": "Search QA Mixed", "title": "Data Scientist", "location": "Roma", "source_url": "https://example.org/search/rome"},
                 ], "qa")
                 archive.close()
+                # I menu geografici si costruiscono dai dati: dopo un'importazione vanno riletti.
+                page.reload()
+                page.locator("#city").get_by_text("Milano", exact=False).first.wait_for(state="attached")
                 page.locator("#query").fill("Search QA")
-                page.locator("#location").fill("Milano")
+                page.locator("#city").select_option("Milano")
                 page.locator("#eligibility").select_option("potential")
                 page.get_by_role("button", name="Cerca", exact=True).click()
                 expect(page.locator("#count")).to_have_text("31 aziende")
@@ -165,12 +177,14 @@ def main():
                 expect(page.locator("#rows .company-link")).to_have_count(1)
                 expect(page.locator("#page")).to_have_text("31–31 di 31")
                 expect(page.locator("#next")).to_be_disabled()
-                expect(page.locator("#rows tr td").nth(2)).to_have_text("Milano")
+                # La colonna mostra la forma canonica, non la stringa della fonte.
+                expect(page.locator("#rows td.col-localita").first).to_have_text("Milano, Italia")
                 page.locator("#previous").click()
                 expect(page.locator("#rows .company-link")).to_have_count(30)
                 assert not errors, errors
                 page.get_by_role("button", name="Pipeline", exact=True).click()
-                expect(page.locator("#pipeline-steps > li")).to_have_count(7)
+                # Cinque passaggi: coda e valutazione manuale non sono passaggi della pipeline.
+                expect(page.locator("#pipeline-steps > li")).to_have_count(5)
                 expect(page.locator("#pipeline-status")).to_contain_text("annunci")
                 expect(page.locator("#pipeline-steps")).not_to_contain_text("Categorie locali")
                 expect(page.locator("#pipeline-steps")).not_to_contain_text("Statistiche dell")
@@ -180,7 +194,7 @@ def main():
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
                 page.set_viewport_size({"width": 1440, "height": 1050})
                 page.screenshot(path=str(destination / "pipeline-desktop.png"), full_page=True)
-                page.get_by_role('button', name='Apri Selezione e schede con Qwen', exact=True).click()
+                page.get_by_role('button', name='Apri Giudice 2 · Qwen sui «non so»', exact=True).click()
                 expect(page.locator('#pipeline-dialog')).to_be_visible()
                 expect(page.get_by_label('Numero di aziende del campione', exact=True)).to_have_value('100')
                 expect(page.get_by_label('Modalità LLM remoto', exact=True)).to_have_value('preview')
@@ -190,7 +204,7 @@ def main():
                 expect(page.locator('#pipeline-last-result')).to_contain_text('chiamate aziendali previste', timeout=45000)
                 expect(page.locator('#pipeline-last-result')).to_contain_text('2 / 2 aziende')
                 page.get_by_role('button', name='Chiudi parametri', exact=True).click()
-                page.get_by_role('button', name='Apri Applicazione filtri', exact=True).click()
+                page.get_by_role('button', name='Apri Giudice 1 · regex su titolo e descrizione', exact=True).click()
                 page.get_by_label('Continua da qui con i passaggi successivi', exact=True).check()
                 expect(page.get_by_role('button', name='Avvia sequenza', exact=True)).to_be_visible()
                 page.get_by_label('Continua da qui con i passaggi successivi', exact=True).uncheck()
@@ -207,7 +221,7 @@ def main():
                         time.sleep(.05)
                     return {'status': 'success'}
                 with patch('jobhunter.pipeline_actions.execute', side_effect=slow_stage):
-                    page.get_by_role('button', name='Apri Applicazione filtri', exact=True).click()
+                    page.get_by_role('button', name='Apri Giudice 1 · regex su titolo e descrizione', exact=True).click()
                     page.get_by_role('button', name='Avvia passaggio', exact=True).click()
                     expect(page.locator('#pipeline-stop')).to_be_enabled()
                     page.locator('#pipeline-stop').click()

@@ -4,9 +4,9 @@ Su Windows aprire `Avvia JobHunter.pyw` con doppio clic. Il launcher usa il Pyth
 
 ## Card e avvio
 
-La mappa mostra la sequenza con card e frecce. Ogni card riporta copertura, data e stato. Cliccare per aprire parametri, risultato dell'ultima esecuzione e pulsante di avvio. Normalizzazione e raggruppamento sono automatici durante l'importazione; la card spiega il comportamento. La valutazione manuale apre la coda del feedback loop.
+La mappa mostra la sequenza con card e frecce. Ogni card riporta copertura, data e stato. Cliccare per aprire parametri, risultato dell'ultima esecuzione e pulsante di avvio. Normalizzazione e raggruppamento sono automatici durante l'importazione; la card spiega il comportamento. Ogni card ha un riquadro «Cosa fa» che dice su cosa lavora il passaggio e se classifica o si limita a preparare. La valutazione manuale non è un passaggio della pipeline: avviene dopo, nella tab Salvate.
 
-Le operazioni disponibili sono raccolta per fonte, filtri locali, recupero descrizioni, passaggio LLM remoto e aggiornamento della coda. La rilettura degli HTML salvati e l'impaginazione con Ollama sono state tolte dalle card: la prima è una riparazione una tantum, la seconda non produce più nulla da quando le schede dei ruoli arrivano da Qwen. Restano disponibili dalla CLI con `reparse-descriptions` ed `enrich description`. L'avvio chiama direttamente le funzioni Python esistenti, senza accettare comandi shell o percorsi arbitrari dal browser.
+Le operazioni disponibili sono raccolta per fonte, filtri locali, recupero descrizioni e passaggio LLM remoto. La rilettura degli HTML salvati e l'impaginazione con Ollama sono state tolte dalle card: la prima è una riparazione una tantum, la seconda non produce più nulla da quando le schede dei ruoli arrivano da Qwen. Restano disponibili dalla CLI con `reparse-descriptions` ed `enrich description`. L'avvio chiama direttamente le funzioni Python esistenti, senza accettare comandi shell o percorsi arbitrari dal browser.
 
 “Continua da qui” avvia in sequenza i passaggi principali successivi. La finestra mostra l'elenco e permette di impostare il successivo passaggio LLM remoto, comprese le chiamate contemporanee. Se il recupero descrizioni è successivo al passaggio scelto, considera tutte le descrizioni eleggibili. Il recupero mantiene esclusioni, cooldown e limiti della fonte già previsti dalla pipeline.
 
@@ -14,7 +14,7 @@ La sequenza si ferma al primo risultato parziale o errore. “Riprova” signifi
 
 ## Pilot Qwen e ordine dei passaggi
 
-La sequenza automatica è raccolta e normalizzazione, filtri locali, recupero descrizioni eleggibili, selezione e schede con Qwen, coda e feedback. Importare annunci non avvia più la classificazione delle aziende. Le categorie locali sono state rimosse dalla mappa. Il comando CLI esplicito resta disponibile. Le statistiche restano nella tab Metriche.
+La sequenza automatica è raccolta e normalizzazione, filtri locali, recupero descrizioni eleggibili, selezione e schede con Qwen. Importare annunci non avvia più la classificazione delle aziende. Le categorie locali sono state rimosse dalla mappa. Il comando CLI esplicito resta disponibile. Le statistiche restano nella tab Metriche.
 
 La card “Selezione e schede con Qwen” parte da 100 aziende distinte in ordine deterministico. Per ogni azienda valuta prima i ruoli non esclusi localmente, più un campione deterministico di cinque esclusi locali complessivi per controllare falsi negativi. Il limite è configurabile con remote_audit_excluded. Non riesamina a pagamento tutti gli esclusi.
 
@@ -22,11 +22,11 @@ Solo quando esiste almeno un ruolo con decisione attuale keep o review, una sing
 
 L’anteprima è offline: dove manca la selezione, gli arricchimenti indicati sono un limite superiore, non una previsione degli esiti del modello. I report distinguono esclusi locali, audit, esclusi remoti, risultati validi, risposte respinte e aziende senza sopravvissuti. I token includono le risposte respinte; il costo monetario potrebbe non essere restituito dal provider.
 
-Le esclusioni Qwen governano la spesa di arricchimento ma restano proposte nella dashboard: la coda utilizza ancora i filtri locali. Gli originali, i giudizi e le sintesi restano separati e recuperabili.
+Le esclusioni Qwen governano la spesa di arricchimento ma restano proposte nella dashboard. Gli originali, i giudizi e le sintesi restano separati e recuperabili.
 
 ## Stato, persistenza e interruzioni
 
-Il funnel, gli assi e il percorso vivono ora tutti nella tab Metriche: la pagina Pipeline resta il pannello operativo. Ogni card si apre dichiarando quanti elementi ha ricevuto e da quale passaggio: e' l'unico posto in cui un totale nato da una sottrazione viene spiegato, e in cui un cambio di unita di misura fra annunci e aziende si dichiara invece di lasciare il salto al lettore. Il giudice 2 disegna una barra sola, sui «non so» che il regex gli ha passato; la copertura resta pero misurata sugli annunci chiamabili, perche una quota ferma per descrizione mancante non deve tenere la card per sempre su copertura parziale. La coda mostra prima le aziende eleggibili che ha ricevuto e poi l'archivio da cui escono. I numeri scritti nelle frasi hanno la stessa forma di quelli scritti nelle barre. Le card usano lo stesso formato per lavoro completato e rimanente. Il pannello attivo mostra avanzamento e nuovi esiti; consumi e contatori aggiuntivi sono in «Consumi e dettagli». I conteggi dell'archivio e quelli della singola esecuzione restano distinti.
+Il funnel, gli assi e il percorso vivono ora tutti nella tab Metriche: la pagina Pipeline resta il pannello operativo. Ogni card si apre dichiarando quanti elementi ha ricevuto e da quale passaggio: e' l'unico posto in cui un totale nato da una sottrazione viene spiegato, e in cui un cambio di unita di misura fra annunci e aziende si dichiara invece di lasciare il salto al lettore. Il giudice 2 disegna una barra sola, sui «non so» che il regex gli ha passato; la copertura resta pero misurata sugli annunci chiamabili, perche una quota ferma per descrizione mancante non deve tenere la card per sempre su copertura parziale. I numeri scritti nelle frasi hanno la stessa forma di quelli scritti nelle barre. Le card usano lo stesso formato per lavoro completato e rimanente. Il pannello attivo mostra avanzamento e nuovi esiti; consumi e contatori aggiuntivi sono in «Consumi e dettagli». I conteggi dell'archivio e quelli della singola esecuzione restano distinti.
 
 La pagina aggiorna lo stato ogni trenta secondi mentre è aperta. La frequenza limita il lavoro del monitor sull'intero archivio; il pulsante Aggiorna stato permette una lettura manuale. Le esecuzioni vengono salvate in SQLite nella tabella `pipeline_jobs`: parametri, orario, stato, progressi, risultato e impronta degli input. Chiudere la scheda del browser non ferma il worker. Il server deve rimanere attivo.
 
@@ -72,3 +72,9 @@ Gli esiti dei modelli sono quelli salvati da tutte le esecuzioni: sono proposte,
 Una azienda e esclusa localmente solo se non ha annunci rimasti. Cache locale mancante o scaduta non causa esclusioni implicite.
 I giudizi Qwen salvati sui soli annunci rimasti formano quattro gruppi disgiunti: keep, review, exclude, senza giudizio. La loro somma coincide con gli annunci rimasti. Sono risultati storici salvati, non una certificazione di validita con il prompt corrente; la UI esplicita questo limite. Gli audit di annunci esclusi localmente non rientrano nella partizione. La presenza di schede aziendali non misura la selezione.
 La run corrente rimane separata: aziende attraversate includono quelle saltate; risultati in cache nelle vecchie run possono comprendere piu elaborazioni dello stesso annuncio. Token input/output riguardano solo la run. Nessuna operazione di filtraggio o API viene avviata dal monitor.
+
+### Salvate: la scelta a mano, dopo la pipeline
+
+La tab «Salvate» ha preso il posto di «La mia coda». Nella tab Aziende «Salva azienda» e «Salva ruolo» mettono da parte quello che interessa; la tab Salvate li elenca e apre la scheda al suo interno, senza i filtri della tab Aziende. Da lì si prepara il testo per la chat, per una singola azienda o per tutte le salvate insieme: la pagina prepara un testo da copiare e non invia nulla.
+
+La scelta manuale è un campo a parte e non tocca i verdetti della pipeline: nella scheda si legge la tua decisione accanto al giudizio del regex o del modello, non al suo posto. Per questo la valutazione manuale non è più una card della pipeline, e con la coda è sparito anche lo step «Coda di selezione», che serviva solo a riempirla. Le domande «Da chiarire insieme» e le preferenze proposte restano in fondo alla tab, in un riquadro richiudibile; accettare una preferenza ora è solo un promemoria, perché la coda che le applicava non esiste più.

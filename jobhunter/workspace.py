@@ -495,7 +495,6 @@ class Archive:
                 return {"event_id": previous["id"], "duplicate": True}
             cursor = self.db.execute("INSERT INTO feedback(company_id,opportunity_id,status,note,created_at) VALUES(?,?,?,?,?)", (cid, opportunity_id, status, note, now()))
             self.db.execute("INSERT INTO feedback_detail VALUES(?,?,?,?)", (cursor.lastrowid, reason, until_date, snapshot))
-            self.db.execute("DELETE FROM personal_queue WHERE company_id=?", (cid,))
         return {"event_id": cursor.lastrowid}
 
     def undo(self, event_id):
@@ -504,7 +503,6 @@ class Archive:
             cursor = self.db.execute("UPDATE feedback SET undone_at=COALESCE(undone_at,?) WHERE id=?", (now(), event_id))
             if not cursor.rowcount:
                 raise ValueError("Feedback event not found")
-            self.db.execute("DELETE FROM personal_queue")
         return {"undone": event_id}
 
     def assess(self, cid, data):

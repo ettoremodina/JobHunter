@@ -81,8 +81,7 @@ class PipelineTests(unittest.TestCase):
             self.assertIn(it(remote['total']), remote['inflow'])
             self.assertEqual((it(23049), it(5908)), ('23.049', '5908'))
             # Dove cambia l'unita' di misura la card lo dichiara invece di lasciare il salto al lettore.
-            for key in ('descriptions', 'queue'):
-                self.assertIn('Cambia unità di misura', steps[key]['inflow'], key)
+            self.assertIn('Cambia unità di misura', steps['descriptions']['inflow'])
 
     def test_description_card_counts_company_coverage(self):
         """DESIGN §4: la copertura si misura sulle aziende, non sui ruoli sopravvissuti ai filtri."""

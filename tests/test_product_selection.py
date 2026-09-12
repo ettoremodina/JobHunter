@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 from jobhunter.collection import postings
-from jobhunter.selection import evaluate, requirements, queue
+from jobhunter.selection import evaluate, requirements, saved
 from jobhunter.workspace import Archive
 from jobhunter.descriptions import recover
 from jobhunter.maintenance import reparse
@@ -39,19 +39,22 @@ class ProductSelectionTests(unittest.TestCase):
         self.assertEqual(secondary['career_priority'], 'secondary')
         self.assertEqual(secondary['status'], 'potential')
 
-    def test_company_rejection_differs_from_current_roles(self):
-        """New roles revive a deferred company but never override an explicit company rejection."""
+    def test_company_rejection_is_recorded_beside_the_pipeline(self):
+        """Una decisione manuale resta un campo a parte: nuovi annunci non la cancellano, e i verdetti non cambiano."""
         with tempfile.TemporaryDirectory() as directory, closing(Archive(Path(directory) / 'test.db')) as archive:
             raw = {'company_name': 'Example', 'title': 'Data Scientist', 'source_url': 'https://example.org/1'}
             archive.ingest([raw], 'test')
             cid = archive.db.execute('SELECT id FROM companies').fetchone()[0]
             archive.feedback(cid, 'review', reason='no_current_roles')
-            self.assertEqual(queue(archive)['items'], [])
             archive.ingest([{**raw, 'source_url': 'https://example.org/2'}], 'test')
-            self.assertEqual(len(queue(archive)['items']), 1)
+            self.assertEqual(archive.show(cid)['status'], 'review')
             archive.feedback(cid, 'discarded', reason='company_not_interested')
             archive.ingest([{**raw, 'source_url': 'https://example.org/3'}], 'test')
-            self.assertEqual(queue(archive)['items'], [])
+            company = archive.show(cid)
+            self.assertEqual(company['status'], 'discarded')
+            # Il verdetto della pipeline resta quello dei filtri: la scelta manuale non lo riscrive.
+            self.assertEqual({job['verdict']['verdetto'] for job in company['opportunities']}, {'tieni'})
+            self.assertEqual(saved(archive)['items'], [])
 
     def test_recovery_remembers_failures_and_refreshes_old_text(self):
         """A stale text can refresh; a missing page is deferred instead of retried every batch."""

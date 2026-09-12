@@ -6,8 +6,7 @@
     "collection",
     "filters",
     "descriptions",
-    "remote",
-    "queue"
+    "remote"
   ],
   "actions": {
     "collection": {
@@ -44,11 +43,6 @@
         "workers",
         "mode"
       ]
-    },
-    "queue": {
-      "label": "Aggiorna coda",
-      "note": "Prepara le code di Tier A e Tier B per la revisione in chat. Il tier si calcola in lettura dai due verdetti d'asse.",
-      "fields": []
     }
   },
   "remote_audit_excluded": 5

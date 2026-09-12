@@ -306,7 +306,7 @@ function factList(pairs) {
 }
 
 /** Un ruolo per volta, chiuso: la scheda si apre con l'elenco, non con il muro di testo. */
-function opportunityBlock(job, company, decision, id, open) {
+function opportunityBlock(job, company, decision, id, open, context = {}) {
   const block = el("details", undefined, "opportunity");
   block.id = "job-" + job.id;
   block.open = open;
@@ -390,25 +390,45 @@ function opportunityBlock(job, company, decision, id, open) {
   discardRole.addEventListener("click", guarded(async () => {
     await api("/api/feedback", {company_id: id, opportunity_id: job.id, status: "discarded", reason: roleReason.value, note: "Decisione sul singolo ruolo"});
     message("Ruolo scartato; azienda conservata.");
-    await show(id);
+    await show(id, context);
   }));
   const reject = el("button", "Da verificare");
   reject.addEventListener("click", guarded(async () => {
     await api("/api/feedback", {company_id: id, opportunity_id: job.id, status: "review",
                                 note: "Ruolo da verificare; interesse aziendale invariato"});
     message("Annotazione sul ruolo salvata.");
-    await show(id);
+    await show(id, context);
   }));
-  actions.append(roleReason, discardRole, reject);
+  actions.append(saveButton(company, id, job.id, context), roleReason, discardRole, reject);
   body.append(actions);
   return block;
 }
 
-async function show(id) {
+/** Salvare è un campo a parte: mette da parte azienda o ruolo senza toccare i verdetti della pipeline. */
+function saveButton(company, id, opportunityId, context) {
+  const active = company.feedback.find(event => !event.undone_at && event.status === "saved"
+    && (event.opportunity_id || null) === opportunityId);
+  const what = opportunityId ? "il ruolo" : "l'azienda";
+  const button = el("button", active ? "Rimuovi dalle salvate" : opportunityId ? "Salva ruolo" : "Salva azienda",
+                    active ? undefined : "primary");
+  button.addEventListener("click", guarded(async () => {
+    if (active) await api("/api/undo", {event_id: active.id});
+    else await api("/api/feedback", {company_id: id, opportunity_id: opportunityId, status: "saved",
+                                     reason: "interesting", note: opportunityId ? "Ruolo salvato a mano" : "Azienda salvata a mano"});
+    message(active ? `Tolto ${what} dalle salvate.` : `Salvato ${what}: lo trovi nella tab Salvate.`);
+    await show(id, context);
+    await (context.refresh || load)();
+  }));
+  return button;
+}
+
+async function show(id, context = {}) {
+  // `context` dice dove disegnare e con quali filtri: la tab Salvate apre la scheda a casa sua,
+  // senza i filtri della tab Aziende e senza ricaricarne la tabella.
+  const {panel = $("detail"), filtered = true, refresh = load} = context;
   selected = id;
   const company = await api("/api/company/" + id);
   if (selected !== id) return;
-  const panel = $("detail");
   panel.replaceChildren();
   const heading = el("div", undefined, "detail-heading");
   heading.append(el("h2", company.name), el("span", labels[company.status], `badge ${company.status}`));
@@ -443,10 +463,11 @@ async function show(id) {
     button.addEventListener("click", guarded(async () => {
       await api("/api/feedback", {company_id: id, status, reason, note: note.value});
       message(reason === "no_current_roles" ? "Azienda rimandata: può tornare con nuovi ruoli o requisiti cambiati." : "Azienda esclusa dalle proposte. Puoi annullare la decisione nello storico.");
-      await show(id); await load();
+      await show(id, context); await refresh();
     }));
     companyChoices.append(button);
   }
+  companyChoices.prepend(saveButton(company, id, null, context));
   panel.append(companyChoices);
   // Le due scelte rapide coprono quasi tutto: il modulo completo resta a un clic, non a schermo.
   const decide = el("details", undefined, "decide");
@@ -484,8 +505,8 @@ async function show(id) {
     await api("/api/feedback", {company_id: id, status: select.value, note: note.value,
                                 reason: reason.value, until_date: until.value});
     message("Decisione salvata.");
-    await show(id);
-    await load();
+    await show(id, context);
+    await refresh();
   }));
   decide.append(form);
   panel.append(decide);
@@ -507,7 +528,7 @@ async function show(id) {
   // Quali ruoli hanno fatto entrare l'azienda nei risultati lo ha già deciso il server con i filtri
   // della ricerca: la scheda mostra quelli, gli altri restano a portata di clic. Senza, filtrare per
   // «Milano» un'azienda con venti annunci apriva comunque tutti e venti.
-  const matching = matchingRoles.get(id);
+  const matching = filtered ? matchingRoles.get(id) : null;
   const visible = matching ? company.opportunities.filter(job => matching.includes(job.id)) : [...company.opportunities];
   const others = matching ? company.opportunities.filter(job => !matching.includes(job.id)) : [];
   // Compatibili in cima: l'ordine per data mette gli scarti davanti a ciò che conta.
@@ -526,11 +547,11 @@ async function show(id) {
   if (others.length)
     panel.append(el("p", `${visible.length} di ${company.opportunities.length} ruoli rispondono ai filtri attivi. Gli altri restano qui sotto.`, "muted"));
   for (const job of visible)
-    panel.append(opportunityBlock(job, company, decisions.get(job.id), id, visible.length === 1));
+    panel.append(opportunityBlock(job, company, decisions.get(job.id), id, visible.length === 1, context));
   if (others.length) {
     const rest = el("details", undefined, "other-roles");
     rest.append(el("summary", `Altri ${others.length} ruoli dell'azienda, fuori dai filtri`));
-    for (const job of others) rest.append(opportunityBlock(job, company, decisions.get(job.id), id, false));
+    for (const job of others) rest.append(opportunityBlock(job, company, decisions.get(job.id), id, false, context));
     panel.append(rest);
   }
   if (company.feedback.length) {
@@ -543,8 +564,8 @@ async function show(id) {
         const undo = el("button", "Annulla");
         undo.addEventListener("click", guarded(async () => {
           await api("/api/undo", { event_id: event.id });
-          await show(id);
-          await load();
+          await show(id, context);
+          await refresh();
           message("Decisione annullata.");
         }));
         row.append(undo);
@@ -553,7 +574,7 @@ async function show(id) {
     }
     panel.append(history);
   }
-  await load();
+  await refresh();
 }
 /** Ricostruisce l'elenco città dopo un cambio di paese o un Azzera. */
 let refillCities = () => {};
@@ -577,7 +598,10 @@ async function setupPlaces() {
     const chosen = $("country").value;
     const list = chosen ? cities.get(chosen) || [] : [...cities.values()].flat();
     const previous = $("city").value;
-    $("city").replaceChildren(el("option", chosen ? "Tutte le città del paese" : "Tutte le città"));
+    // Senza value esplicito un'opzione vale il proprio testo, e «Tutte le città» diventerebbe un filtro.
+    const all = el("option", chosen ? "Tutte le città del paese" : "Tutte le città");
+    all.value = "";
+    $("city").replaceChildren(all);
     for (const city of [...list].sort((a, b) => b.count - a.count)) {
       const option = el("option", `${city.name} · ${nf(city.count)}`);
       option.value = city.name;
@@ -768,86 +792,111 @@ function renderReviewQuestions(data) {
   }
 }
 
-/** Resume the persisted queue and expose explicit preference acceptance and outcome counts. */
-async function loadQueue() {
-  $("queue-items").textContent = "Preparazione della coda…";
-  const [data, stats, proposals, review] = await Promise.all([api("/api/queue"), api("/api/metrics"), api("/api/proposals"), api("/api/review-questions")]).catch(error => {
-    $("queue-items").textContent = "Coda non disponibile. Riprova con Ricarica coda salvata.";
-    throw error;
-  });
+/** Le aziende messe da parte a mano: si aprono qui dentro, senza passare dai filtri della tab Aziende. */
+async function loadSaved() {
+  $("saved-items").textContent = "Lettura delle salvate…";
+  const [data, stats, proposals, review] = await Promise.all([
+    api("/api/saved"), api("/api/metrics"), api("/api/proposals"), api("/api/review-questions")]).catch(error => {
+      $("saved-items").textContent = "Elenco non disponibile. Riprova con Ricarica.";
+      throw error;
+    });
   renderReviewQuestions(review);
-  $("queue-items").replaceChildren();
-  if (!data.items.length) $("queue-items").append(el("p", "Nessuna azienda da proporre con i criteri attuali. Consulta l'archivio o aggiorna le fonti."));
-  const counts = data.counts || {};
-  $("queue-summary").textContent = `${data.items.length} aziende in questa sessione · Tier A ${counts.A || 0}, Tier B ${(counts["B-attesa"] || 0) + (counts["B-esperienza"] || 0)} in archivio. Requisiti e apertura degli annunci vanno verificati.`;
-  // Tier A e Tier B non condividono la stessa coda: un annuncio scade, l'interesse per un'azienda no.
-  const buckets = [["A", "Tier A · da guardare adesso", "Azienda interessante con almeno un ruolo compatibile."],
-                   ["B", "Tier B · mappa senza urgenza", "Aziende da tenere d'occhio e ruoli che valgono da soli."]];
-  const lists = {};
-  for (const [key, title, note] of buckets) {
-    const section = el("section", undefined, "queue-tier");
-    const rows = el("div");
-    section.append(el("h3", title), el("p", note, "muted"), rows);
-    lists[key] = rows;
-    $("queue-items").append(section);
-  }
+  savedItems = data.items;
+  $("saved-brief").disabled = !data.items.length;
+  const roles = data.items.reduce((sum, company) => sum + company.roles.length, 0);
+  $("saved-summary").textContent = data.items.length
+    ? `${data.items.length} aziende salvate · ${roles} ruoli salvati. Le decisioni restano annullabili dallo storico della scheda.`
+    : "Nessuna azienda salvata. Nella tab Aziende usa «Salva azienda» o «Salva ruolo».";
+  $("saved-items").replaceChildren();
   for (const company of data.items) {
     const row = el("article", undefined, "queue-company");
     const heading = el("div", undefined, "queue-company-heading");
     const title = el("div");
     title.append(el("h3", company.name), el("p", `${company.tier_label} · ${company.category}`, "muted"));
-    const open = el("button", "Apri e valuta", "primary");
-    open.setAttribute("aria-label", "Apri e valuta " + company.name);
-    open.addEventListener("click", guarded(async () => {
-      document.querySelector('[data-view="companies"]').click(); await show(company.id);
-      $("detail").scrollIntoView({block: "start"});
-      $("detail").setAttribute("tabindex", "-1"); $("detail").focus({preventScroll: true});
-    }));
-    heading.append(title, open); row.append(heading);
-    const columns = el("div", undefined, "queue-columns");
-    const roles = el("section");
-    roles.append(el("h4", company.role_count ? `Ruoli da esplorare · ${company.role_count}` : "Nessun ruolo compatibile adesso"));
-    const list = el("ul");
-    for (const role of company.roles) list.append(el("li", role.title));
-    roles.append(list);
-    if (company.role_count > company.roles.length) roles.append(el("p", `Altri ${company.role_count - company.roles.length} ruoli nel dettaglio.`, "muted"));
-    const why = el("section");
-    why.append(el("h4", "Perché compare"));
+    const open = el("button", "Apri qui", "primary");
+    open.setAttribute("aria-label", "Apri " + company.name);
+    open.addEventListener("click", guarded(() => openSaved(company.id)));
+    heading.append(title, open);
+    row.append(heading);
     if (company.roles.length) {
-      why.append(el("p", company.roles[0].change, "muted"));
-      const reasons = el("ul");
-      for (const reason of company.roles[0].why) reasons.append(el("li", reason));
-      why.append(reasons, el("small", "Motivi riferiti al primo ruolo. Verifica gli altri nel dettaglio."));
+      const list = el("ul");
+      for (const role of company.roles) {
+        const item = el("li");
+        const link = el("button", role.title, "company-link");
+        link.addEventListener("click", guarded(() => openSaved(company.id, role.id)));
+        item.append(link, el("span", " " + (role.verdetto ? verdictLabels[role.verdetto] || role.verdetto : "senza verdetto"), "muted"));
+        list.append(item);
+      }
+      row.append(el("h4", `Ruoli salvati · ${company.roles.length}`), list);
     } else {
-      why.append(el("p", company.company_verdict?.motivo || "Categoria fra quelle preferite.", "muted"),
-                 el("small", "Nessun ruolo compatibile adesso: l'azienda resta da tenere d'occhio."));
+      row.append(el("p", "Azienda salvata senza un ruolo specifico.", "muted"));
     }
-    columns.append(roles, why); row.append(columns);
     const research = el("button", "Prepara testo per la chat");
     research.addEventListener("click", guarded(async () => {
       const brief = await api("/api/research/" + company.id);
-      const text = `Usa la skill jobhunter per approfondire ${brief.name} (ID ${company.id}).\nVerifica online i ruoli ancora aperti e la coerenza con il mio profilo. Distingui fatti verificati e informazioni mancanti.\n\nDomande:\n${brief.questions.map(q => "- " + q).join("\n")}\n\nLink da verificare:\n${[brief.website, ...brief.opportunities.map(o => o.url)].filter(Boolean).join("\n")}`;
-      const label = el("label", "Testo da copiare nella chat di Codex");
-      const area = el("textarea"); area.value = text; area.rows = 8; area.readOnly = true;
-      area.setAttribute("aria-label", "Brief da copiare nella chat");
-      label.append(area); row.append(label); area.focus(); area.select(); research.disabled = true;
+      const text = [`Usa la skill jobhunter per approfondire ${brief.name} (ID ${company.id}).`,
+                    "Verifica online i ruoli ancora aperti e la coerenza con il mio profilo. Distingui fatti verificati e informazioni mancanti.",
+                    "", "Domande:", ...brief.questions.map(q => "- " + q),
+                    "", "Link da verificare:", ...[brief.website, ...brief.opportunities.map(o => o.url)].filter(Boolean)].join("\n");
+      row.append(copyBox("Testo da copiare nella chat di Codex", text));
+      research.disabled = true;
     }));
     const actions = el("div", undefined, "queue-chat-actions");
     actions.append(research, el("small", "Prepara un testo. Non invia messaggi e non avvia un modello."));
-    row.append(actions); lists[company.tier === "A" ? "A" : "B"].append(row);
+    row.append(actions);
+    $("saved-items").append(row);
   }
-  $("queue-metrics").textContent = `${stats.shown_companies} aziende proposte · ${stats.saved_or_contacted} interessanti o contattate · ${stats.discarded} scartate. ` + (stats.save_fraction_decided === null ? "Servono decisioni per misurare l'utilità." : `${Math.round(stats.save_fraction_decided*100)}% delle aziende decise è interessante.`);
+  $("queue-metrics").textContent = `${stats.saved_or_contacted} aziende interessanti o contattate · ${stats.discarded} scartate. `
+    + (stats.save_fraction_decided === null ? "Servono decisioni per misurare l'utilità." : `${Math.round(stats.save_fraction_decided * 100)}% delle aziende decise è interessante.`);
   $("queue-proposals").replaceChildren();
   if (!proposals.items.length) $("queue-proposals").append(el("p", "Non ci sono ancora preferenze ricorrenti da proporre."));
   for (const proposal of proposals.items) {
-    const row = el("p", "Escludere dalla coda il settore " + proposal.category + " · " + proposal.state + " ");
+    const row = el("p", "Settore scartato spesso: " + proposal.category + " · " + proposal.state + " ");
     for (const [state, label] of (proposal.state === "accepted" ? [["disabled", "Disattiva"]] : [["accepted", "Accetta"], ["dismissed", "Ignora"]])) {
       const button = el("button", label);
-      button.addEventListener("click", guarded(async () => {await api("/api/proposal", {id: proposal.id, state}); await loadQueue();}));
+      button.addEventListener("click", guarded(async () => {await api("/api/proposal", {id: proposal.id, state}); await loadSaved();}));
       row.append(button);
     }
     $("queue-proposals").append(row);
   }
+}
+
+let savedItems = [];
+const verdictLabels = {tieni: "compatibile", scarta: "scartato dalla pipeline", non_so: "da decidere"};
+
+/** Un'area di testo pronta da copiare: la pagina non manda niente da nessuna parte. */
+function copyBox(title, text) {
+  const label = el("label", title);
+  const area = el("textarea");
+  area.value = text;
+  area.rows = Math.min(20, text.split("\n").length + 1);
+  area.readOnly = true;
+  label.append(area);
+  setTimeout(() => { area.focus(); area.select(); }, 0);
+  return label;
+}
+
+/** Apre la scheda dentro la tab Salvate, sul ruolo scelto quando ce n'è uno. */
+async function openSaved(id, roleId) {
+  await show(id, {panel: $("saved-detail"), filtered: false, refresh: loadSaved});
+  const target = roleId ? $("saved-detail").querySelector("#job-" + roleId) : $("saved-detail");
+  if (target instanceof HTMLDetailsElement) target.open = true;
+  target?.scrollIntoView({block: "start"});
+}
+
+/** Un solo testo per tutte le salvate: il controllo periodico si fa in una volta. */
+function savedBrief() {
+  if (!savedItems.length) return;
+  const lines = savedItems.flatMap(company => [
+    `- ${company.name} (ID ${company.id})${company.website ? " · " + company.website : ""}`,
+    ...(company.roles.length
+      ? company.roles.map(role => `  - ${role.title}${role.url ? " " + role.url : ""}`)
+      : ["  - nessun ruolo specifico salvato"])]);
+  const text = [`Usa la skill jobhunter. Controlla le ${savedItems.length} aziende che ho salvato a mano.`,
+                "Per ognuna: i ruoli elencati sono ancora aperti? Ci sono nuovi ruoli adatti al mio profilo? Cosa manca per decidere?",
+                "Distingui i fatti verificati sulle fonti dalle informazioni mancanti, e non inventare requisiti.",
+                "", ...lines].join("\n");
+  $("saved-brief-box").replaceChildren(copyBox("Testo da copiare nella chat di Codex", text));
 }
 
 async function init() {
@@ -870,10 +919,10 @@ async function init() {
         for (const node of document.querySelectorAll("[data-view]"))
           node.removeAttribute("aria-current");
         button.setAttribute("aria-current", "page");
-        for (const name of ["companies", "sources", "queue", "analytics", "pipeline"])
+        for (const name of ["companies", "sources", "saved", "analytics", "pipeline"])
           $(name + "-view").hidden = name !== button.dataset.view;
         if (button.dataset.view === "sources") await sources();
-        if (button.dataset.view === "queue") await loadQueue();
+        if (button.dataset.view === "saved") await loadSaved();
         if (button.dataset.view === "analytics") await loadAnalytics();
         if (button.dataset.view === "pipeline") await loadPipeline();
       }),
@@ -920,16 +969,13 @@ async function init() {
   setupColumns();
   setupResize();
   $("export").addEventListener("click", guarded(exportCSV));
-  $("refresh-queue").addEventListener("click", guarded(loadQueue));
+  $("refresh-saved").addEventListener("click", guarded(loadSaved));
+  $("saved-brief").addEventListener("click", guarded(savedBrief));
   $("refresh-analytics").addEventListener("click", guarded(loadAnalytics));
   $("refresh-pipeline").addEventListener("click", guarded(loadPipeline));
   $('pipeline-close').addEventListener('click', () => $('pipeline-dialog').close());
   $('pipeline-form').addEventListener('submit', launchPipeline);
   $('pipeline-stop').addEventListener('click', () => stopPipeline(pipelineData?.controls.active?.id));
-  $('pipeline-go-feedback').addEventListener('click', () => {
-    $('pipeline-dialog').close();
-    document.querySelector('[data-view="queue"]').click();
-  });
   $("analytics-scope").addEventListener("change", guarded(loadAnalytics));
   await load();
   // I risultati non aspettano i menu geografici: arrivano quando sono pronti.
@@ -1556,7 +1602,6 @@ function openPipeline(id, savedRun = null) {
   $('pipeline-error').textContent = '';
   $('pipeline-fields').replaceChildren(); $('pipeline-last-result').replaceChildren();
   $('pipeline-start').hidden = !action;
-  $('pipeline-go-feedback').hidden = id !== 'feedback';
   if (action) {
     for (const key of action.fields) $('pipeline-fields').append(pipelineField(key, 'step', id));
     const sequence = pipelineData.controls.sequence;
