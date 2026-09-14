@@ -1,4 +1,7 @@
 "use strict";
+// Il tema si decide prima del primo disegno: vince la scelta salvata, altrimenti il sistema.
+const darkQuery = matchMedia("(prefers-color-scheme: dark)");
+document.documentElement.dataset.theme = remembered("theme") || (darkQuery.matches ? "dark" : "light");
 const $ = (id) => document.getElementById(id);
 const labels = {
   new: "Nuova",
@@ -1049,9 +1052,34 @@ async function init() {
   // I risultati non aspettano i menu geografici: arrivano quando sono pronti.
   setupPlaces().catch((error) => message(error.message, true));
 }
-init().then(() => {
-  if (new URLSearchParams(location.search).get('view') === 'pipeline') document.querySelector('[data-view="pipeline"]').click();
-}).catch((error) => message(error.message, true));
+/** Il bottone del tema funziona anche se il server non risponde: non aspetta il bootstrap. */
+function setupTheme() {
+  const root = document.documentElement, toggle = $("theme-toggle");
+  const sync = () => {
+    const text = root.dataset.theme === "dark" ? "Passa al tema chiaro" : "Passa al tema scuro";
+    toggle.setAttribute("aria-label", text);
+    toggle.title = text;
+  };
+  toggle.addEventListener("click", () => {
+    root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+    remember("theme", root.dataset.theme);
+    sync();
+  });
+  // Finché non scegli a mano, il tema segue il sistema anche a pagina aperta.
+  darkQuery.addEventListener("change", (event) => {
+    if (remembered("theme")) return;
+    root.dataset.theme = event.matches ? "dark" : "light";
+    sync();
+  });
+  sync();
+}
+// Lo script non è differito (serve al tema), quindi la pagina parte quando il documento è pronto.
+document.addEventListener("DOMContentLoaded", () => {
+  setupTheme();
+  init().then(() => {
+    if (new URLSearchParams(location.search).get('view') === 'pipeline') document.querySelector('[data-view="pipeline"]').click();
+  }).catch((error) => message(error.message, true));
+});
 
 /** Render comparable counts with a shared denominator and no chart dependency. */
 const categoryMethods = {rules: "da parole chiave", remote: "modello remoto",
