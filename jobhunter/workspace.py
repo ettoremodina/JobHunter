@@ -375,7 +375,8 @@ class Archive:
         items = [dict(r) for r in self.db.execute(sql, role_args + args + [min(max(int(limit), 1), 500), max(int(offset), 0)])]
         from jobhunter import tier as tiers
         from jobhunter.selection import verdicts
-        assessment = verdicts(self, [item["id"] for item in items]) if items else {}
+        if not tier:
+            assessment = verdicts(self, [item["id"] for item in items]) if items else {}
         text = query.strip().casefold()
         for item in items:
             item.update(self.category(item["id"]))
