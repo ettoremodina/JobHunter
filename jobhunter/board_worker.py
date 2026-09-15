@@ -22,9 +22,13 @@ def main():
         args["offset"] = page * args["results_wanted"]
         frame = scrape_jobs(**args)
         batch = json.loads(frame.to_json(orient="records", date_format="iso"))
-        new = [r for r in batch if (r.get("job_url") or json.dumps(r, sort_keys=True)) not in seen]
+        new = []
+        for row in batch:
+            key = row.get("job_url") or json.dumps(row, sort_keys=True)
+            if key not in seen:
+                seen.add(key)
+                new.append(row)
         rows.extend(new)
-        seen.update(r.get("job_url") or json.dumps(r, sort_keys=True) for r in new)
         report["pages"] = page + 1
         report["stop"] = "empty_or_blocked" if not batch else "no_new_urls" if not new else "short_page" if len(batch) < args["results_wanted"] else "page_cap"
         output.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
