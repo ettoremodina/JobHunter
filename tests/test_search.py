@@ -83,8 +83,10 @@ class RoleVisibilityTests(unittest.TestCase):
         """Il testo trovato in un annuncio restringe ai suoi ruoli; trovato solo nell'azienda, li lascia tutti."""
         narrowed = self.archive.search(query='Milano')['items']
         self.assertEqual({item['name']: len(item['matching_ids']) for item in narrowed}, {'Molti': 1, 'Uno': 1})
+        self.assertEqual({item['name']: item['matching_roles'] for item in narrowed}, {'Molti': 1, 'Uno': 1})
         by_name = {item['name']: item for item in self.archive.search(query='Molti')['items']}
         self.assertEqual(len(by_name['Molti']['matching_ids']), 6)
+        self.assertEqual(by_name['Molti']['matching_roles'], 6)
         self.assertNotIn('archive_opportunity_count', by_name['Molti'])
 
     def test_sorting_applies_to_the_whole_result_set(self):
@@ -92,5 +94,9 @@ class RoleVisibilityTests(unittest.TestCase):
         self.assertEqual([i['name'] for i in self.archive.search(sort='nome')['items']], ['Molti', 'Uno'])
         self.assertEqual(self.archive.search(sort='ruoli', limit=1)['items'][0]['name'], 'Molti')
         self.assertEqual(self.archive.search(sort='ruoli', limit=1, location='Milano')['items'][0]['matching_roles'], 1)
+        self.archive.ingest([{'company_name': 'Uno', 'title': 'Data Scientist Milano',
+                             'location': 'Milano', 'source_url': 'https://example.org/one/second'}], 'test')
+        first = self.archive.search(query='Milano', city='Milano', sort='ruoli', limit=1)['items'][0]
+        self.assertEqual((first['name'], first['matching_roles']), ('Uno', 2))
         with self.assertRaises(ValueError):
             self.archive.search(sort='; DROP TABLE companies')

@@ -367,12 +367,20 @@ class Archive:
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         total = self.db.execute("SELECT count(*) FROM companies c" + where, args).fetchone()[0]
         # I ruoli che passano i filtri si contano gia' qui: servono a ordinare tutto l'insieme, non la pagina.
+        matching_count = "(SELECT count(*) FROM opportunities o WHERE o.company_id=c.id" + role_where + ")"
+        count_args = list(role_args)
+        if query.strip():
+            # Come matching_ids: se il testo compare nei ruoli, contare solo quelli.
+            # Se compare soltanto nell'azienda, mantenere tutti i ruoli filtrati.
+            text_count = "(SELECT count(*) FROM opportunities o WHERE o.company_id=c.id AND o.data LIKE ?" + role_where + ")"
+            matching_count = "COALESCE(NULLIF(" + text_count + ",0)," + matching_count + ")"
+            count_args = ['%' + query.strip() + '%', *role_args, *role_args]
         selected = ("SELECT c.*, " + status_sql + " AS status, "
                     "(SELECT count(*) FROM opportunities o WHERE o.company_id=c.id) AS opportunity_count, "
-                    "(SELECT count(*) FROM opportunities o WHERE o.company_id=c.id" + role_where + ") AS matching_roles, "
+                    + matching_count + " AS matching_roles, "
                     "COALESCE((SELECT category FROM categories WHERE company_id=c.id),'Da classificare') AS category")
         sql = selected + " FROM companies c" + where + " ORDER BY " + self.SORTS[sort] + ",c.name COLLATE NOCASE,c.id LIMIT ? OFFSET ?"
-        items = [dict(r) for r in self.db.execute(sql, role_args + args + [min(max(int(limit), 1), 500), max(int(offset), 0)])]
+        items = [dict(r) for r in self.db.execute(sql, count_args + args + [min(max(int(limit), 1), 500), max(int(offset), 0)])]
         from jobhunter import tier as tiers
         from jobhunter.selection import verdicts
         if not tier:
