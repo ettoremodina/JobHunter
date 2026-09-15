@@ -39,6 +39,31 @@ class ProductSelectionTests(unittest.TestCase):
         self.assertEqual(secondary['career_priority'], 'secondary')
         self.assertEqual(secondary['status'], 'potential')
 
+    def test_negated_experience_does_not_exclude(self):
+        """An explicitly waived experience requirement stays unknown, even under Requirements."""
+        for text in ('3 years of experience are not required.',
+                     'Requirements\n3 years of experience are not necessary.',
+                     'Non sono richiesti 3 anni di esperienza.'):
+            with self.subTest(text=text):
+                decision = evaluate({'title': 'Data Scientist', 'description': text})
+                self.assertEqual(decision['status'], 'potential')
+                self.assertIsNone(decision['requirements']['required_years'])
+        self.assertEqual(requirements('3 years of experience are not required.\nMinimum 4 years of experience.')['required_years'], 4)
+
+    def test_language_negations_and_comma_lists(self):
+        """Waived languages stay optional; commas in language lists preserve every requirement."""
+        for text in ('German is not mandatory.', 'Fluent German is not necessary.',
+                     'English required, German optional.', 'German, English or Italian required.'):
+            with self.subTest(text=text):
+                self.assertEqual(evaluate({'title': 'Data Scientist', 'description': text})['status'], 'potential')
+        for text, unsupported in (('German, English required.', ['German']),
+                                  ('German, French and English required.', ['French', 'German'])):
+            with self.subTest(text=text):
+                decision = evaluate({'title': 'Data Scientist', 'description': text})
+                self.assertEqual(decision['status'], 'excluded')
+                self.assertEqual(decision['requirements']['languages']['unsupported'], unsupported)
+                self.assertEqual(decision['requirements']['languages']['evidence'], [text])
+
     def test_company_rejection_is_recorded_beside_the_pipeline(self):
         """Una decisione manuale resta un campo a parte: nuovi annunci non la cancellano, e i verdetti non cambiano."""
         with tempfile.TemporaryDirectory() as directory, closing(Archive(Path(directory) / 'test.db')) as archive:
