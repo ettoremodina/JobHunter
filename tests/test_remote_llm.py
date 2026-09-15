@@ -142,6 +142,15 @@ class RemoteTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Incomplete'):
                 remote_llm.request(cfg, 'prompt', {}, 'SECRET')
 
+    def test_malformed_completion_envelopes_raise_a_controlled_error(self):
+        """Unexpected provider shapes must not escape the caller's ValueError handling."""
+        cfg = json.loads((ROOT/'config/remote_llm.json').read_text())
+        for envelope in ({'choices': [None]}, {'choices': [{'finish_reason': 'stop', 'message': None}]}):
+            with self.subTest(envelope=envelope), patch('jobhunter.remote_llm.urllib.request.build_opener') as opener:
+                opener.return_value.open.return_value.__enter__.return_value.read.return_value = json.dumps(envelope).encode()
+                with self.assertRaisesRegex(ValueError, 'Invalid remote JSON response'):
+                    remote_llm.request(cfg, 'JSON', {}, 'dummy')
+
     def test_preview_cache_and_failure_do_not_change_originals(self):
         """Preview is offline; completed results resume and invalidate on source/profile/model changes."""
         cfg = json.loads((ROOT/'config/remote_llm.json').read_text())
