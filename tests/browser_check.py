@@ -44,7 +44,7 @@ def main():
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         destination = ROOT / "data/qa"
-        destination.mkdir(exist_ok=True)
+        destination.mkdir(parents=True, exist_ok=True)
         errors = []
         try:
             with sync_playwright() as p:
@@ -54,6 +54,20 @@ def main():
                 page.goto(f"http://127.0.0.1:{server.server_port}")
                 page.wait_for_load_state("networkidle")
                 expect(page.locator("#rows .company-link")).to_have_count(2)
+                # I filtri espongono un solo asse di selezione, il Tier.
+                expect(page.locator('#filters select')).to_have_count(5)
+                expect(page.locator('#filters')).not_to_contain_text('Asse ruolo')
+                expect(page.locator('#filters')).not_to_contain_text('Stato')
+                expect(page.locator('body')).not_to_contain_text('Località dichiarata nell’annuncio')
+                page.locator('#columns-box summary').click()
+                page.locator('#columns').get_by_label('Categoria', exact=True).uncheck()
+                expect(page.locator('#results-table th.col-categoria')).to_be_hidden()
+                page.locator('#columns').get_by_label('Categoria', exact=True).check()
+                page.locator('#columns-box summary').click()
+                before = page.locator('#detail').bounding_box()['width']
+                page.locator('#detail-resize').focus()
+                page.keyboard.press('ArrowLeft')
+                assert page.locator('#detail').bounding_box()['width'] > before
                 page.get_by_role("button", name="Cerca", exact=True).click()
                 page.get_by_role("button", name="Energy Lab", exact=True).click()
                 page.get_by_role("heading", name="Energy Lab", exact=True).wait_for()
@@ -106,6 +120,8 @@ def main():
                 expect(page.get_by_role("textbox", name="Testo da copiare nella chat di Codex").first).to_have_value(__import__("re").compile("Usa la skill jobhunter"))
                 page.get_by_role("button", name="Apri Energy Lab", exact=True).click()
                 expect(page.locator("#saved-detail")).to_contain_text("Energy Lab")
+                page.get_by_role('button', name='Prepara il controllo di tutte le salvate', exact=True).click()
+                expect(page.locator('#saved-brief-box textarea')).to_have_value(__import__('re').compile('Energy Lab'))
                 page.get_by_role("button", name="Rimuovi dalle salvate").first.click()
                 page.get_by_text("Nessuna azienda salvata.", exact=False).wait_for()
                 # Domande e preferenze non si perdono con la coda: vivono nel riquadro in fondo.
@@ -132,6 +148,11 @@ def main():
                 expect(page.locator("#analytics-content")).to_contain_text("Senza giudizio")
                 # I grafici sono SVG con soli attributi geometrici: uno stile inline bloccato non puo' nascondere una quota.
                 expect(page.locator("#analytics-content svg.funnel-chart rect.seg")).not_to_have_count(0)
+                assert page.locator('#analytics-content svg.donut').count() >= 2
+                for segment in page.locator('.journey-chart rect.seg').all():
+                    assert segment.locator('title').count() == 1
+                    assert '\n' not in segment.locator('title').text_content()
+                    segment.hover()
                 # Ogni tappa del percorso e' larga quanto l'archivio: il denominatore non cambia mai.
                 assert page.evaluate("""[...document.querySelectorAll('.journey-chart rect.track')].every(r => r.getAttribute('width') === '1000')""")
                 page.screenshot(path=str(destination / "metrics-desktop.png"), full_page=True)
@@ -173,6 +194,19 @@ def main():
                 # L'azienda con un ruolo a Milano e uno a Roma entra dichiarando quanti ruoli rispondono.
                 mixed = page.locator("#rows tr").filter(has=page.get_by_role("button", name="Search QA Mixed", exact=True))
                 expect(mixed.locator("td.col-ruoli")).to_have_text("1 di 2")
+                mixed.get_by_role('button', name='Search QA Mixed', exact=True).click()
+                expect(page.locator('#detail > details.opportunity')).to_have_count(1)
+                expect(page.locator('#detail details.other-roles')).not_to_have_attribute('open', '')
+                page.locator('#detail details.other-roles > summary').click()
+                expect(page.locator('#detail details.other-roles .job-title')).to_contain_text('Data Scientist')
+                # Salvate apre tutti i ruoli anche con il filtro Milano ancora attivo.
+                page.get_by_role('button', name='Salva azienda', exact=True).click()
+                page.get_by_text("Salvato l'azienda: lo trovi nella tab Salvate.", exact=True).wait_for()
+                page.get_by_role('button', name='Salvate', exact=True).click()
+                page.get_by_role('button', name='Apri Search QA Mixed', exact=True).click()
+                expect(page.locator('#saved-detail > details.opportunity')).to_have_count(2)
+                expect(page.locator('#saved-detail .other-roles')).to_have_count(0)
+                page.get_by_role('button', name='Aziende', exact=True).click()
                 expect(page.locator("#next")).to_be_disabled()
                 # La colonna mostra la forma canonica, non la stringa della fonte.
                 expect(page.locator("#rows td.col-localita").first).to_have_text("Milano, Italia")
@@ -182,6 +216,7 @@ def main():
                 page.get_by_role("button", name="Pipeline", exact=True).click()
                 # Cinque passaggi: coda e valutazione manuale non sono passaggi della pipeline.
                 expect(page.locator("#pipeline-steps > li")).to_have_count(5)
+                expect(page.locator('#pipeline-steps details.pipeline-about')).to_have_count(5)
                 expect(page.locator("#pipeline-status")).to_contain_text("annunci")
                 expect(page.locator("#pipeline-steps")).not_to_contain_text("Categorie locali")
                 expect(page.locator("#pipeline-steps")).not_to_contain_text("Statistiche dell")

@@ -1,12 +1,14 @@
 """Lingua dell'annuncio e lenti di esplorazione: contare senza indovinare."""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from jobhunter import debug
+from jobhunter import debug, remote_llm
 from jobhunter.languages import detect_language
-from jobhunter.workspace import Archive
+from jobhunter.workspace import Archive, ROOT
 
 TESTI = {
     'it': 'Cerchiamo una persona con esperienza nello sviluppo di modelli per il nostro team. Il ruolo prevede anche il lavoro con i dati dei clienti e la collaborazione con le altre aree della nostra azienda.',
@@ -64,6 +66,32 @@ class LensTests(unittest.TestCase):
         self.assertEqual(page['items'][0]['facet'], 'tedesco')
         self.assertEqual(page['items'][0]['name'], 'Con testo')
         self.assertTrue(page['items'][0]['company_id'])
+
+    def test_italian_summary_preserves_the_original_language(self):
+        """A saved Italian derivative must leave the German source and its warning intact."""
+        cid = self.archive.search(query='Con testo')['items'][0]['id']
+        oid = self.archive.show(cid)['opportunities'][0]['id']
+        cfg = json.loads((ROOT / 'config/remote_llm.json').read_text(encoding='utf-8'))
+        cfg.update(output_directory=str(Path(self.directory.name) / 'remote'), request_delay_seconds=0)
+        path = Path(self.directory.name) / 'remote.json'
+        path.write_text(json.dumps(cfg), encoding='utf-8')
+        catalog = remote_llm.inputs(self.archive, 'job-summary', oid, cfg)['source']['evidence_catalog']
+        reference = next(iter(catalog))
+        answer = {'summary': 'Sviluppo di modelli e collaborazione con i clienti.',
+                  'facts': [{'field': 'responsibilities', 'text': 'Sviluppo di modelli', 'quote': reference}],
+                  'missing_information': []}
+        with patch('jobhunter.remote_llm.api_key', return_value='dummy'), patch(
+                'jobhunter.remote_llm.request', return_value=(answer, {}, [])):
+            report = remote_llm.run(self.archive, 'job-summary', execute=True, config_path=path, record_id=oid)
+        self.assertEqual(report['processed'], 1, report)
+        company = self.archive.show(cid)
+        remote_llm.presentation(self.archive, company, config_path=path)
+        job = company['opportunities'][0]
+        self.assertEqual(job['remote_summary']['summary'], answer['summary'])
+        self.assertEqual(job['description'], TESTI['de'])
+        self.assertEqual(job['selection']['requirements']['written_in']['code'], 'de')
+        self.assertFalse(job['selection']['requirements']['written_in']['known'])
+        self.assertEqual(self.counts()['annunci-in-lingua-sconosciuta'], 1)
 
     def test_a_group_narrows_the_rows(self):
         """Scegliere un motivo restringe le righe, e un motivo inesistente non ne restituisce nessuna."""
