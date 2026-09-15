@@ -24,6 +24,28 @@ Non occorrono pacchetti aggiuntivi: HTTP, JSON, cache SQLite e gestione dei file
 
 ## Chiamate contemporanee e validazione parziale
 
+### Diagnosi del punto 14, 15 settembre 2026
+
+La verifica offline ha riprodotto e corretto tre difetti: una sintesi di ruolo richiesta ma
+restituita `null` risultava riuscita; una risposta con ID mancanti non conservava
+`rejected_answer` nel report; un elemento `choices` o `message` nullo sfuggiva alla
+gestione degli errori della CLI. Ora la sintesi mancante produce `partial`, resta da
+elaborare al prossimo avvio e non impedisce il salvataggio delle altre sintesi valide.
+Il report conserva anche le risposte respinte per ID errati e i consumi ricevuti.
+Le forme API inattese diventano un errore controllato `Invalid remote JSON response`.
+
+Il prompt combinato distingue ora l'oggetto `jobs` in ingresso dall'array `jobs` in
+uscita. La modifica cambia la firma del batch: i derivati precedenti restano nel
+database ma la cache li considera obsoleti. Un successivo avvio esplicito potrebbe
+quindi richiedere nuove chiamate anche per record già elaborati.
+
+Le prove usano risposte simulate e SQLite temporaneo. Non erano disponibili report
+reali nella worktree e non sono state fatte chiamate API. Endpoint e modello restano
+quelli scelti nella memoria `remote-llm-pivot`; disponibilità sull'account, qualità
+semantica e causa del malfunzionamento osservato dall'utente restano da verificare
+su un campione reale. La correzione del prompt non dimostra un miglioramento della
+qualità del modello. Nessuna modifica alle preferenze o alla selezione della pipeline.
+
 Il passaggio combinato prepara ogni azienda sul thread che possiede SQLite e manda in parallelo solo la chiamata HTTP: i worker non toccano il database. Il numero di chiamate contemporanee si imposta in `config/remote_llm.json` (`company_batch.workers`, massimo `company_batch.max_workers`) e dal campo «Chiamate API contemporanee» nella card del passaggio. Il parallelismo riduce il tempo totale, non il costo: le chiamate restano una per azienda.
 
 Una risposta non è più tutto-o-niente. Ogni giudizio di ruolo, ogni scheda di ruolo e la scheda aziendale vengono validati separatamente sulle proprie evidenze e salvati singolarmente. Se il modello inventa una citazione in una scheda, o omette la scheda aziendale richiesta, il resto della risposta già pagata resta salvato e la parte scartata viene ricontata come `rejected_jobs` nel report. Un errore di trasporto continua invece a fermare l'invio di nuove richieste: l'esito di fatturazione è ignoto e nessun tentativo viene ripetuto implicitamente.

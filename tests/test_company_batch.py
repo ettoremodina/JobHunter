@@ -62,6 +62,8 @@ class BatchTests(unittest.TestCase):
                     self.assertEqual(failed['counts']['submitted_jobs'], 2)
                     self.assertEqual(failed['counts']['evaluated_jobs'], 0)
                     self.assertEqual(failed['counts']['rejected_companies'], 1)
+                    saved = original(Path(failed['report_path']).read_text(encoding='utf-8'))
+                    self.assertEqual(saved['items'][0]['rejected_answer'], {'company': None, 'jobs': []})
                     self.assertEqual(arc.db.execute('SELECT count(*) FROM enrichments').fetchone()[0], 0)
                     def retained(config, prompt, payload, key):
                         """Return a review decision and a grounded structured role summary."""
@@ -130,6 +132,45 @@ class BatchTests(unittest.TestCase):
                 self.assertEqual(len(errors), 2)
                 # La risposta grezza rifiutata resta nel report: senza, non si puo' diagnosticare perche'.
                 self.assertTrue(any('rejected_answer' in item for item in result['items'] if item.get('rejected')))
+            finally:
+                arc.close()
+
+    def test_requested_null_summary_is_partial_and_valid_sibling_persists(self):
+        """Omitted requested summaries must be reported and remain eligible on the next run."""
+        with tempfile.TemporaryDirectory() as folder:
+            arc = Archive(Path(folder)/'db.sqlite3')
+            try:
+                arc.ingest([{'company_name': 'Example', 'title': 'Data Scientist',
+                             'description': 'Build models.', 'source_url': 'https://example.org/'+str(i)}
+                            for i in range(2)], 'test')
+                cfg = json.loads(Path('config/remote_llm.json').read_text())
+                cfg['output_directory'] = folder
+                original = json.loads
+                def config_read(value, *args, **kwargs):
+                    """Keep report writes inside the temporary directory."""
+                    result = original(value, *args, **kwargs)
+                    return cfg if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY' else result
+                submitted = []
+                def response(config, prompt, payload, key):
+                    """Omit one requested summary and provide its sibling with grounded facts."""
+                    ids = list(payload['jobs'])
+                    submitted.append(ids)
+                    return {'company': None, 'jobs': [
+                        {'id': oid, 'selection': None, 'summary': None if i == 0 else {
+                            'summary': 'Sviluppa modelli.', 'facts': [{'field': 'responsibilities',
+                            'text': 'Sviluppa modelli.', 'quote': next(iter(payload['jobs'][oid]['evidence_catalog']))}],
+                            'missing_information': []}} for i, oid in enumerate(ids)]}, {'total_tokens': 20}, []
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.remote_llm.api_key', return_value='dummy'), \
+                     patch('jobhunter.remote_llm.request', side_effect=response), patch('jobhunter.company_batch.time.sleep'):
+                    report = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
+                    self.assertEqual(report['status'], 'partial')
+                    self.assertEqual(report['counts']['rejected_jobs'], 1)
+                    saved = original(Path(report['report_path']).read_text(encoding='utf-8'))
+                    self.assertEqual(saved['items'][0]['rejected'][0]['error'], 'Job summary requested but not returned')
+                    self.assertEqual(saved['usage']['total_tokens'], 20)
+                    self.assertEqual(arc.db.execute("SELECT record_id FROM enrichments WHERE task='remote:job-summary'").fetchone()[0], submitted[0][1])
+                    run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
+                    self.assertEqual(submitted[1], [submitted[0][0]])
             finally:
                 arc.close()
 
