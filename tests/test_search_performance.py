@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
-from jobhunter.selection import verdicts
+from jobhunter.evaluation.selection import verdicts
 from jobhunter.workspace import Archive
 
 
@@ -24,7 +24,7 @@ class SearchPerformanceTests(unittest.TestCase):
                 'fixture',?,'fixture',first_seen FROM opportunities""", (payload,))
             archive.db.commit()
             archive.refresh_search_eligibility()
-            with patch('jobhunter.selection.json.loads', wraps=json.loads) as decode:
+            with patch('jobhunter.evaluation.selection.json.loads', wraps=json.loads) as decode:
                 result = archive.search(limit=1)
             decoded = [call for call in decode.call_args_list if 'REMOTE_SENTINEL' in str(call.args[0])]
             self.assertEqual(len(decoded), 1, 'Off-page remote verdicts must stay in SQLite')
@@ -33,7 +33,7 @@ class SearchPerformanceTests(unittest.TestCase):
             self.assertEqual(verdicts(archive, cid), {cid: complete[cid]})
             self.assertEqual(verdicts(archive, [cid]), {cid: complete[cid]})
             self.assertEqual(verdicts(archive, []), {})
-            with patch('jobhunter.selection.verdicts', wraps=verdicts) as assess:
+            with patch('jobhunter.evaluation.selection.verdicts', wraps=verdicts) as assess:
                 archive.search(tier=result['items'][0]['tier'], limit=1)
             self.assertEqual(assess.call_count, 1, 'Tier pagination must reuse its full assessment')
             archive.db.execute("UPDATE enrichments SET data=?", (payload.replace('keep', 'exclude'),))

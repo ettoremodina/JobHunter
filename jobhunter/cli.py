@@ -80,7 +80,7 @@ def parser():
     shortlist.add_argument("--limit", type=int, default=30)
     shortlist.add_argument("--offset", type=int, default=0)
     remote = sub.add_parser("llm", help="Preview or explicitly execute remote selection and concise summaries")
-    from jobhunter.remote_llm import TASKS
+    from jobhunter.evaluation.remote_llm import TASKS
     remote.add_argument("task", choices=TASKS)
     remote.add_argument("--limit", type=int)
     remote.add_argument("--record-id", help="Opportunity ID for jobs, company ID for company summary")
@@ -129,52 +129,52 @@ def execute(args, archive, cfg):
     """Dispatch one operation without implicit scraping or preference edits."""
     command = args.command
     if command == "llm":
-        from jobhunter.remote_llm import run
+        from jobhunter.evaluation.remote_llm import run
         return run(archive, args.task, args.limit, args.execute, args.llm_config, args.record_id)
     if command == "analytics":
-        from jobhunter.analytics import summary
+        from jobhunter.exploration.analytics import summary
         return summary(archive, args.eligibility)
     if command == "collect-all":
-        from jobhunter.sweep import sweep
+        from jobhunter.acquisition.sweep import sweep
         if args.fresh:
             archive.reset_collection()
         return sweep(archive, cfg)
     if command in ("saved", "metrics", "proposals", "research-brief"):
-        from jobhunter.selection import saved, metrics, proposals, research_brief
+        from jobhunter.evaluation.selection import saved, metrics, proposals, research_brief
         if command == "saved": return saved(archive)
         if command == "metrics": return metrics(archive)
         if command == "proposals": return proposals(archive, args.id, args.state)
         return research_brief(archive, args.id)
     if command == "shortlist":
-        from jobhunter.selection import shortlist
+        from jobhunter.evaluation.selection import shortlist
         return shortlist(archive, args.limit, args.offset)
     if command == "company-profile":
-        from jobhunter.company_profile import recover
+        from jobhunter.acquisition.company_profile import recover
         return recover(archive, args.limit, args.ids, force=args.force, follow_about=not args.no_about)
     if command in ("init", "stats"):
         return archive.stats()
     if command == "sources":
         return {"sources": cfg["sources"], "recent_runs": archive.stats()["runs"]}
     if command == "description-coverage":
-        from jobhunter.descriptions import coverage
+        from jobhunter.acquisition.descriptions import coverage
         return coverage(archive)
     if command in ("reparse-descriptions", "data-quality", "prepare-review", "score-review"):
-        from jobhunter.maintenance import reparse, quality, prepare_review, score_review
+        from jobhunter.operations.maintenance import reparse, quality, prepare_review, score_review
         if command == "reparse-descriptions": return reparse(archive)
         if command == "data-quality": return quality(archive)
         if command == "prepare-review": return prepare_review(archive, args.limit)
         return score_review(args.path)
     if command == "fetch-descriptions":
-        from jobhunter.descriptions import recover
+        from jobhunter.acquisition.descriptions import recover
         return recover(archive, args.limit, args.source, args.all, workers=args.workers, refresh_stale=args.refresh_stale, force=args.force)
     if command == "benchmark-descriptions":
-        from jobhunter.benchmark import run
+        from jobhunter.experiments.benchmark import run
         return run(archive, args.batch_size, args.workers)
     if command == "review-questions":
-        from jobhunter.interview import questions
+        from jobhunter.exploration.interview import questions
         return questions(archive, args.limit)
     if command == "review-rule":
-        from jobhunter.interview import review_rule
+        from jobhunter.exploration.interview import review_rule
         return review_rule(archive, read_json(args.path), args.apply)
     if command == "import":
         path = Path(args.path)
@@ -191,7 +191,7 @@ def execute(args, archive, cfg):
     if command == "categories":
         return {"categories": [*categories(), "Da classificare"]}
     if command == "places":
-        from jobhunter import places
+        from jobhunter.exploration import places
         return places.unmapped(archive, args.limit) if args.unmapped else places.options(archive)
     if command == "categorize":
         if not args.id and (args.category or args.reason):
@@ -234,10 +234,10 @@ def execute(args, archive, cfg):
             path.write_text(json.dumps({"schema_version": "2", "companies": [archive.show(x["id"]) for x in items]}, ensure_ascii=False, indent=2), encoding="utf-8")
         return {"exported": len(items), "path": str(path.resolve())}
     if command == "collect":
-        from jobhunter.collection import collect
+        from jobhunter.acquisition.collection import collect
         return collect(archive, cfg, args.source, args.limit, args.force)
     if command == "serve":
-        from jobhunter.dashboard import serve
+        from jobhunter.exploration.dashboard import serve
         serve(archive.path, cfg, args.port or cfg["port"])
         return None
     raise ValueError("Unknown command")
@@ -253,7 +253,7 @@ def main():
     try:
         cfg = settings(args.config)
         if args.command == "status":
-            from jobhunter.progress import monitor
+            from jobhunter.operations.progress import monitor
             monitor(ROOT, cfg, args.run, args.watch, args.interval, args.json)
             return 0
         archive = Archive(args.db or ROOT / cfg["database"])

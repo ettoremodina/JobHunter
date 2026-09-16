@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from jobhunter.board_worker import main
+from jobhunter.acquisition.board_worker import main
 
 
 class BoardWorkerTests(unittest.TestCase):

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from datetime import date, timedelta
 from jobhunter.workspace import Archive
-from jobhunter.selection import saved, requirements, proposals, metrics, evaluate
+from jobhunter.evaluation.selection import saved, requirements, proposals, metrics, evaluate
 
 
 class QueueTests(unittest.TestCase):

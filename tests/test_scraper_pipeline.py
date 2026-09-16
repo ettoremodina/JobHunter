@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from jobhunter.collection import collect
-from jobhunter.sweep import sweep
+from jobhunter.acquisition.collection import collect
+from jobhunter.acquisition.sweep import sweep
 from jobhunter.workspace import Archive
 
 
@@ -32,12 +32,12 @@ class ScraperPipelineTests(unittest.TestCase):
             html = '<div class="show-more-less-html__markup"><p>We manufacture solar panels.</p><p>Minimum 5 years of relevant experience required.</p></div>'
             with closing(Archive(root / 'archive.db')) as archive:
                 archive.ingest([old], 'airtable', '2020-01-01T00:00:00+00:00')
-                with patch('jobhunter.collection.ROOT', root), patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.collection.airtable_rows', return_value=[fresh]), patch('jobhunter.descriptions.fetch', return_value=html) as fetch:
+                with patch('jobhunter.acquisition.collection.ROOT', root), patch('jobhunter.acquisition.descriptions.ROOT', root), patch('jobhunter.acquisition.collection.airtable_rows', return_value=[fresh]), patch('jobhunter.acquisition.descriptions.fetch', return_value=html) as fetch:
                     bounded = collect(archive, cfg, 'airtable', limit=1, force=True)
                 self.assertEqual(bounded['descriptions']['saved'], 1)
                 self.assertEqual(fetch.call_count, 1)
                 self.assertEqual(archive.search(query='New')['items'][0]['category'], 'Da classificare')
-                with patch('jobhunter.sweep.ROOT', root), patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.sweep.airtable_rows', return_value=[old, fresh]), patch('jobhunter.descriptions.fetch', side_effect=AssertionError('collect-all non recupera descrizioni')):
+                with patch('jobhunter.acquisition.sweep.ROOT', root), patch('jobhunter.acquisition.descriptions.ROOT', root), patch('jobhunter.acquisition.sweep.airtable_rows', return_value=[old, fresh]), patch('jobhunter.acquisition.descriptions.fetch', side_effect=AssertionError('collect-all non recupera descrizioni')):
                     complete = sweep(archive, cfg)
                 report = json.loads(Path(complete['report']).read_text(encoding='utf-8'))
                 self.assertNotIn('description_followup', report)

@@ -1,6 +1,6 @@
 # Metriche dell'archivio
 
-La tab Metriche e `python main.py analytics` usano `jobhunter/analytics.py`. Il calcolo legge l'archivio corrente e i filtri locali, senza rete, modelli o modifiche ai dati. `--eligibility potential`, `review` o `excluded` limita la selezione. La dashboard permette lo stesso confronto e un aggiornamento manuale.
+La tab Metriche e `python main.py analytics` usano `jobhunter/exploration/analytics.py`. Il calcolo legge l'archivio corrente e i filtri locali, senza rete, modelli o modifiche ai dati. `--eligibility potential`, `review` o `excluded` limita la selezione. La dashboard permette lo stesso confronto e un aggiornamento manuale.
 
 Il denominatore è il numero di annunci univoci nella selezione, non il numero di aziende. Le categorie sono settori aziendali ereditati dagli annunci. Un'assegnazione automatica non equivale a una validazione umana. L'esito dei filtri è mostrato separatamente.
 

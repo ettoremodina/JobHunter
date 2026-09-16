@@ -7,9 +7,9 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 from jobhunter.workspace import Archive, normalize
-from jobhunter.selection import evaluate, filters
-from jobhunter.descriptions import extract, recover, application_link
-from jobhunter.interview import review_rule
+from jobhunter.evaluation.selection import evaluate, filters
+from jobhunter.acquisition.descriptions import extract, recover, application_link
+from jobhunter.exploration.interview import review_rule
 
 
 class DescriptionInterviewTests(unittest.TestCase):
@@ -27,7 +27,7 @@ class DescriptionInterviewTests(unittest.TestCase):
             archive.ingest([{'company_name': 'Example', 'title': 'Software Engineer',
                              'source_url': f'https://www.linkedin.com/jobs/view/{i}'} for i in range(3)], 'jobspy')
             archive.ingest([{'company_name': 'Excluded', 'title': 'Senior Engineer', 'source_url': 'https://www.linkedin.com/jobs/view/excluded'}], 'jobspy')
-            with patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.descriptions.fetch', return_value='<div class="show-more-less-html__markup">Required experience: 5 years</div>') as fetch:
+            with patch('jobhunter.acquisition.descriptions.ROOT', root), patch('jobhunter.acquisition.descriptions.fetch', return_value='<div class="show-more-less-html__markup">Required experience: 5 years</div>') as fetch:
                 result = recover(archive, all_missing=True)
             # DESIGN §4: l'azienda con soli ruoli esclusi dal regex resta cieca se la salta.
             self.assertEqual(result['saved'], 4)
@@ -38,7 +38,7 @@ class DescriptionInterviewTests(unittest.TestCase):
                 "SELECT data FROM opportunities WHERE json_extract(data,'$.title')='Senior Engineer'")], [True])
             with archive.db:
                 archive.db.execute("UPDATE opportunities SET data=json_set(data,'$.description','')")
-            with patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.descriptions.fetch', side_effect=HTTPError('https://www.linkedin.com', 429, 'Rate limit', {}, None)) as fetch:
+            with patch('jobhunter.acquisition.descriptions.ROOT', root), patch('jobhunter.acquisition.descriptions.fetch', side_effect=HTTPError('https://www.linkedin.com', 429, 'Rate limit', {}, None)) as fetch:
                 blocked = recover(archive, all_missing=True)
             self.assertEqual(fetch.call_count, 1)
             self.assertEqual(blocked['status'], 'partial')
@@ -137,7 +137,7 @@ class DescriptionInterviewTests(unittest.TestCase):
             archive = Archive(root / "test.db")
             archive.ingest([{"company_name": "Example", "title": "Systems Engineer", "source_url": "https://example.org/job"}], "test")
             rule = {"id": "systems", "pattern": "systems engineer", "action": "include", "note": "User explicitly wants these roles"}
-            with patch("jobhunter.interview.ROOT", root), patch("jobhunter.interview.filters", return_value=rules):
+            with patch("jobhunter.exploration.interview.ROOT", root), patch("jobhunter.exploration.interview.filters", return_value=rules):
                 preview = review_rule(archive, rule)
                 self.assertEqual(preview["changed_opportunities"], 1)
                 self.assertEqual(rules, json.loads(config.read_text(encoding="utf-8")))

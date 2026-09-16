@@ -10,9 +10,9 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from jobhunter.descriptions import recover
+from jobhunter.acquisition.descriptions import recover
 from jobhunter.workspace import Archive
-from jobhunter import cancellation
+from jobhunter.operations import cancellation
 
 
 class DescriptionConcurrencyTests(unittest.TestCase):
@@ -42,7 +42,7 @@ class DescriptionConcurrencyTests(unittest.TestCase):
                     return '<div class="show-more-less-html__markup">Build data science models.</div>'
                 cancellation.bind(requested)
                 try:
-                    with patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.descriptions.fetch', side_effect=fetched) as fetch:
+                    with patch('jobhunter.acquisition.descriptions.ROOT', root), patch('jobhunter.acquisition.descriptions.fetch', side_effect=fetched) as fetch:
                         with self.assertRaises(cancellation.Cancelled):
                             recover(archive, all_missing=True)
                     self.assertLess(fetch.call_count, 12)
@@ -79,14 +79,14 @@ class DescriptionConcurrencyTests(unittest.TestCase):
                         active -= 1
                     return '<div class="show-more-less-html__markup">Minimum 5 years of experience required.</div>'
 
-                with patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.descriptions.fetch', side_effect=fetch_parallel):
+                with patch('jobhunter.acquisition.descriptions.ROOT', root), patch('jobhunter.acquisition.descriptions.fetch', side_effect=fetch_parallel):
                     result = recover(archive, limit=8, workers=4)
                 self.assertEqual(result['saved'], 8)
                 self.assertEqual(peak, 4)
                 self.assertEqual(archive.db.execute("SELECT count(*) FROM opportunities WHERE json_extract(data,'$.description') != ''").fetchone()[0], 8)
                 with archive.db:
                     archive.db.execute("UPDATE opportunities SET data=json_set(data,'$.description','')")
-                with patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.descriptions.fetch', side_effect=HTTPError('https://www.linkedin.com', 429, 'Rate limited', {}, None)) as fetch:
+                with patch('jobhunter.acquisition.descriptions.ROOT', root), patch('jobhunter.acquisition.descriptions.fetch', side_effect=HTTPError('https://www.linkedin.com', 429, 'Rate limited', {}, None)) as fetch:
                     result = recover(archive, limit=8, workers=4)
                 self.assertLessEqual(fetch.call_count, 4)
                 self.assertEqual(result['blocked_hosts'], ['linkedin.com'])

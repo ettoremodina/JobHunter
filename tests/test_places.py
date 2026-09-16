@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jobhunter import places
+from jobhunter.exploration import places
 from jobhunter.workspace import Archive
 
 
