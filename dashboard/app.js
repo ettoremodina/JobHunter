@@ -907,65 +907,179 @@ function savedBrief() {
   $("saved-brief-box").replaceChildren(copyBox("Testo da copiare nella chat di Codex", text));
 }
 
-/** Le domande di controllo sull'archivio: ognuna col suo conteggio, e i gruppi dove servono. */
-let debugLens = null;
+/** Stato del percorso Debug: ambito, controllo, sottogruppo e pagina restano visibili insieme. */
+let debugCatalog = [], debugScope = "aziende", debugLens = null;
+
+function debugScopeLabel(value) {
+  return value === "aziende" ? "Aziende" : "Annunci";
+}
+
+/** Disegna i primi due livelli del percorso senza nascondere i conteggi delle altre verifiche. */
+function renderDebugNavigation() {
+  const scopes = $("debug-scope");
+  scopes.replaceChildren();
+  for (const scope of ["aziende", "annunci"]) {
+    const lenses = debugCatalog.filter(lens => lens.scope === scope);
+    const count = lenses.reduce((sum, lens) => sum + lens.count, 0);
+    const button = el("button", undefined, "debug-scope-button");
+    button.append(el("strong", debugScopeLabel(scope)), el("span", `${nf(count)} occorrenze · ${lenses.length} controlli`));
+    button.setAttribute("aria-pressed", String(scope === debugScope));
+    button.addEventListener("click", guarded(async () => {
+      debugScope = scope;
+      debugLens = null;
+      renderDebugNavigation();
+      await showDebugRows(lenses[0], "");
+    }));
+    scopes.append(button);
+  }
+
+  const navigation = $("debug-lenses");
+  navigation.replaceChildren();
+  const sections = new Map();
+  for (const lens of debugCatalog.filter(item => item.scope === debugScope)) {
+    if (!sections.has(lens.section)) sections.set(lens.section, []);
+    sections.get(lens.section).push(lens);
+  }
+  for (const [section, lenses] of sections) {
+    const group = el("section", undefined, "debug-section");
+    group.append(el("h3", section));
+    for (const lens of lenses) {
+      const button = el("button", undefined, "debug-lens-open");
+      button.append(el("span", lens.label), el("strong", `${nf(lens.count)} ${lens.unit}`));
+      button.setAttribute("aria-pressed", String(debugLens?.lens.id === lens.id));
+      button.addEventListener("click", guarded(() => showDebugRows(lens, "")));
+      group.append(button);
+    }
+    navigation.append(group);
+  }
+}
 
 async function loadDebug() {
   $("debug-status").textContent = "Conteggio in corso…";
   const data = await api("/api/debug");
+  debugCatalog = data.lenses;
+  if (!debugCatalog.some(lens => lens.scope === debugScope)) debugScope = debugCatalog[0]?.scope || "aziende";
+  const current = debugLens && debugCatalog.find(lens => lens.id === debugLens.lens.id);
+  if (current) debugLens.lens = current;
+  renderDebugNavigation();
   $("debug-status").textContent = "Conteggi aggiornati alle " + new Date().toLocaleTimeString("it-IT");
-  $("debug-lenses").replaceChildren();
-  for (const lens of data.lenses) {
-    const row = el("div", undefined, "debug-lens");
-    const button = el("button", `${lens.label} · ${nf(lens.count)} ${lens.unit}`, "debug-lens-open");
-    button.addEventListener("click", guarded(() => showDebugRows(lens, "")));
-    row.append(button);
-    if (lens.facets.length > 1) {
-      const list = el("div", undefined, "debug-facets");
-      for (const facet of lens.facets.slice(0, 12)) {
-        const chip = el("button", `${facet.value || "senza valore"} · ${nf(facet.count)}`, "debug-facet");
-        chip.addEventListener("click", guarded(() => showDebugRows(lens, facet.value)));
-        list.append(chip);
-      }
-      row.append(list);
-    }
-    $("debug-lenses").append(row);
-  }
-  if (debugLens) await showDebugRows(debugLens.lens, debugLens.value, debugLens.offset);
+  const lens = current || debugCatalog.find(item => item.scope === debugScope);
+  if (lens) await showDebugRows(lens, current ? debugLens.value : "", current ? debugLens.offset : 0);
 }
 
-/** Una pagina di righe: azienda, dettaglio, link alla fonte e apertura nella tab Aziende. */
+/** Mostra il record selezionato in sola lettura, lasciando elenco, filtro e percorso al loro posto. */
+async function showDebugDetail(item, lens) {
+  const panel = $("debug-detail");
+  panel.replaceChildren(el("p", "Caricamento dettaglio…", "muted"));
+  const company = await api("/api/company/" + item.company_id);
+  panel.replaceChildren();
+  const heading = el("div", undefined, "detail-heading");
+  heading.append(el("h3", company.name), el("span", company.tier || "Senza tier", "tag"));
+  panel.append(heading, el("p", lens.label, "muted"));
+  panel.append(factList([
+    ["Categoria", company.category || "Da classificare"],
+    ["Stato", labels[company.status] || company.status],
+    ["Sito", company.website ? link(company.website, hostname(company.website)) : "Non disponibile"],
+  ]));
+  panel.append(axisSummary(company));
+
+  const opportunity = company.opportunities.find(job => job.id === item.id);
+  if (opportunity) {
+    panel.append(el("h4", opportunity.title));
+    panel.append(el("p", [locationPreview(opportunity.locations), date(opportunity.last_seen_at)].join(" · "), "muted"));
+    if (opportunity.verdict?.verdetto) panel.append(roleVerdict(opportunity.verdict));
+    const sources = el("p", undefined, "job-links");
+    sources.append(link(opportunity.application_url, "Apri annuncio"));
+    for (const source of opportunity.sources) sources.append(link(source.source_url, source.source + " · " + date(source.observed_at)));
+    panel.append(sources);
+    const proof = el("details", undefined, "debug-evidence");
+    proof.append(el("summary", "Evidenze del controllo"));
+    if (opportunity.description_check) proof.append(el("p", "Recupero descrizione: " + opportunity.description_check.status));
+    for (const quote of opportunity.selection?.requirements?.evidence || []) proof.append(el("blockquote", quote));
+    if (!proof.querySelector("p, blockquote")) proof.append(el("p", "Nessuna evidenza aggiuntiva registrata."));
+    panel.append(proof);
+  } else {
+    panel.append(el("p", company.remote_summary?.summary || company.description || "Descrizione aziendale non disponibile."));
+    const evidence = el("details", undefined, "debug-evidence");
+    evidence.append(el("summary", `Evidenze aziendali · ${company.evidence.length}`));
+    for (const record of company.evidence) {
+      const line = el("p", record.note || record.kind || "Evidenza registrata");
+      if (record.url) line.append(el("span", " "), link(record.url, "fonte"));
+      evidence.append(line);
+    }
+    if (!company.evidence.length) evidence.append(el("p", "Nessuna evidenza aziendale registrata."));
+    panel.append(evidence);
+  }
+
+  const open = el("button", "Apri la scheda completa in Aziende", "primary");
+  open.addEventListener("click", guarded(async () => {
+    document.querySelector('[data-view="companies"]').click();
+    await show(item.company_id);
+    $("detail").scrollIntoView({block: "start"});
+  }));
+  panel.append(open);
+}
+
+/** Una pagina di risultati con sottogruppo esplicito, accesso alla fonte e dettaglio contestuale. */
 async function showDebugRows(lens, value, offset = 0) {
+  debugScope = lens.scope;
   debugLens = {lens, value, offset};
+  renderDebugNavigation();
   const data = await api("/api/debug?" + new URLSearchParams({lens: lens.id, value, offset, limit: 50}));
+  $("debug-path").textContent = ["Debug", debugScopeLabel(lens.scope), lens.section, lens.label, value].filter(Boolean).join(" / ");
   const area = $("debug-rows");
-  area.replaceChildren(el("h3", data.label + (value ? " · " + value : "")));
-  area.append(el("p", `${nf(data.total)} ${data.unit}${data.total > data.items.length ? `, mostrati ${data.items.length} da ${offset + 1}` : ""}`, "muted"));
-  const list = el("ul", undefined, "debug-list");
+  area.replaceChildren();
+  const heading = el("div", undefined, "debug-results-heading");
+  heading.append(el("h3", data.label), el("strong", `${nf(data.total)} ${data.unit}`));
+  area.append(heading);
+  if (lens.facets.length) {
+    const label = el("label", lens.facet_label || "Sottogruppo", "debug-filter");
+    const select = el("select");
+    const all = el("option", `Tutti · ${nf(lens.count)}`);
+    all.value = "__all__";
+    select.append(all);
+    for (const facet of lens.facets) {
+      const option = el("option", `${facet.value || "Senza valore"} · ${nf(facet.count)}`);
+      option.value = facet.value;
+      select.append(option);
+    }
+    select.value = value || "__all__";
+    select.addEventListener("change", guarded(() => showDebugRows(lens, select.value === "__all__" ? "" : select.value)));
+    label.append(select);
+    area.append(label);
+  }
+  const start = data.total ? offset + 1 : 0;
+  area.append(el("p", `${start}–${Math.min(offset + data.items.length, data.total)} di ${nf(data.total)}`, "muted"));
+  const list = el("ol", undefined, "debug-list");
+  list.start = start || 1;
   for (const item of data.items) {
     const row = el("li");
-    const open = el("button", item.name, "company-link");
+    const open = el("button", item.name, "debug-result-open");
+    open.setAttribute("aria-controls", "debug-detail");
     open.addEventListener("click", guarded(async () => {
-      document.querySelector('[data-view="companies"]').click();
-      await show(item.company_id);
-      $("detail").scrollIntoView({block: "start"});
+      for (const button of list.querySelectorAll(".debug-result-open")) button.removeAttribute("aria-current");
+      open.setAttribute("aria-current", "true");
+      await showDebugDetail(item, lens);
     }));
     row.append(open);
-    if (item.detail) row.append(el("span", " · " + item.detail));
-    if (item.facet && !value) row.append(el("span", " · " + item.facet, "muted"));
-    if (item.url) row.append(el("span", " "), link(item.url, "fonte"));
+    if (item.detail) row.append(el("span", item.detail, "debug-result-detail"));
+    if (item.facet && !value) row.append(el("span", item.facet, "tag"));
+    if (item.url) row.append(link(item.url, "Apri fonte"));
     list.append(row);
   }
-  if (!data.items.length) list.append(el("li", "Nessuna riga: la domanda non ha casi."));
+  if (!data.items.length) list.append(el("li", "Nessun caso in questo sottogruppo."));
   area.append(list);
   const pager = el("div", undefined, "pager");
-  for (const [text, next] of [["Precedenti", offset - 50], ["Successive", offset + 50]]) {
-    const button = el("button", text);
-    button.disabled = next < 0 || next >= data.total;
-    button.addEventListener("click", guarded(() => showDebugRows(lens, value, next)));
-    pager.append(button);
-  }
+  const page = el("span", `Pagina ${data.total ? Math.floor(offset / 50) + 1 : 0} di ${Math.ceil(data.total / 50)}`);
+  const previous = el("button", "Precedenti");
+  previous.disabled = offset === 0;
+  previous.addEventListener("click", guarded(() => showDebugRows(lens, value, Math.max(0, offset - 50))));
+  const next = el("button", "Successive");
+  next.disabled = offset + 50 >= data.total;
+  next.addEventListener("click", guarded(() => showDebugRows(lens, value, offset + 50)));
+  pager.append(previous, page, next);
   area.append(pager);
+  $("debug-detail").replaceChildren(el("h3", "Scegli un risultato"), el("p", "Il dettaglio resta accanto all'elenco, così non perdi il percorso del controllo."));
 }
 
 async function init() {

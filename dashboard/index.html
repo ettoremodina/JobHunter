@@ -163,11 +163,20 @@
       </dialog>
       <section id="debug-view" hidden>
         <div class="toolbar"><h2>Debug dell'archivio</h2><button id="refresh-debug">Ricarica conteggi</button></div>
-        <p class="hint">Domande precise su cosa manca e su cosa è stato scartato, in sola lettura. La tab Aziende serve a scegliere; questa a controllare.</p>
+        <p class="hint">Segui il percorso dall'ambito al singolo caso. Qui controlli dati, esiti e motivi in sola lettura; le decisioni restano nella tab Aziende.</p>
         <p id="debug-status" role="status" aria-live="polite"></p>
+        <nav id="debug-scope" class="debug-scope" aria-label="Ambito del controllo"></nav>
+        <p id="debug-path" class="debug-path" aria-label="Percorso corrente"></p>
         <div class="debug-workspace">
-          <div id="debug-lenses" aria-label="Domande disponibili"></div>
-          <section id="debug-rows" aria-label="Righe della domanda scelta" aria-live="polite"></section>
+          <aside id="debug-lenses" aria-label="Controlli disponibili"></aside>
+          <section id="debug-rows" aria-label="Risultati del controllo" aria-live="polite">
+            <h3>Scegli un controllo</h3>
+            <p>I risultati compariranno qui con il relativo sottogruppo.</p>
+          </section>
+          <aside id="debug-detail" aria-label="Dettaglio del caso">
+            <h3>Scegli un risultato</h3>
+            <p>Il dettaglio resta accanto all'elenco, così non perdi il percorso del controllo.</p>
+          </aside>
         </div>
       </section>
       <section id="sources-view" hidden>

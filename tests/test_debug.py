@@ -59,6 +59,14 @@ class LensTests(unittest.TestCase):
         self.assertEqual(counts['annunci-senza-descrizione'], 1)
         self.assertEqual(counts['aziende-non-categorizzate'], 2)
 
+    def test_each_lens_has_a_navigation_path(self):
+        """Ogni controllo dichiara ambito e sezione, anche nella pagina dei risultati."""
+        lenses = debug.lenses(self.archive)['lenses']
+        self.assertEqual({lens['scope'] for lens in lenses}, {'aziende', 'annunci'})
+        self.assertTrue(all(lens['section'] for lens in lenses))
+        page = debug.rows(self.archive, 'annunci-senza-descrizione')
+        self.assertEqual((page['scope'], page['section']), ('annunci', 'Dati mancanti'))
+
     def test_language_lens_finds_the_foreign_advert(self):
         """L'annuncio in tedesco finisce fra quelli in una lingua che non conosci, con il suo gruppo."""
         self.assertEqual(self.counts()['annunci-in-lingua-sconosciuta'], 1)
