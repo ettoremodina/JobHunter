@@ -81,7 +81,7 @@ La scelta manuale è un campo a parte e non tocca i verdetti della pipeline: nel
 
 ### Debug: le domande di controllo
 
-La tab «Debug» risponde a una domanda per volta sull'archivio, in sola lettura: quali aziende non hanno una descrizione, quali annunci sono stati scartati e per quale motivo, quali sono rimasti aperti dal regex senza mai arrivare al modello, quali non hanno categoria, quali località non trovano una città nella mappa. Le domande divise per motivo mostrano i gruppi con il loro conteggio; ogni riga apre l'azienda nella tab Aziende. Aggiungere una domanda significa aggiungere una voce a `LENSES` in `jobhunter/debug.py`.
+La tab «Debug» risponde a una domanda per volta sull'archivio, in sola lettura: quali aziende non hanno una descrizione, quali annunci sono stati scartati e per quale motivo, quali sono rimasti aperti dal regex senza mai arrivare al modello, quali non hanno categoria, quali località non trovano una città nella mappa. Le domande divise per motivo mostrano i gruppi con il loro conteggio; ogni riga apre l'azienda nella tab Aziende. Aggiungere una domanda significa aggiungere una voce a `LENSES` in `jobhunter/exploration/debug.py`.
 
 Fra le domande c'è anche la lingua in cui l'annuncio è scritto, riconosciuta sul testo originale contando le parole funzione: quando l'annuncio passa viene tradotto e riassunto, e quell'informazione andrebbe persa. Non è la lingua richiesta dall'annuncio, che resta un requisito a parte: serve a segnalare gli annunci in una lingua che non conosci, anche quando non la chiedono. Sotto le venti parole la risposta è «non determinata» invece di una lingua a caso.
 

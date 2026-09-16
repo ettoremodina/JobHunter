@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from jobhunter.workspace import Archive, settings
-from jobhunter.pipeline_actions import controls, parameters, start, stop, execute, configuration
+from jobhunter.operations.pipeline_actions import controls, parameters, start, stop, execute, configuration
 
 
 class ActionTests(unittest.TestCase):
@@ -38,7 +38,7 @@ class ActionTests(unittest.TestCase):
     def test_pipeline_collection_defers_details_to_their_own_step(self):
         """The operational order must defer network details and classification, not just relabel cards."""
         self.assertEqual(configuration()['sequence'], ['collection', 'filters', 'descriptions', 'remote'])
-        with patch('jobhunter.collection.collect', return_value={}) as collect:
+        with patch('jobhunter.acquisition.collection.collect', return_value={}) as collect:
             execute(self.archive, self.cfg, 'collection', {'source': 'test', 'limit': 3}, lambda d: None)
         self.assertFalse(collect.call_args.kwargs['recover_descriptions'])
         self.assertEqual(self.archive.db.execute('SELECT count(*) FROM categories').fetchone()[0], 0)
@@ -54,7 +54,7 @@ class ActionTests(unittest.TestCase):
             release.wait(5)
             return {'status': 'success'}
 
-        with patch('jobhunter.pipeline_actions.execute', side_effect=blocked):
+        with patch('jobhunter.operations.pipeline_actions.execute', side_effect=blocked):
             start(self.path, self.cfg, 'filters', {}, lock)
             self.assertTrue(entered.wait(5))
             try:
@@ -82,7 +82,7 @@ class ActionTests(unittest.TestCase):
             executed.append(step)
             return {'status': 'partial' if step == 'descriptions' else 'success'}
 
-        with patch('jobhunter.pipeline_actions.execute', side_effect=partial):
+        with patch('jobhunter.operations.pipeline_actions.execute', side_effect=partial):
             start(self.path, self.cfg, 'filters', {}, lock, continue_after=True)
             self.assertTrue(lock.acquire(timeout=5))
             lock.release()
@@ -97,7 +97,7 @@ class ActionTests(unittest.TestCase):
             executed.append(step)
             return {'status': 'failed' if step == 'descriptions' else 'success'}
 
-        with patch('jobhunter.pipeline_actions.execute', side_effect=failing):
+        with patch('jobhunter.operations.pipeline_actions.execute', side_effect=failing):
             start(self.path, self.cfg, 'filters', {}, lock, continue_after=True)
             self.assertTrue(lock.acquire(timeout=5))
             lock.release()
@@ -114,7 +114,7 @@ class ActionTests(unittest.TestCase):
             entered.set()
             release.wait(5)
             return {'status': 'success', 'saved': 1}
-        with patch('jobhunter.pipeline_actions.execute', side_effect=work):
+        with patch('jobhunter.operations.pipeline_actions.execute', side_effect=work):
             job = start(self.path, self.cfg, 'filters', {}, lock, continue_after=True)
             self.assertTrue(entered.wait(5))
             try:
@@ -134,7 +134,7 @@ class ActionTests(unittest.TestCase):
         """A dead process is not shown as active; previews don't claim completed processing."""
         self.archive.db.execute("INSERT INTO pipeline_jobs(step,status,parameters,basis,pid,started_at,detail) VALUES('remote','running','{}','old',12345,'2020-01-01','{}')")
         self.archive.db.commit()
-        with patch('jobhunter.pipeline_actions.process_alive', return_value=False):
+        with patch('jobhunter.operations.pipeline_actions.process_alive', return_value=False):
             result = controls(self.archive, self.cfg)
         self.assertIsNone(result['active'])
         self.assertEqual(result['actions']['remote']['last_run']['status'], 'interrupted')

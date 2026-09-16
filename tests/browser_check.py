@@ -10,8 +10,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from playwright.sync_api import sync_playwright, expect
 from jobhunter.workspace import Archive, ROOT, settings
-from jobhunter.dashboard import create_server
-from jobhunter import remote_llm
+from jobhunter.exploration.dashboard import create_server
+from jobhunter.evaluation import remote_llm
 
 
 def main():
@@ -35,7 +35,7 @@ def main():
         catalog = remote_llm.inputs(archive, 'job-summary', oid, remote_cfg)['source']['evidence_catalog']
         reference = next(key for key, text in catalog.items() if 'Analyze data' in text)
         summary = {'summary': 'Analisi dati e miglioramento dei modelli.', 'facts': [{'field': 'responsibilities', 'text': 'Analisi dati', 'quote': reference}], 'missing_information': []}
-        with patch('jobhunter.remote_llm.api_key', return_value='dummy'), patch('jobhunter.remote_llm.request', return_value=(summary, {}, [])):
+        with patch('jobhunter.evaluation.remote_llm.api_key', return_value='dummy'), patch('jobhunter.evaluation.remote_llm.request', return_value=(summary, {}, [])):
             assert remote_llm.run(archive, 'job-summary', execute=True, config_path=remote_path)['processed'] == 1
         archive.categorize(cid, "Energia", "Fixture: categoria aziendale già verificata")
         archive.close()
@@ -261,7 +261,7 @@ def main():
                         progress({'saved': index})
                         time.sleep(.05)
                     return {'status': 'success'}
-                with patch('jobhunter.pipeline_actions.execute', side_effect=slow_stage):
+                with patch('jobhunter.operations.pipeline_actions.execute', side_effect=slow_stage):
                     page.get_by_role('button', name='Apri Giudice 1 · regex su titolo e descrizione', exact=True).click()
                     page.get_by_role('button', name='Avvia passaggio', exact=True).click()
                     expect(page.locator('#pipeline-stop')).to_be_enabled()

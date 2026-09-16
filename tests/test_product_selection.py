@@ -7,11 +7,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
-from jobhunter.collection import postings
-from jobhunter.selection import evaluate, requirements, saved
+from jobhunter.acquisition.collection import postings
+from jobhunter.evaluation.selection import evaluate, requirements, saved
 from jobhunter.workspace import Archive
-from jobhunter.descriptions import recover
-from jobhunter.maintenance import reparse
+from jobhunter.acquisition.descriptions import recover
+from jobhunter.operations.maintenance import reparse
 
 
 class ProductSelectionTests(unittest.TestCase):
@@ -89,13 +89,13 @@ class ProductSelectionTests(unittest.TestCase):
             (root / 'config/descriptions.json').write_text(json.dumps({'default_limit': 1, 'max_limit': 50, 'allowed_hosts': ['www.linkedin.com'], 'timeout_seconds': 1, 'request_delay_seconds': 0, 'output_directory': 'raw', 'refresh_after_days': 30}))
             with closing(Archive(root / 'test.db')) as archive:
                 archive.ingest([{'company_name': 'Example', 'title': 'Data Scientist', 'source_url': 'https://www.linkedin.com/jobs/view/1', 'description': 'Old text'}], 'test', '2020-01-01T00:00:00+00:00')
-                with patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.descriptions.fetch', return_value='<div class="show-more-less-html__markup">New text</div>') as fetch:
+                with patch('jobhunter.acquisition.descriptions.ROOT', root), patch('jobhunter.acquisition.descriptions.fetch', return_value='<div class="show-more-less-html__markup">New text</div>') as fetch:
                     self.assertEqual(recover(archive)['attempted'], 0)
                     self.assertEqual(recover(archive, refresh_stale=True)['saved'], 1)
                     self.assertEqual(fetch.call_count, 1)
                 with archive.db:
                     archive.db.execute("UPDATE opportunities SET data=json_set(data,'$.description','')")
-                with patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.descriptions.fetch', side_effect=HTTPError('https://www.linkedin.com', 404, 'Missing', {}, None)) as fetch:
+                with patch('jobhunter.acquisition.descriptions.ROOT', root), patch('jobhunter.acquisition.descriptions.fetch', side_effect=HTTPError('https://www.linkedin.com', 404, 'Missing', {}, None)) as fetch:
                     recover(archive)
                     result = recover(archive, all_missing=True)
                     self.assertEqual(fetch.call_count, 1)
@@ -105,7 +105,7 @@ class ProductSelectionTests(unittest.TestCase):
                 self.assertEqual(archive.db.execute('SELECT status FROM description_attempts').fetchone()[0], 'missing_page')
                 cid = archive.db.execute('SELECT id FROM companies').fetchone()[0]
                 archive.feedback(cid, 'discarded', reason='company_not_interested')
-                with patch('jobhunter.descriptions.ROOT', root), patch('jobhunter.descriptions.fetch') as fetch:
+                with patch('jobhunter.acquisition.descriptions.ROOT', root), patch('jobhunter.acquisition.descriptions.fetch') as fetch:
                     self.assertEqual(recover(archive, force=True)['excluded_by_company'], 1)
                     fetch.assert_not_called()
 
@@ -119,7 +119,7 @@ class ProductSelectionTests(unittest.TestCase):
                 archive.ingest([{'company_name': 'Example', 'title': 'Data Scientist', 'source_url': 'https://example.org/1', 'description': 'Qualifications 3 years of experience'}], 'test', '2020-01-01T00:00:00+00:00')
                 row = archive.db.execute('SELECT * FROM opportunities').fetchone()
                 archive.save_description(row['id'], 'Qualifications 3 years of experience', {'raw_file': str(page), 'retrieved_at': row['last_seen'], 'url': 'https://example.org/1'}, replace=True)
-                with patch('jobhunter.maintenance.ROOT', root), patch('jobhunter.descriptions.fetch', side_effect=AssertionError('No network')):
+                with patch('jobhunter.operations.maintenance.ROOT', root), patch('jobhunter.acquisition.descriptions.fetch', side_effect=AssertionError('No network')):
                     self.assertEqual(reparse(archive)['updated'], 1)
                 updated = archive.db.execute('SELECT * FROM opportunities').fetchone()
                 self.assertEqual(updated['last_seen'], row['last_seen'])

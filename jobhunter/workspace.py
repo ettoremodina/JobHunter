@@ -28,7 +28,7 @@ def now():
 
 def categories():
     """Read the shared sector vocabulary; the assignment itself lives in company_axis."""
-    from jobhunter.company_axis import vocabulary
+    from jobhunter.evaluation.company_axis import vocabulary
     return vocabulary()
 
 
@@ -39,12 +39,25 @@ def settings(path=None):
 
 def search_rules_hash(rules):
     """Invalidate decisions only for changed rules or actual extraction functions."""
-    selected = {'selection.py': {'evaluate', 'requirements'}, 'languages.py': {'language_requirements', 'detect_language'},
-                'enrichment.py': {'lines', 'TextExtractor'}}
+    selected = {
+        'evaluation/selection.py': {'evaluate', 'requirements'},
+        'evaluation/languages.py': {'language_requirements', 'detect_language'},
+        'evaluation/enrichment.py': {'lines', 'TextExtractor'},
+    }
+    stable_imports = {
+        'jobhunter.evaluation.enrichment': 'jobhunter.enrichment',
+        'jobhunter.evaluation.languages': 'jobhunter.languages',
+    }
     code = []
     for name, functions in selected.items():
         tree = ast.parse((ROOT / 'jobhunter' / name).read_text(encoding='utf-8'))
-        code.extend(ast.dump(node) for node in tree.body if getattr(node, 'name', None) in functions)
+        for node in tree.body:
+            if getattr(node, 'name', None) not in functions:
+                continue
+            for nested in ast.walk(node):
+                if isinstance(nested, ast.ImportFrom):
+                    nested.module = stable_imports.get(nested.module, nested.module)
+            code.append(ast.dump(node))
     return identity(json.dumps(rules, sort_keys=True) + ''.join(code))
 
 
@@ -213,7 +226,7 @@ class Archive:
 
     def save_description(self, oid, description, provenance, replace=False):
         """Fill an empty description, invalidating derived content without renewing listing dates."""
-        from jobhunter.descriptions import has_description
+        from jobhunter.acquisition.descriptions import has_description
         row = self.db.execute("SELECT data FROM opportunities WHERE id=?", (oid,)).fetchone()
         if not row or not description.strip():
             raise ValueError("Known opportunity and nonempty description required")
@@ -253,7 +266,7 @@ class Archive:
 
     def refresh_search_eligibility(self):
         """Cache role statuses in SQLite; invalidate on content, rules or evaluator changes."""
-        from jobhunter.selection import evaluate, filters
+        from jobhunter.evaluation.selection import evaluate, filters
         rules = filters()
         rules_hash = search_rules_hash(rules)
         # Serialize cache rebuilds across dashboard requests; unchanged reads stay inexpensive.
@@ -305,8 +318,8 @@ class Archive:
         conditions, args = [], []
         qualifying = None
         if tier:
-            from jobhunter import tier as tiers
-            from jobhunter.selection import verdicts
+            from jobhunter.evaluation import tier as tiers
+            from jobhunter.evaluation.selection import verdicts
             if tier not in tiers.TIERS:
                 raise ValueError("Unknown tier")
             # Il tier non è in SQL perché non si salva mai: si calcola e si filtra sugli ID risultanti.
@@ -339,7 +352,7 @@ class Archive:
         if country or city:
             # Paese e città sono quelli canonici: «Milano», «Milan» e «MI» sono lo stesso posto,
             # e il confronto avviene sulla mappatura salvata, non sul testo dell'annuncio.
-            from jobhunter import places
+            from jobhunter.exploration import places
             places.refresh(self)
             clause = "EXISTS(SELECT 1 FROM places p WHERE p.opportunity_id=o.id"
             for column, value in (("country", country), ("city", city)):
@@ -381,8 +394,8 @@ class Archive:
                     "COALESCE((SELECT category FROM categories WHERE company_id=c.id),'Da classificare') AS category")
         sql = selected + " FROM companies c" + where + " ORDER BY " + self.SORTS[sort] + ",c.name COLLATE NOCASE,c.id LIMIT ? OFFSET ?"
         items = [dict(r) for r in self.db.execute(sql, count_args + args + [min(max(int(limit), 1), 500), max(int(offset), 0)])]
-        from jobhunter import tier as tiers
-        from jobhunter.selection import verdicts
+        from jobhunter.evaluation import tier as tiers
+        from jobhunter.evaluation.selection import verdicts
         if not tier:
             assessment = verdicts(self, [item["id"] for item in items]) if items else {}
         text = query.strip().casefold()
@@ -412,7 +425,7 @@ class Archive:
                 item["opportunity_count"] = len(jobs)
             # La lista mostra la forma canonica quando la mappa la conosce: il testo grezzo della
             # fonte resta nella scheda, dove serve come prova.
-            from jobhunter import places
+            from jobhunter.exploration import places
             item["places"] = places.labels(self, item["matching_ids"])
             item["locations"] = sorted({x for j in jobs for x in j["locations"]})
             item["titles"] = list(dict.fromkeys(j["title"] for j in jobs))[:5]
@@ -420,12 +433,12 @@ class Archive:
 
     def category(self, cid):
         """Expose an assignment together with its provenance and explanation."""
-        from jobhunter.company_axis import category
+        from jobhunter.evaluation.company_axis import category
         return category(self, cid)
 
     def categorize(self, cid=None, category=None, reason="", company_ids=None):
         """Refresh rule suggestions or save a chat classification that imports preserve."""
-        from jobhunter.company_axis import categorize
+        from jobhunter.evaluation.company_axis import categorize
         return categorize(self, cid, category, reason, company_ids)
 
     def basis(self, cid):
@@ -464,20 +477,20 @@ class Archive:
         assessment = self.db.execute("SELECT * FROM assessments WHERE company_id=?", (cid,)).fetchone()
         result["assessment"] = None if not assessment else {**json.loads(assessment["data"]), "created_at": assessment["created_at"], "stale": assessment["basis"] != self.basis(cid)}
         # I due verdetti d'asse e il tier che ne discende, calcolati adesso e mai salvati (DESIGN §2).
-        from jobhunter import tier
-        from jobhunter.selection import verdicts
+        from jobhunter.evaluation import tier
+        from jobhunter.evaluation.selection import verdicts
         state = verdicts(self, cid)[cid]
         result.update(company_verdict=state["azienda"], tier=state["tier"], tier_label=tier.label(state["tier"]))
         for job in result["opportunities"]:
             job["verdict"] = state["ruoli"].get(job["id"], {})
-        from jobhunter.remote_llm import presentation
+        from jobhunter.evaluation.remote_llm import presentation
         presentation(self, result)
         return result
 
     def feedback(self, cid, status, note="", opportunity_id=None, reason="other", until_date=None):
         """Record an explicit company or opportunity decision; identical retries are harmless."""
         self.show(cid)
-        from jobhunter.selection import feedback_reasons, role_snapshot
+        from jobhunter.evaluation.selection import feedback_reasons, role_snapshot
         snapshot = json.dumps(role_snapshot(self, cid))
         if reason not in feedback_reasons():
             raise ValueError("Unknown feedback reason")

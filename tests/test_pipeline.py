@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
-from jobhunter.pipeline import it, summary
+from jobhunter.operations.pipeline import it, summary
 from jobhunter.workspace import Archive, identity, settings
 
 
@@ -109,7 +109,7 @@ class PipelineTests(unittest.TestCase):
             with a.db:
                 a.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
                              ('description', job['id'], digest, 'key', '{}', 'test', '2020-01-01T00:00:00+00:00'))
-            with patch('jobhunter.selection.evaluate', side_effect=AssertionError('Monitor must not evaluate')):
+            with patch('jobhunter.evaluation.selection.evaluate', side_effect=AssertionError('Monitor must not evaluate')):
                 before = a.db.total_changes
                 result = summary(a, settings(), root)
                 self.assertEqual(a.db.total_changes, before)

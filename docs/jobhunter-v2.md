@@ -2,7 +2,7 @@
 
 ## Percorso attivo
 
-`main.py` avvia `jobhunter.cli`. Il nucleo è `workspace.py`, la raccolta è `collection.py`, il server è `dashboard.py` e gli asset sono in `dashboard/`. Il codice e la documentazione legacy sono stati rimossi. Il flusso è raccolta → mapping e normalizzazione → raggruppamento aziendale → categoria → ricerca e confronto in chat → feedback → consultazione ed export.
+`main.py` avvia `jobhunter.cli`. Il nucleo è `workspace.py`, la raccolta è in `acquisition/`, il server è `exploration/dashboard.py` e gli asset sono in `dashboard/`. Il codice e la documentazione legacy sono stati rimossi. Il flusso è raccolta → mapping e normalizzazione → raggruppamento aziendale → categoria → ricerca e confronto in chat → feedback → consultazione ed export.
 
 Il percorso normale non chiama LLM. I comandi espliciti `enrich` possono usare Ollama locale per impaginazione e categorie. Codex legge il profilo e i dati con la CLI, ragiona nella chat e può salvare una valutazione strutturata. La stessa operazione `assess` è il punto d'ingresso per un futuro produttore API, locale o cloud; nessuna infrastruttura API speculativa è stata aggiunta.
 
@@ -27,7 +27,7 @@ Se `.venv` esiste già, usarla senza ricrearla. Il server ascolta soltanto su lo
 La tab **Pipeline** legge `/api/pipeline` e mostra raccolta, normalizzazione,
 descrizioni, classificazione aziende, impaginazione opzionale, filtri, statistiche,
 coda e decisioni. **Aggiorna stato** rilegge i dati, senza avviare queste fasi.
-`jobhunter/pipeline.py` aggrega l'archivio e riusa il monitor dei report per distinguere
+`jobhunter/operations/pipeline.py` aggrega l'archivio e riusa il monitor dei report per distinguere
 un workflow terminato da un processo fermo senza report finale.
 
 Copertura e date hanno significati distinti. Le categorie mancanti distinguono le
@@ -71,7 +71,7 @@ riavviarlo; ricaricare il browser non riavvia il processo Python.
 
 ### Classificazione dalle descrizioni dei ruoli
 
-`jobhunter/company_evidence.py` raccoglie dichiarazioni esplicite dell'attività
+`jobhunter/evaluation/company_evidence.py` raccoglie dichiarazioni esplicite dell'attività
 aziendale da tutti gli annunci salvati dell'azienda. Basta un ruolo informativo;
 gli altri possono avere descrizioni mancanti. Ogni estratto conserva URL e ID
 dell'annuncio. Campi aziendali e settore esplicito hanno precedenza, gli estratti

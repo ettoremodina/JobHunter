@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jobhunter.company_evidence import job_facts
+from jobhunter.evaluation.company_evidence import job_facts
 from jobhunter.workspace import Archive
 
 

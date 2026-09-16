@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from jobhunter.company_profile import ad_text, demo, kind, one, profile_page, save
+from jobhunter.acquisition.company_profile import ad_text, demo, kind, one, profile_page, save
 from jobhunter.workspace import Archive
 
 CARD = '''<html><body><table><tbody>

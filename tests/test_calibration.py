@@ -1,7 +1,7 @@
 """Calibration evidence validation must fail safely before learning exclusions."""
 
 import unittest
-from jobhunter.calibration import validate
+from jobhunter.experiments.calibration import validate
 
 
 class CalibrationTests(unittest.TestCase):
