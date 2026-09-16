@@ -1,5 +1,5 @@
 {
-  "_nota": "Città canoniche per paese, con gli alias che le fonti usano davvero. Il paese e i suoi alias stanno in geography.json. Un alias di tre caratteri o meno (MI, RM) vale solo quando è un segmento intero della località e il paese coincide. Le località che non cadono qui dentro sono elencate da «python main.py places --unmapped»: aggiungerle qui è tutto ciò che serve.",
+  "_nota": "Città canoniche per paese, con gli alias che le fonti usano davvero. Il paese e i suoi alias stanno in geography.json. Un alias di tre caratteri o meno (MI, RM) vale solo quando è un segmento intero della località e il paese coincide. Le eccezioni standalone_aliases valgono per l'intera stringa: MI isolato indica Milano, senza cambiare Detroit, MI. Le località che non cadono qui dentro sono elencate da «python main.py places --unmapped»: aggiungerle qui è tutto ciò che serve.",
   "paesi": {
     "Regno Unito": [
       {
@@ -979,6 +979,7 @@
       },
       {
         "name": "Milano",
+        "standalone_aliases": ["MI"],
         "aliases": [
           "MI",
           "Milan",
