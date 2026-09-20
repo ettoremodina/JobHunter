@@ -909,7 +909,9 @@ function savedBrief() {
 
 /** Stato del percorso Debug: ambito, controllo, sottogruppo e pagina restano visibili insieme. */
 let debugCatalog = [], debugScope = "aziende", debugLens = null;
+let debugRowsRequest = 0, debugDetailRequest = 0;
 
+/** Etichetta italiana dell'ambito usata nei pulsanti e nel breadcrumb. */
 function debugScopeLabel(value) {
   return value === "aziende" ? "Aziende" : "Annunci";
 }
@@ -964,14 +966,17 @@ async function loadDebug() {
   renderDebugNavigation();
   $("debug-status").textContent = "Conteggi aggiornati alle " + new Date().toLocaleTimeString("it-IT");
   const lens = current || debugCatalog.find(item => item.scope === debugScope);
-  if (lens) await showDebugRows(lens, current ? debugLens.value : "", current ? debugLens.offset : 0);
+  if (lens) await showDebugRows(lens, current ? debugLens.value : "", current ? debugLens.offset : 0,
+                                current ? debugLens.facetSet : false);
 }
 
 /** Mostra il record selezionato in sola lettura, lasciando elenco, filtro e percorso al loro posto. */
 async function showDebugDetail(item, lens) {
+  const request = ++debugDetailRequest;
   const panel = $("debug-detail");
   panel.replaceChildren(el("p", "Caricamento dettaglio…", "muted"));
   const company = await api("/api/company/" + item.company_id);
+  if (request !== debugDetailRequest) return;
   panel.replaceChildren();
   const heading = el("div", undefined, "detail-heading");
   heading.append(el("h3", company.name), el("span", company.tier || "Senza tier", "tag"));
@@ -1018,15 +1023,26 @@ async function showDebugDetail(item, lens) {
     $("detail").scrollIntoView({block: "start"});
   }));
   panel.append(open);
+  if (matchMedia("(max-width: 720px)").matches) {
+    panel.focus({preventScroll: true});
+    panel.scrollIntoView({block: "start"});
+  }
 }
 
 /** Una pagina di risultati con sottogruppo esplicito, accesso alla fonte e dettaglio contestuale. */
-async function showDebugRows(lens, value, offset = 0) {
+async function showDebugRows(lens, value, offset = 0, facetSet = false) {
+  const request = ++debugRowsRequest;
+  ++debugDetailRequest;
   debugScope = lens.scope;
-  debugLens = {lens, value, offset};
+  debugLens = {lens, value, offset, facetSet};
   renderDebugNavigation();
-  const data = await api("/api/debug?" + new URLSearchParams({lens: lens.id, value, offset, limit: 50}));
-  $("debug-path").textContent = ["Debug", debugScopeLabel(lens.scope), lens.section, lens.label, value].filter(Boolean).join(" / ");
+  $("debug-detail").replaceChildren(el("h3", "Scegli un risultato"), el("p", "Il dettaglio resta accanto all'elenco, così non perdi il percorso del controllo."));
+  const data = await api("/api/debug?" + new URLSearchParams({
+    lens: lens.id, value, offset, limit: 50, facet_set: facetSet ? "1" : "0",
+  }));
+  if (request !== debugRowsRequest) return;
+  const subgroup = facetSet ? value || "Senza valore" : "";
+  $("debug-path").textContent = ["Debug", debugScopeLabel(lens.scope), lens.section, lens.label, subgroup].filter(Boolean).join(" / ");
   const area = $("debug-rows");
   area.replaceChildren();
   const heading = el("div", undefined, "debug-results-heading");
@@ -1043,8 +1059,11 @@ async function showDebugRows(lens, value, offset = 0) {
       option.value = facet.value;
       select.append(option);
     }
-    select.value = value || "__all__";
-    select.addEventListener("change", guarded(() => showDebugRows(lens, select.value === "__all__" ? "" : select.value)));
+    select.value = facetSet ? value : "__all__";
+    select.addEventListener("change", guarded(() => {
+      const selected = select.value !== "__all__";
+      return showDebugRows(lens, selected ? select.value : "", 0, selected);
+    }));
     label.append(select);
     area.append(label);
   }
@@ -1073,13 +1092,12 @@ async function showDebugRows(lens, value, offset = 0) {
   const page = el("span", `Pagina ${data.total ? Math.floor(offset / 50) + 1 : 0} di ${Math.ceil(data.total / 50)}`);
   const previous = el("button", "Precedenti");
   previous.disabled = offset === 0;
-  previous.addEventListener("click", guarded(() => showDebugRows(lens, value, Math.max(0, offset - 50))));
+  previous.addEventListener("click", guarded(() => showDebugRows(lens, value, Math.max(0, offset - 50), facetSet)));
   const next = el("button", "Successive");
   next.disabled = offset + 50 >= data.total;
-  next.addEventListener("click", guarded(() => showDebugRows(lens, value, offset + 50)));
+  next.addEventListener("click", guarded(() => showDebugRows(lens, value, offset + 50, facetSet)));
   pager.append(previous, page, next);
   area.append(pager);
-  $("debug-detail").replaceChildren(el("h3", "Scegli un risultato"), el("p", "Il dettaglio resta accanto all'elenco, così non perdi il percorso del controllo."));
 }
 
 async function init() {

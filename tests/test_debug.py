@@ -106,6 +106,7 @@ class LensTests(unittest.TestCase):
         excluded = debug.rows(self.archive, 'annunci-scartati-dal-regex')
         self.assertEqual(excluded['total'], 1)
         self.assertEqual(debug.rows(self.archive, 'annunci-scartati-dal-regex', excluded['items'][0]['facet'])['total'], 1)
+        self.assertEqual(debug.rows(self.archive, 'annunci-scartati-dal-regex', '', filter_value=True)['total'], 0)
         self.assertEqual(debug.rows(self.archive, 'annunci-scartati-dal-regex', 'motivo-inventato')['total'], 0)
         with self.assertRaises(ValueError):
             debug.rows(self.archive, 'lente-inventata')
