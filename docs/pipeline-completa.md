@@ -32,7 +32,7 @@ Perché separati: un'azienda interessante che oggi non ha ruoli adatti non va sc
 tenuta d'occhio. E un ruolo eccezionale in un'azienda fuori settore merita comunque di
 essere visto. Un punteggio unico perderebbe entrambe le informazioni.
 
-**Il tier non è mai salvato.** Si ricalcola a ogni lettura da `jobhunter/tier.py`.
+**Il tier non è mai salvato.** Si ricalcola a ogni lettura da `jobhunter/evaluation/tier.py`.
 Salvarlo ricreerebbe il difetto originale: un'azienda finita a «scarto» non risalirebbe
 mai quando pubblica un ruolo adatto.
 

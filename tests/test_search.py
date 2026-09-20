@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from jobhunter.selection import evaluate, filters
+from jobhunter.evaluation.selection import evaluate, filters
 from jobhunter.workspace import Archive
 
 
@@ -36,7 +36,7 @@ class SearchTests(unittest.TestCase):
 
     def test_pages_reuse_evaluations_and_invalidate_changes(self):
         """Reuse statuses across HTTP connections, but refresh changed roles and rules."""
-        with patch('jobhunter.selection.evaluate', wraps=evaluate) as check:
+        with patch('jobhunter.evaluation.selection.evaluate', wraps=evaluate) as check:
             self.archive.search(eligibility='potential', limit=1)
             first = check.call_count
             self.assertEqual(first, 3)
@@ -49,7 +49,7 @@ class SearchTests(unittest.TestCase):
             self.assertEqual(check.call_count, first + 1)
             rules = filters()
             rules['exclude_title_patterns'] = {}
-            with patch('jobhunter.selection.filters', return_value=rules):
+            with patch('jobhunter.evaluation.selection.filters', return_value=rules):
                 self.archive.search(eligibility='potential')
             self.assertEqual(check.call_count, first + 4)
 

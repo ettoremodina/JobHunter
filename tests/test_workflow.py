@@ -8,8 +8,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from jobhunter.workspace import Archive, settings, url
-from jobhunter.collection import postings, collect
-from jobhunter.dashboard import create_server
+from jobhunter.acquisition.collection import postings, collect
+from jobhunter.exploration.dashboard import create_server
 
 
 class WorkflowTests(unittest.TestCase):

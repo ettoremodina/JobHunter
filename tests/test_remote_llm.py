@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from jobhunter import remote_llm
+from jobhunter.evaluation import remote_llm
 from jobhunter.workspace import Archive, ROOT
 
 
@@ -19,7 +19,7 @@ class RemoteTests(unittest.TestCase):
         """Require a workspace before HTTP and send Alibaba JSON mode without tools."""
         cfg = json.loads((ROOT/'config/remote_llm.json').read_text())
         cfg['endpoint'] = 'https://{WorkspaceId}.eu-central-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions'
-        with patch('jobhunter.remote_llm.urllib.request.build_opener') as opener:
+        with patch('jobhunter.evaluation.remote_llm.urllib.request.build_opener') as opener:
             with self.assertRaisesRegex(ValueError, 'workspace_id'):
                 remote_llm.request(cfg, 'JSON', {}, 'dummy')
             opener.assert_not_called()
@@ -91,7 +91,7 @@ class RemoteTests(unittest.TestCase):
             payload = remote_llm.inputs(archive, 'company-summary', cid, cfg)
             ref = next(k for k,v in payload['source']['evidence_catalog'].items() if 'solar panels' in v)
             answer = {'summary': 'Produce pannelli solari.', 'category': 'Energia', 'facts': [{'section': 'business', 'text': 'Pannelli solari', 'quote': ref}], 'missing_information': []}
-            with patch('jobhunter.remote_llm.api_key', return_value='dummy'), patch('jobhunter.remote_llm.request', return_value=(answer, {}, [])) as request:
+            with patch('jobhunter.evaluation.remote_llm.api_key', return_value='dummy'), patch('jobhunter.evaluation.remote_llm.request', return_value=(answer, {}, [])) as request:
                 self.assertEqual(remote_llm.run(archive, 'company-summary', execute=True, config_path=path)['processed'], 1)
                 request.assert_called_once()
                 self.assertEqual(archive.category(cid)['category'], 'Energia')
@@ -107,7 +107,7 @@ class RemoteTests(unittest.TestCase):
         cfg = json.loads((ROOT/'config/remote_llm.json').read_text())
         payload = {'source': {'description': 'Original text', 'evidence_catalog': {'S0': 'Original text'}},
                    'response_schema': {'type': 'object', 'properties': {}}}
-        with patch('jobhunter.remote_llm.urllib.request.build_opener') as opener:
+        with patch('jobhunter.evaluation.remote_llm.urllib.request.build_opener') as opener:
             opener.return_value.open.return_value.__enter__.return_value.read.return_value = json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': '{}'}}]}).encode()
             remote_llm.request(cfg, 'JSON', payload, 'dummy')
             body = json.loads(opener.return_value.open.call_args.args[0].data)
@@ -132,7 +132,7 @@ class RemoteTests(unittest.TestCase):
         cfg['evidence_reference_tasks'] = []
         cfg['response_schemas'] = {}
         cfg.pop('field_sections_path', None)
-        with patch('jobhunter.remote_llm.urllib.request.build_opener') as opener:
+        with patch('jobhunter.evaluation.remote_llm.urllib.request.build_opener') as opener:
             opener.return_value.open.side_effect = HTTPError(cfg['endpoint'], 429, 'SECRET', {}, io.BytesIO(b'SECRET'))
             with self.assertRaisesRegex(ValueError, '^Remote HTTP 429;') as error:
                 remote_llm.request(cfg, 'prompt', {}, 'SECRET')
@@ -146,7 +146,7 @@ class RemoteTests(unittest.TestCase):
         """Unexpected provider shapes must not escape the caller's ValueError handling."""
         cfg = json.loads((ROOT/'config/remote_llm.json').read_text())
         for envelope in ({'choices': [None]}, {'choices': [{'finish_reason': 'stop', 'message': None}]}):
-            with self.subTest(envelope=envelope), patch('jobhunter.remote_llm.urllib.request.build_opener') as opener:
+            with self.subTest(envelope=envelope), patch('jobhunter.evaluation.remote_llm.urllib.request.build_opener') as opener:
                 opener.return_value.open.return_value.__enter__.return_value.read.return_value = json.dumps(envelope).encode()
                 with self.assertRaisesRegex(ValueError, 'Invalid remote JSON response'):
                     remote_llm.request(cfg, 'JSON', {}, 'dummy')
@@ -170,7 +170,7 @@ class RemoteTests(unittest.TestCase):
             oid = archive.db.execute('SELECT id FROM opportunities').fetchone()[0]
             original = archive.db.execute('SELECT data FROM opportunities').fetchone()[0]
             answer = {'decision': 'keep', 'rationale': 'Models', 'evidence': ['Build models.'], 'missing_information': []}
-            with patch('jobhunter.remote_llm.api_key', return_value='SECRET') as key, patch('jobhunter.remote_llm.request', return_value=(answer, {'total_tokens': 10}, [])) as model:
+            with patch('jobhunter.evaluation.remote_llm.api_key', return_value='SECRET') as key, patch('jobhunter.evaluation.remote_llm.request', return_value=(answer, {'total_tokens': 10}, [])) as model:
                 preview = remote_llm.run(archive, 'selection', config_path=config_path)
                 self.assertEqual(preview['selected'], 1)
                 model.assert_not_called()
@@ -218,7 +218,7 @@ class RemoteTests(unittest.TestCase):
         cfg.pop('field_sections_path', None)
         cfg.update(provider='openrouter', endpoint='https://openrouter.ai/api/v1/chat/completions', model='z-ai/glm-5.3-flash', parameters={})
         cfg['web_search']['enabled'] = True
-        with patch('jobhunter.remote_llm.urllib.request.build_opener') as opener:
+        with patch('jobhunter.evaluation.remote_llm.urllib.request.build_opener') as opener:
             opener.return_value.open.return_value.__enter__.return_value.read.return_value = json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': '{}', 'annotations': []}}]}).encode()
             remote_llm.request(cfg, 'p', {}, 'dummy')
             sent = json.loads(opener.return_value.open.call_args.args[0].data)
@@ -250,7 +250,7 @@ class RemoteTests(unittest.TestCase):
             cid = archive.db.execute('SELECT id FROM companies').fetchone()[0]
             result = {'summary': 'Modelli energetici.', 'facts': [{'section': 'business', 'text': 'Modelli energetici', 'quote': 'We model energy.', 'url': 'https://example.org'}], 'missing_information': []}
             annotations = [{'type': 'url_citation', 'url_citation': {'url': 'https://example.org', 'content': 'We model energy.'}}]
-            with patch('jobhunter.remote_llm.api_key', return_value='dummy'), patch('jobhunter.remote_llm.request', return_value=(result, {}, annotations)) as model:
+            with patch('jobhunter.evaluation.remote_llm.api_key', return_value='dummy'), patch('jobhunter.evaluation.remote_llm.request', return_value=(result, {}, annotations)) as model:
                 first = remote_llm.run(archive, 'company-research', execute=True, config_path=config_path)
                 self.assertEqual(first['processed'], 1)
                 self.assertEqual(remote_llm.run(archive, 'company-research', execute=True, config_path=config_path)['cached'], 1)

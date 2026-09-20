@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from jobhunter.workspace import Archive
-from jobhunter.company_batch import run, response_schema
-from jobhunter.remote_llm import digest, inputs, request as request_remote, validate
+from jobhunter.evaluation.company_batch import run, response_schema
+from jobhunter.evaluation.remote_llm import digest, inputs, request as request_remote, validate
 
 
 class BatchTests(unittest.TestCase):
@@ -42,7 +42,7 @@ class BatchTests(unittest.TestCase):
                     """Exclude each role with a valid scoped source reference."""
                     return {'company': {'summary': 'Unrequested and never stored'}, 'jobs': [{'id': oid, 'selection': {'decision': 'exclude', 'rationale': 'Test', 'evidence': ['S0'], 'missing_information': []}, 'summary': None} for oid in payload['jobs']]}, {'prompt_tokens': 100, 'completion_tokens': 20, 'total_tokens': 120}, []
                 values = {'all_companies': True, 'mode': 'execute'}
-                with patch('json.loads', side_effect=config_read), patch('jobhunter.remote_llm.api_key', return_value='test'), patch('jobhunter.remote_llm.request', side_effect=response) as request, patch('jobhunter.company_batch.time.sleep'):
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='test'), patch('jobhunter.evaluation.remote_llm.request', side_effect=response) as request, patch('jobhunter.evaluation.company_batch.time.sleep'):
                     first = run(arc, values, lambda d: None)
                     self.assertEqual(request.call_count, 1)
                     self.assertEqual(first['counts']['evaluated_jobs'], 2)
@@ -117,8 +117,8 @@ class BatchTests(unittest.TestCase):
                     invented = {'summary': 'Inventata', 'facts': [{'field': 'responsibilities', 'text': 'x', 'quote': 'S99'}], 'missing_information': []}
                     jobs = [{'id': oid, 'selection': None, 'summary': invented if oid == ids[0] else empty} for oid in ids]
                     return {'company': None, 'jobs': jobs}, {'total_tokens': 200}, []
-                with patch('json.loads', side_effect=config_read), patch('jobhunter.remote_llm.api_key', return_value='k'), \
-                     patch('jobhunter.remote_llm.request', side_effect=partial), patch('jobhunter.company_batch.time.sleep'):
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'), \
+                     patch('jobhunter.evaluation.remote_llm.request', side_effect=partial), patch('jobhunter.evaluation.company_batch.time.sleep'):
                     result = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
                 self.assertEqual(result['status'], 'partial')
                 # I ruoli sono già decisi dal regex: si paga solo la scheda, non un secondo giudizio.
@@ -160,8 +160,8 @@ class BatchTests(unittest.TestCase):
                             'summary': 'Sviluppa modelli.', 'facts': [{'field': 'responsibilities',
                             'text': 'Sviluppa modelli.', 'quote': next(iter(payload['jobs'][oid]['evidence_catalog']))}],
                             'missing_information': []}} for i, oid in enumerate(ids)]}, {'total_tokens': 20}, []
-                with patch('json.loads', side_effect=config_read), patch('jobhunter.remote_llm.api_key', return_value='dummy'), \
-                     patch('jobhunter.remote_llm.request', side_effect=response), patch('jobhunter.company_batch.time.sleep'):
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='dummy'), \
+                     patch('jobhunter.evaluation.remote_llm.request', side_effect=response), patch('jobhunter.evaluation.company_batch.time.sleep'):
                     report = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
                     self.assertEqual(report['status'], 'partial')
                     self.assertEqual(report['counts']['rejected_jobs'], 1)
@@ -196,8 +196,8 @@ class BatchTests(unittest.TestCase):
                     return {'company': None, 'jobs': [
                         {'id': ids[0], 'selection': {'decision': 'keep', 'rationale': 'x', 'evidence': ['J1-S0'], 'missing_information': []}, 'summary': None},
                         {'id': ids[1], 'selection': {'decision': 'keep', 'rationale': 'x', 'evidence': ['J1-S0'], 'missing_information': []}, 'summary': None}]}, {'total_tokens': 10}, []
-                with patch('json.loads', side_effect=config_read), patch('jobhunter.remote_llm.api_key', return_value='k'), \
-                     patch('jobhunter.remote_llm.request', side_effect=crossed), patch('jobhunter.company_batch.time.sleep'):
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'), \
+                     patch('jobhunter.evaluation.remote_llm.request', side_effect=crossed), patch('jobhunter.evaluation.company_batch.time.sleep'):
                     result = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
                 self.assertTrue(all(ref.startswith('J') for job in seen.values() for ref in job['evidence_catalog']))
                 self.assertEqual(result['counts']['evaluated_jobs'], 1)
@@ -226,7 +226,7 @@ class BatchTests(unittest.TestCase):
                 def response(config, prompt, payload, key):
                     """Judge exactly the roles the caller chose to submit."""
                     return {'company': None, 'jobs': [{'id': oid, 'selection': {'decision': 'exclude', 'rationale': 'Test', 'evidence': [oid[:2] + '-S0'], 'missing_information': []}, 'summary': None} for oid in payload['jobs']]}, {'total_tokens': 10}, []
-                with patch('json.loads', side_effect=config_read), patch.object(arc, 'evaluations', return_value={oid: {'status': 'excluded', 'reasons': ['seniority'], 'career_priority': 'secondary'} for oid in ids}),                      patch('jobhunter.remote_llm.api_key', return_value='test'), patch('jobhunter.remote_llm.request', side_effect=response) as request,                      patch('jobhunter.company_batch.time.sleep'):
+                with patch('json.loads', side_effect=config_read), patch.object(arc, 'evaluations', return_value={oid: {'status': 'excluded', 'reasons': ['seniority'], 'career_priority': 'secondary'} for oid in ids}),                      patch('jobhunter.evaluation.remote_llm.api_key', return_value='test'), patch('jobhunter.evaluation.remote_llm.request', side_effect=response) as request,                      patch('jobhunter.evaluation.company_batch.time.sleep'):
                     report = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
                 self.assertEqual(request.call_count, 1)
                 self.assertEqual(report['counts']['locally_decided'], 3)
@@ -261,7 +261,7 @@ class BatchTests(unittest.TestCase):
                     return {'company': {'summary': 'Costruisce modelli di rete elettrica.', 'category': 'Energia',
                                         'facts': [{'section': 'business', 'text': 'Modelli di rete', 'quote': 'S0'}],
                                         'missing_information': []}, 'jobs': []}, {'total_tokens': 40}, []
-                with patch('json.loads', side_effect=config_read), patch('jobhunter.remote_llm.api_key', return_value='k'),                      patch('jobhunter.remote_llm.request', side_effect=card_only) as request, patch('jobhunter.company_batch.time.sleep'):
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'),                      patch('jobhunter.evaluation.remote_llm.request', side_effect=card_only) as request, patch('jobhunter.evaluation.company_batch.time.sleep'):
                     result = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
                 self.assertEqual(request.call_count, 1)
                 self.assertEqual(result['counts']['submitted_jobs'], 0)
@@ -298,7 +298,7 @@ class BatchTests(unittest.TestCase):
             sent.update(json.loads(request.data))
             return Answer()
 
-        with patch('jobhunter.remote_llm.urllib.request.build_opener') as build:
+        with patch('jobhunter.evaluation.remote_llm.urllib.request.build_opener') as build:
             build.return_value.open = opener
             request_remote(cfg, 'ISTRUZIONI', payload, 'key')
         block = sent['messages'][0]['content'][0]
@@ -381,8 +381,8 @@ class BatchTests(unittest.TestCase):
                     return ({'company': company, 'jobs': [{'id': oid, 'selection': {'decision': 'review', 'rationale': 'Da verificare', 'evidence': [], 'missing_information': []}, 'summary': None} for oid in payload['jobs']]},
                             {'total_tokens': 10}, [])
                 values = {'all_companies': True, 'mode': 'execute', 'workers': 2}
-                with patch('json.loads', side_effect=config_read), patch('jobhunter.remote_llm.api_key', return_value='test'), \
-                     patch('jobhunter.remote_llm.request', side_effect=response), patch('jobhunter.company_batch.time.sleep'):
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='test'), \
+                     patch('jobhunter.evaluation.remote_llm.request', side_effect=response), patch('jobhunter.evaluation.company_batch.time.sleep'):
                     report = run(arc, values, lambda d: None)
                 self.assertTrue(released.is_set())
                 self.assertEqual(report['status'], 'success')
@@ -450,8 +450,8 @@ class BatchTests(unittest.TestCase):
                     company = {**empty, 'category': 'Da classificare'} if payload['company_requested'] else None
                     return ({'company': company, 'jobs': [{'id': oid, 'selection': None if null else {'decision': 'review', 'rationale': 'Da verificare', 'evidence': [], 'missing_information': []}, 'summary': None} for oid in ids]},
                             {'total_tokens': 10}, [])
-                with patch('json.loads', side_effect=config_read), patch('jobhunter.remote_llm.api_key', return_value='k'), \
-                     patch('jobhunter.remote_llm.request', side_effect=response), patch('jobhunter.company_batch.time.sleep'):
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'), \
+                     patch('jobhunter.evaluation.remote_llm.request', side_effect=response), patch('jobhunter.evaluation.company_batch.time.sleep'):
                     report = run(arc, {'all_companies': True, 'mode': 'execute', 'workers': 1}, lambda d: None)
                 self.assertEqual(report['status'], 'partial')
                 self.assertEqual(report['counts']['api_calls'], 4)

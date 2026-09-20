@@ -9,7 +9,7 @@ Verifica del 15 settembre 2026 sul commit `59d8d87`. Copre i punti 1 e 22 di TO-
 | `python main.py COMANDO` | [main.py](../main.py) → [cli.py](../jobhunter/cli.py), `parser`, `execute`, `main` |
 | `python server.py` | Scorciatoia della stessa CLI con `serve` |
 | Doppio clic su `Avvia JobHunter.pyw` | Avvia direttamente `dashboard.create_server` e apre la tab Pipeline |
-| Dashboard | [dashboard.py](../jobhunter/dashboard.py) espone API e asset di `dashboard/`; `pipeline_actions.start` registra e avvia le operazioni |
+| Dashboard | [dashboard.py](../jobhunter/exploration/dashboard.py) espone API e asset di `dashboard/`; `pipeline_actions.start` registra e avvia le operazioni |
 
 La sequenza configurata in [pipeline_ui.json](../config/pipeline_ui.json) è `collection → filters → descriptions → remote`. È una sequenza di quattro azioni eseguibili: il numero delle card descrittive non equivale al numero dei comandi. Normalizzazione e raggruppamento avvengono dentro l'importazione.
 
@@ -17,16 +17,16 @@ La sequenza configurata in [pipeline_ui.json](../config/pipeline_ui.json) è `co
 
 | Fase | Unità di lavoro e comportamento | Codice e salvataggio |
 |---|---|---|
-| Raccolta | Legge righe dalle fonti. Un listing può avere titolo e URL ma nessuna descrizione. | [collection.py](../jobhunter/collection.py), `collect`; [sweep.py](../jobhunter/sweep.py), `sweep`. Snapshot su disco, resoconto in `runs`. |
+| Raccolta | Legge righe dalle fonti. Un listing può avere titolo e URL ma nessuna descrizione. | [collection.py](../jobhunter/acquisition/collection.py), `collect`; [sweep.py](../jobhunter/acquisition/sweep.py), `sweep`. Snapshot su disco, resoconto in `runs`. |
 | Normalizzazione e identità | Converte i campi, risolve l'azienda, inserisce o aggiorna l'annuncio e la sua provenienza. | [normalization.py](../jobhunter/normalization.py), `normalize`; [workspace.py](../jobhunter/workspace.py), `Archive.ingest`. Tabelle `companies`, `opportunities`, `observations`. |
-| Filtri locali | Valuta ciascun annuncio su titolo e testo disponibile, estrae esperienza e lingue. Gli esiti sono `potential`, `excluded`, `review`. | [selection.py](../jobhunter/selection.py), `evaluate`; `Archive.evaluations`. Cache `search_eligibility`, invalidata da contenuto e regole. |
-| Recupero testi | Visita i dettagli mancanti ammessi dal filtro del listing, rispetta rinvii e blocchi per host. Il testo aziendale ha un recupero distinto. | [descriptions.py](../jobhunter/descriptions.py), `recover`; aggiorna il JSON dell'annuncio e `description_attempts`. [company_profile.py](../jobhunter/company_profile.py), `recover`, aggiorna `companies` e `company_profile_attempts` tramite comando esplicito `company-profile`. |
-| Giudice remoto | Prepara una richiesta combinata per azienda, con i ruoli da giudicare e le schede richieste. Anteprima senza chiamate; esecuzione esplicita con API. | [company_batch.py](../jobhunter/company_batch.py), `prepare`, `run`, `apply`; trasporto e validazione in [remote_llm.py](../jobhunter/remote_llm.py). Derivati in `enrichments`, categoria aziendale in `categories`, report su disco. |
-| Consultazione e scelta | Combina categoria aziendale e giudizi sui ruoli in un Tier; ricerca, metriche e debug leggono queste dimensioni. L'utente salva o scarta aziende e singoli ruoli. | `selection.verdicts`, [tier.py](../jobhunter/tier.py), `tier`; `Archive.feedback`, `undo`. Il Tier è calcolato, il feedback è persistente e separato. |
+| Filtri locali | Valuta ciascun annuncio su titolo e testo disponibile, estrae esperienza e lingue. Gli esiti sono `potential`, `excluded`, `review`. | [selection.py](../jobhunter/evaluation/selection.py), `evaluate`; `Archive.evaluations`. Cache `search_eligibility`, invalidata da contenuto e regole. |
+| Recupero testi | Visita i dettagli mancanti ammessi dal filtro del listing, rispetta rinvii e blocchi per host. Il testo aziendale ha un recupero distinto. | [descriptions.py](../jobhunter/acquisition/descriptions.py), `recover`; aggiorna il JSON dell'annuncio e `description_attempts`. [company_profile.py](../jobhunter/acquisition/company_profile.py), `recover`, aggiorna `companies` e `company_profile_attempts` tramite comando esplicito `company-profile`. |
+| Giudice remoto | Prepara una richiesta combinata per azienda, con i ruoli da giudicare e le schede richieste. Anteprima senza chiamate; esecuzione esplicita con API. | [company_batch.py](../jobhunter/evaluation/company_batch.py), `prepare`, `run`, `apply`; trasporto e validazione in [remote_llm.py](../jobhunter/evaluation/remote_llm.py). Derivati in `enrichments`, categoria aziendale in `categories`, report su disco. |
+| Consultazione e scelta | Combina categoria aziendale e giudizi sui ruoli in un Tier; ricerca, metriche e debug leggono queste dimensioni. L'utente salva o scarta aziende e singoli ruoli. | `selection.verdicts`, [tier.py](../jobhunter/evaluation/tier.py), `tier`; `Archive.feedback`, `undo`. Il Tier è calcolato, il feedback è persistente e separato. |
 
 Dopo un nuovo testo, il prossimo `evaluations()` ricalcola il filtro invalidato. Non occorre interpretare la posizione della card come prova che tutti gli annunci abbiano attraversato ogni fase.
 
-La categoria aziendale è un altro asse. [company_axis.py](../jobhunter/company_axis.py) gestisce assegnazioni a regole o da chat; [company_evidence.py](../jobhunter/company_evidence.py) estrae fatti aziendali dai ruoli. Nel codice verificato `ingest` non chiama `categorize`: il comando esplicito e l'esito remoto sono percorsi distinti.
+La categoria aziendale è un altro asse. [company_axis.py](../jobhunter/evaluation/company_axis.py) gestisce assegnazioni a regole o da chat; [company_evidence.py](../jobhunter/evaluation/company_evidence.py) estrae fatti aziendali dai ruoli. Nel codice verificato `ingest` non chiama `categorize`: il comando esplicito e l'esito remoto sono percorsi distinti.
 
 ### Il remoto non analizza tutto indistintamente
 
@@ -96,13 +96,11 @@ Confronto circoscritto a [jobhunter-v2.md](jobhunter-v2.md), senza rifare la gui
 
 Anche `llm TASK` della CLI e l'azione remota dashboard sono due ingressi diversi: il primo usa `remote_llm.run` per task, il secondo `company_batch.run` con richiesta combinata. Non sono sinonimi di pipeline completa.
 
-## Proposta di cartelle, punto 1 ancora aperto
+## Organizzazione del pacchetto
 
-Verifica statica degli import Python, compresi quelli interni alle funzioni: 29 file nel pacchetto, di cui 26 raggiungibili transitivamente da `cli.py`. Gli altri sono `__init__.py`, il worker avviato da `sweep.board_query` con `python -m jobhunter.board_worker`, e `calibration.py`, eseguibile separatamente con le fasi `prepare`, `label`, `report` e coperto da `test_calibration.py`. Raggiungibile significa che esiste un percorso nel codice, non che il modulo sia eseguito in ogni avvio.
+I moduli sono raggruppati per responsabilità. `cli.py`, `workspace.py` e `normalization.py` restano alla radice perché collegano più aree. Il worker e gli esperimenti mantengono gli ingressi storici `python -m jobhunter.board_worker`, `python -m jobhunter.benchmark` e `python -m jobhunter.calibration`.
 
-Proposta concreta, da decidere prima degli spostamenti:
-
-| Destinazione proposta | File attuali |
+| Destinazione | Responsabilità e moduli |
 |---|---|
 | `jobhunter/` | `__init__.py`, `cli.py`, `workspace.py`, `normalization.py` |
 | `jobhunter/acquisition/` | `collection.py`, `sweep.py`, `board_worker.py`, `descriptions.py`, `company_profile.py` |
@@ -111,8 +109,8 @@ Proposta concreta, da decidere prima degli spostamenti:
 | `jobhunter/operations/` | `pipeline.py`, `pipeline_actions.py`, `progress.py`, `cancellation.py`, `maintenance.py` |
 | `jobhunter/experiments/` | `benchmark.py`, `calibration.py` |
 
-I nomi descrivono responsabilità, non impongono un ordine di esecuzione. `workspace.py` resta condiviso: dividerlo ulteriormente non è necessario per questo incarico. Primo incremento suggerito: spostare soltanto acquisizione, aggiornare import e avvio worker, verificare test offline, poi valutare gli altri gruppi.
+I nomi descrivono responsabilità, non un ordine di esecuzione. `workspace.py` resta condiviso e risolve dati e configurazione dalla radice del progetto.
 
 Non ho trovato moduli del pacchetto dimostrabilmente inutilizzati da cancellare. `calibration.py` è fuori dal flusso ordinario, ma [rewrite-plan.md](rewrite-plan.md) registra la conservazione degli esperimenti su richiesta dell'utente. I tre script datati in `scripts/migrations/` sono interventi manuali storici, già separati dal runtime; l'assenza di import non basta a eliminarli. `server.py` e il launcher sono ingressi alternativi reali. Anche `enrichment.py`, nonostante il nome storico, ha consumatori attivi.
 
-Prima di qualunque spostamento aggiornare anche i calcoli `ROOT` basati su `__file__`, i percorsi relativi, il comando `-m` del worker e `search_rules_hash`, che legge file Python per nome. Spostare file senza questi adattamenti romperebbe dati/configurazioni o invalidazione della cache. Nessuno spostamento o cancellazione è stato eseguito.
+`search_rules_hash` legge le implementazioni in `evaluation/`; gli spostamenti non cambiano il contenuto usato per invalidare la cache. Nessun modulo è stato cancellato.
