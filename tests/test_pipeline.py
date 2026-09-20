@@ -9,10 +9,23 @@ from unittest.mock import patch
 
 from jobhunter.pipeline import it, summary
 from jobhunter.workspace import Archive, identity, settings
+from jobhunter import remote_llm
 
 
 class PipelineTests(unittest.TestCase):
     """Verify coverage on disposable data without triggering the monitored stages."""
+
+    def save_current_remote(self, archive, oid, result):
+        """Save one remote result with the same cache identity used by the production reader."""
+        cfg = json.loads((remote_llm.ROOT / 'config/remote_llm.json').read_text(encoding='utf-8'))
+        job = json.loads(archive.db.execute('SELECT data FROM opportunities WHERE id=?', (oid,)).fetchone()[0])
+        payload = remote_llm.inputs(archive, 'selection', oid, cfg, job=job, cache={})
+        prompt = (remote_llm.ROOT / cfg['prompts']['selection']).read_text(encoding='utf-8')
+        key = remote_llm.digest({'source': payload, 'prompt': prompt,
+                                 'settings': remote_llm.signature(cfg, 'selection')})
+        archive.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
+                           ('remote:selection', oid, 'source', key,
+                            json.dumps({'result': result}), 'test', '2026-01-01'))
 
     def test_funnel_partitions_both_axes_and_composes_the_tier(self):
         """Ogni asse è una partizione completa; il tier ne discende e non è mai salvato."""
@@ -82,6 +95,39 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual((it(23049), it(5908)), ('23.049', '5908'))
             # Dove cambia l'unita' di misura la card lo dichiara invece di lasciare il salto al lettore.
             self.assertIn('Cambia unità di misura', steps['descriptions']['inflow'])
+
+    def test_remote_handoff_is_an_exact_partition_and_separates_review_from_new_work(self):
+        """Review correnti, cache scadute e record mai valutati non finiscono nella stessa coda."""
+        rows = [
+            ('Data Scientist', 'Build models'),
+            ('HR Manager', 'Manage recruitment'),
+            ('Growth Hacker Keep', 'Plan growth experiments and analyse product metrics'),
+            ('Growth Hacker Drop', 'Plan growth experiments and analyse product metrics'),
+            ('Growth Hacker Review', 'Plan growth experiments and analyse product metrics'),
+            ('Growth Hacker Ready', 'Plan growth experiments and analyse product metrics'),
+            ('Growth Hacker Blocked', ''),
+            ('Growth Hacker Stale', 'Plan growth experiments and analyse product metrics'),
+        ]
+        with tempfile.TemporaryDirectory() as directory, closing(Archive(Path(directory) / 'a.db')) as archive:
+            archive.ingest([{'company_name': 'Example', 'title': title, 'description': description,
+                             'source_url': f'https://example.org/{index}'}
+                            for index, (title, description) in enumerate(rows)], 'test')
+            archive.evaluations()
+            ids = {json.loads(row['data'])['title']: row['id']
+                   for row in archive.db.execute('SELECT id,data FROM opportunities')}
+            self.save_current_remote(archive, ids['Growth Hacker Keep'], {'decision': 'keep'})
+            self.save_current_remote(archive, ids['Growth Hacker Drop'], {'decision': 'exclude'})
+            self.save_current_remote(archive, ids['Growth Hacker Review'], {'decision': 'review'})
+            archive.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
+                               ('remote:selection', ids['Growth Hacker Stale'], 'source', 'old-key',
+                                json.dumps({'result': {'decision': 'keep'}}), 'test', '2025-01-01'))
+            handoff = summary(archive, settings(), Path(directory))['funnel']['handoff']
+            self.assertEqual(sum(value for _, _, value in handoff['parts']), len(rows))
+            self.assertEqual(handoff['counts'], {
+                'regex_compatible': 1, 'regex_discarded': 1,
+                'remote_compatible': 1, 'remote_discarded': 1, 'remote_review': 1,
+                'ready': 1, 'blocked': 1, 'stale': 1,
+            })
 
     def test_description_card_counts_company_coverage(self):
         """DESIGN §4: la copertura si misura sulle aziende, non sui ruoli sopravvissuti ai filtri."""
