@@ -556,7 +556,18 @@ footer { padding: 24px 32px 40px; color: var(--text-3); font-size: 13px; }
 .pipeline-step[data-state="running"] .pipeline-card { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
 .pipeline-step[data-state="running"] .pipeline-state { --dot: var(--info-dot); color: var(--info-fg); background: var(--info-bg); }
 #pipeline-active { margin: 8px 0 4px; padding: 16px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+#pipeline-active h3, #pipeline-handoff h3 { margin: 0 0 8px; font-size: 16px; }
 #pipeline-active p { margin: 6px 0; }
+#pipeline-handoff { margin: 16px 0 24px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.pipeline-handoff-facts { display: grid; grid-template-columns: minmax(13rem, 20rem) 1fr; gap: 8px 20px; margin: 12px 0; }
+.pipeline-handoff-facts dt { color: var(--text-2); }
+.pipeline-handoff-facts dd { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 14px; margin: 0; }
+.pipeline-handoff-facts dd strong { min-width: 3ch; font-variant-numeric: tabular-nums; }
+.pipeline-handoff-facts dd small { color: var(--text-2); }
+@media (max-width: 640px) {
+  .pipeline-handoff-facts { grid-template-columns: 1fr; gap: 2px; }
+  .pipeline-handoff-facts dt { margin-top: 8px; }
+}
 .pipeline-history { display: block; text-align: left; margin: 8px 0; max-width: 100%; }
 .pipeline-stop { margin-top: .5rem; width: 100%; }
 .pipeline-about { margin-top: 8px; padding: 0 4px; font-size: 13px; color: var(--text-2); }
@@ -615,6 +626,7 @@ footer { padding: 24px 32px 40px; color: var(--text-3); font-size: 13px; }
 .seg-review { --c: var(--warn-dot); }
 .seg-exclude { --c: var(--bad-dot); }
 .seg-pending { --c: var(--series-other); }
+.seg-stale { --c: var(--warn-dot); }
 .seg-out { --c: color-mix(in srgb, var(--series-other) 60%, var(--surface)); }
 .seg-gone { --c: var(--seg-gone); }
 .cat-1 { --c: var(--series-1); }
@@ -683,6 +695,8 @@ svg .seg { fill: var(--c); }
 .journey-chart .seg-share { fill: #ffffff; font-size: 12px; opacity: .85; }
 .journey-chart .gone-edge { stroke: var(--text); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: .45; }
 .journey-detail { margin-top: 1rem; }
+.journey-handoff { margin: 20px 0 26px; padding: 16px; background: var(--surface-2); border-radius: var(--radius-sm); }
+.journey-handoff h4 { margin-top: 0; }
 /* Il tooltip del percorso sta sulla quota: i numeri scritti sopra non devono coprirlo. */
 .journey-chart text { pointer-events: none; }
 

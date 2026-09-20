@@ -1280,9 +1280,10 @@ async function loadPipeline() {
   try {
     const data = await api('/api/pipeline');
     pipelineData = data;
-    $('pipeline-status').textContent = `${data.opportunities.toLocaleString('it-IT')} annunci · ${data.companies.toLocaleString('it-IT')} aziende · Stato letto alle ${new Date(data.generated_at).toLocaleTimeString('it-IT')}`;
+    $('pipeline-status').textContent = `Archivio: ${data.opportunities.toLocaleString('it-IT')} annunci · ${data.companies.toLocaleString('it-IT')} aziende · Lettura delle ${new Date(data.generated_at).toLocaleTimeString('it-IT')}`;
     const workflow = $('pipeline-workflow');
-    workflow.replaceChildren(el('h3', 'Ultimo workflow rilevato'));
+    workflow.replaceChildren(el('h3', 'Ultimo workflow esterno registrato'));
+    workflow.append(el('p', 'Questa cronologia non indica un comando attivo nella web app.', 'muted'));
     const states = {running: 'In esecuzione', not_running: 'Processo fermo, completamento non registrato', unconfirmed: 'Attività non confermata', success: 'Terminato', partial: 'Terminato con risultati parziali', failed: 'Fallito', not_found: 'Nessun report disponibile', unavailable: 'Report non disponibile'};
     workflow.append(el('p', [states[data.workflow.status] || data.workflow.status, data.workflow.phase_label].filter(Boolean).join(' · ')));
     if (data.workflow.started_at) workflow.append(el('p', 'Avviato: ' + pipelineDate(data.workflow.started_at), 'muted'));
@@ -1341,6 +1342,7 @@ async function loadPipeline() {
       list.append(row);
     }
     renderPipelineActivity();
+    renderPipelineHandoff(data.funnel?.handoff);
     $('pipeline-runs').replaceChildren();
     for (const run of data.controls.history) {
       const button = el('button', `${data.controls.actions[run.step]?.label || 'Sequenza'} · ${pipelineStates[run.status]} · ${pipelineDate(run.started_at)}`, 'pipeline-history');
@@ -1359,6 +1361,30 @@ async function loadPipeline() {
       if (!$('pipeline-view').hidden || $('pipeline-dialog').open) loadPipeline().catch(error => message(error.message, true));
     }, (pipelineData?.controls.poll_seconds || 5) * 1000);
   }
+}
+
+/** Summarize current archive work without promising which records a future paid run will submit. */
+function renderPipelineHandoff(handoff) {
+  const area = $('pipeline-handoff');
+  const heading = $('pipeline-handoff-title');
+  area.replaceChildren(heading);
+  if (!handoff) {
+    area.append(el('p', 'Riepilogo operativo non disponibile.', 'hint'));
+    return;
+  }
+  const counts = handoff.counts || {};
+  const facts = el('dl', undefined, 'pipeline-handoff-facts');
+  for (const [label, value, note] of [
+    ['Candidati alla preparazione', counts.ready, 'Il comando applicherà ancora limiti e vincoli del payload.'],
+    ['Bloccati dai dati', counts.blocked, 'Serve una descrizione utilizzabile prima del giudizio semantico.'],
+    ['Già valutati, ancora indecisi', counts.remote_review, 'La risposta review corrente viene riusata.'],
+    ['Da aggiornare o verificare', counts.stale, 'Testo, regole, profilo o configurazione non coincidono più.']]) {
+    facts.append(el('dt', label));
+    const detail = el('dd');
+    detail.append(el('strong', nf(value || 0)), el('small', note));
+    facts.append(detail);
+  }
+  area.append(facts, el('p', 'Sono conteggi dell’archivio corrente, non chiamate API garantite.', 'hint'));
 }
 
 /** Render a proportional bar with a single labelled count for every share, including zeroes. */
@@ -1438,7 +1464,14 @@ function renderJourney(area, funnel) {
   }
   const block = el('section', undefined, 'metrics-block journey');
   block.append(el('h3', 'Il percorso degli annunci'));
-  block.append(el('p', 'Ogni barra è larga quanto l’intero archivio, tappa dopo tappa. La fascia scura a sinistra è chi è già uscito: quello che resta a destra è ciò che prosegue. Riguarda sempre tutto l’archivio, anche quando il filtro qui sopra è attivo.', 'hint'));
+  block.append(el('p', 'Il percorso riguarda sempre tutto l’archivio, anche quando il filtro qui sopra è attivo. Ogni barra dichiara la propria unità; l’ultima passa dagli annunci alle aziende.', 'hint'));
+  if (funnel.handoff) {
+    const handoff = el('section', undefined, 'journey-handoff');
+    handoff.append(el('h4', 'Cosa arriva, si ferma o è già deciso prima di una nuova chiamata'));
+    handoff.append(pipelineShares('Partizione corrente · annunci', funnel.handoff.base, funnel.handoff.parts));
+    handoff.append(el('p', funnel.handoff.note, 'hint'));
+    block.append(handoff);
+  }
   const key = el('ul', undefined, 'funnel-legend journey-key');
   for (const [color, label] of [['seg-gone', 'Usciti'], ['seg-keep', 'Compatibili'], ['seg-in', 'In gioco'],
                                ['seg-review', 'Ancora da decidere'], ['seg-pending', 'Fermi: manca un’informazione']]) {
@@ -1510,7 +1543,7 @@ function renderJourney(area, funnel) {
       ['seg-keep', 'Interessanti', funnel.azienda.interessante],
       ['seg-pending', 'Evidenza mancante', funnel.azienda.evidenza_mancante],
       ['seg-gone', 'Fuori preferenze', funnel.azienda.non_interessante]]),
-    axisCard('Tier · aziende', funnel.archive.companies, [
+    axisCard('Tier dagli esiti salvati · aziende', funnel.archive.companies, [
       ['seg-keep', 'A · azienda e ruolo sì', funnel.tier.A],
       ['seg-in', 'B · attesa di un ruolo', funnel.tier['B-attesa']],
       ['seg-review', 'B · solo esperienza', funnel.tier['B-esperienza']],
@@ -1614,7 +1647,7 @@ function pipelineProgress(detail, startedAt) {
 function renderPipelineActivity() {
   const active = pipelineData.controls.active;
   const area = $('pipeline-active');
-  area.replaceChildren();
+  area.replaceChildren(el('h3', 'Attività della web app'));
   if (active) {
     const detail = active.detail;
     area.append(el('strong', 'In esecuzione: ' + (pipelineData.controls.actions[detail.phase || active.step]?.label || 'Sequenza')));
@@ -1625,13 +1658,7 @@ function renderPipelineActivity() {
     if (!pipelineData.controls.supports_stop) area.append(el('p', 'Il comando Interrompi richiede il riavvio del server dopo questa esecuzione.'));
   } else if (pipelineData.collection_running) area.append(el('p', 'Raccolta avviata dalla pagina Fonti in corso. Attendi prima di avviare un altro passaggio.'));
   else {
-    area.append(el('p', 'Nessun passaggio della web app in esecuzione. Seleziona una card per iniziare.'));
-    const lastRemote = pipelineData.controls.history.find(run => run.detail.request_breakdown || run.detail.task === 'company-batch');
-    if (lastRemote) {
-      area.append(el('strong', 'Ultima esecuzione Qwen: ' + (pipelineStates[lastRemote.status] || lastRemote.status)));
-      if (lastRemote.detail.mode === 'preview') area.append(el('p', 'Anteprima senza chiamate API. Apri il passaggio per i dettagli.', 'muted'));
-      else area.append(pipelineProgress(lastRemote.detail));
-    }
+    area.append(el('p', 'Nessun comando attivo. Seleziona una card per iniziare; le esecuzioni concluse restano nella cronologia qui sotto.'));
   }
   if ($('pipeline-dialog').open) {
     $('pipeline-start').disabled = Boolean(active || pipelineData.collection_running);
