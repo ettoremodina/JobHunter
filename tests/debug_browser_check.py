@@ -13,8 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from playwright.sync_api import expect, sync_playwright
 
-from jobhunter import debug
-from jobhunter.dashboard import create_server
+from jobhunter.exploration import debug
+from jobhunter.exploration.dashboard import create_server
 from jobhunter.workspace import Archive, settings
 
 
@@ -99,9 +99,9 @@ def main():
                 first_result.click()
                 second_result.click()
                 expect(second_result).to_have_attribute("aria-current", "true")
-                expect(page.locator("#debug-detail h3")).to_have_text("Azienda test 01")
+                expect(page.locator("#debug-detail .detail-heading h3")).to_have_text("Azienda test 01")
                 page.wait_for_timeout(500)
-                expect(page.locator("#debug-detail h3")).to_have_text("Azienda test 01")
+                expect(page.locator("#debug-detail .detail-heading h3")).to_have_text("Azienda test 01")
                 expect(page.locator("#debug-detail")).to_contain_text("Evidenze del controllo")
                 expect(page.locator("#debug-view")).to_be_visible()
                 expect(page.locator("#debug-path")).to_contain_text("Annunci senza descrizione")
@@ -131,7 +131,7 @@ def main():
                 expect(page.locator("#debug-rows")).to_be_visible()
                 page.locator("#debug-rows .debug-result-open").nth(2).click()
                 expect(page.locator("#debug-detail")).to_be_focused()
-                assert page.locator("#debug-detail").bounding_box()["top"] < 844
+                assert page.locator("#debug-detail").bounding_box()["y"] < 844
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
                 page.screenshot(path=args.output / "debug-mobile.png", full_page=True)
                 assert not errors, errors
