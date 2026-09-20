@@ -247,7 +247,7 @@ def main():
                 expect(page.locator("#refresh-pipeline")).to_be_enabled()
                 # La tab di controllo: una domanda per lente, e le righe aprono l'azienda.
                 page.get_by_role("button", name="Debug", exact=True).click()
-                page.locator(".debug-lens").first.wait_for()
+                page.locator(".debug-lens-open").first.wait_for()
                 page.locator(".debug-lens-open", has_text="Aziende senza descrizione").click()
                 expect(page.locator("#debug-rows h3")).to_have_text("Aziende senza descrizione")
                 assert page.locator("#debug-rows .debug-list li").count() >= 1
