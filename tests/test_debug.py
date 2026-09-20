@@ -6,8 +6,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from jobhunter import debug, remote_llm
-from jobhunter.languages import detect_language
+from jobhunter.evaluation import remote_llm
+from jobhunter.exploration import debug
+from jobhunter.evaluation.languages import detect_language
 from jobhunter.workspace import Archive, ROOT
 
 TESTI = {
@@ -80,8 +81,8 @@ class LensTests(unittest.TestCase):
         answer = {'summary': 'Sviluppo di modelli e collaborazione con i clienti.',
                   'facts': [{'field': 'responsibilities', 'text': 'Sviluppo di modelli', 'quote': reference}],
                   'missing_information': []}
-        with patch('jobhunter.remote_llm.api_key', return_value='dummy'), patch(
-                'jobhunter.remote_llm.request', return_value=(answer, {}, [])):
+        with patch('jobhunter.evaluation.remote_llm.api_key', return_value='dummy'), patch(
+                'jobhunter.evaluation.remote_llm.request', return_value=(answer, {}, [])):
             report = remote_llm.run(self.archive, 'job-summary', execute=True, config_path=path, record_id=oid)
         self.assertEqual(report['processed'], 1, report)
         company = self.archive.show(cid)

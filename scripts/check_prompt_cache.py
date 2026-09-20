@@ -21,8 +21,8 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from jobhunter import company_batch as cb, remote_llm as llm  # noqa: E402
-from jobhunter.selection import verdicts  # noqa: E402
+from jobhunter.evaluation import company_batch as cb, remote_llm as llm  # noqa: E402
+from jobhunter.evaluation.selection import verdicts  # noqa: E402
 from jobhunter.workspace import Archive, ROOT, settings  # noqa: E402
 
 

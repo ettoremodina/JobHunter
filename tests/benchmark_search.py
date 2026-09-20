@@ -17,7 +17,7 @@ from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from jobhunter.workspace import Archive, settings
-from jobhunter.dashboard import create_server
+from jobhunter.exploration.dashboard import create_server
 
 
 def fixture(path, companies):

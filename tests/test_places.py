@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jobhunter import places
+from jobhunter.exploration import places
 from jobhunter.workspace import Archive
 
 
@@ -32,6 +32,14 @@ class ResolveTests(unittest.TestCase):
         rows = places.of(['Kigali, Rwanda', 'Remote', 'Milano'])
         self.assertIn(('Italia', 'Milano'), [(row['country'], row['city']) for row in rows])
         self.assertEqual([row['raw'] for row in rows if row['to_map']], ['Kigali, Rwanda'])
+
+    def test_mi_exception_matches_only_the_entire_location(self):
+        """The explicit MI alias means Milano only when it is the whole location."""
+        for raw in ('MI', ' mi ', 'MI, Italia'):
+            self.assertEqual(places.resolve(raw), ('Italia', 'Milano'))
+        self.assertEqual(places.resolve('Detroit, MI'), (None, None))
+        self.assertEqual(places.resolve('MI, United States'), ('Stati Uniti', None))
+        self.assertEqual(places.of(['MI'])[0]['to_map'], 0)
 
 
 class MappingTests(unittest.TestCase):
@@ -86,6 +94,13 @@ class CacheTests(unittest.TestCase):
         self.archive.ingest([{'company_name': 'Nord', 'title': 'Data Scientist', 'location': 'Roma, Italia',
                               'source_url': 'https://example.org/4'}], 'test')
         self.assertEqual(places.refresh(self.archive), 1)
+
+    def test_mi_exception_is_searchable_as_milano(self):
+        """A raw MI location enters the same canonical city filter as Milan."""
+        self.archive.ingest([{'company_name': 'Sigla', 'title': 'Data Scientist', 'location': 'MI',
+                              'source_url': 'https://example.org/mi'}], 'test')
+        result = self.archive.search(city='Milano', country='Italia')
+        self.assertEqual({item['name'] for item in result['items']}, {'Nord', 'Sigla'})
 
     def test_unmapped_report_counts_what_the_mapping_misses(self):
         """La segnalazione elenca le località da aggiungere alla mappa, con quante volte compaiono."""

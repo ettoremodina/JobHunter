@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from jobhunter.workspace import Archive
-from jobhunter.analytics import summary
+from jobhunter.exploration.analytics import summary
 
 
 class AnalyticsTests(unittest.TestCase):

@@ -7,11 +7,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from jobhunter.workspace import Archive, settings, ROOT, search_rules_hash
-from jobhunter.selection import evaluate, saved, shortlist, filters
-from jobhunter.analytics import summary
-from jobhunter.interview import questions
-from jobhunter.dashboard import create_server
-from jobhunter.enrichment import company_input
+from jobhunter.evaluation.selection import evaluate, saved, shortlist, filters
+from jobhunter.exploration.analytics import summary
+from jobhunter.exploration.interview import questions
+from jobhunter.exploration.dashboard import create_server
+from jobhunter.evaluation.enrichment import company_input
 
 
 class SharedEvaluationTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class SharedEvaluationTests(unittest.TestCase):
                            'description': 'We build solar energy storage systems.',
                            'source_url': 'https://example.org/1'}], 'test')
                 a.search(eligibility='potential')
-            with closing(Archive(path)) as a, patch('jobhunter.selection.evaluate', wraps=evaluate) as check:
+            with closing(Archive(path)) as a, patch('jobhunter.evaluation.selection.evaluate', wraps=evaluate) as check:
                 summary(a)
                 saved(a)
                 questions(a)
@@ -59,12 +59,13 @@ class SharedEvaluationTests(unittest.TestCase):
         """Changing unrelated code leaves filters valid; changing extraction invalidates them."""
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            (root / 'jobhunter').mkdir()
+            (root / 'jobhunter/evaluation').mkdir(parents=True)
             for name in ('selection.py', 'languages.py', 'enrichment.py'):
-                (root / 'jobhunter' / name).write_text((ROOT / 'jobhunter' / name).read_text(encoding='utf-8'), encoding='utf-8')
+                target = Path('jobhunter/evaluation') / name
+                (root / target).write_text((ROOT / target).read_text(encoding='utf-8'), encoding='utf-8')
             with patch('jobhunter.workspace.ROOT', root):
                 before = search_rules_hash(filters())
-                file = root / 'jobhunter/selection.py'
+                file = root / 'jobhunter/evaluation/selection.py'
                 file.write_text(file.read_text(encoding='utf-8') + '\ndef unrelated():\n    return 2\n', encoding='utf-8')
                 self.assertEqual(search_rules_hash(filters()), before)
                 file.write_text(file.read_text(encoding='utf-8').replace('title = job.get("title", "")', 'title = job.get("title", "changed")'), encoding='utf-8')

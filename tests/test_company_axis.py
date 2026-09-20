@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from jobhunter.selection import evaluate
+from jobhunter.evaluation.selection import evaluate
 from jobhunter.workspace import Archive, now
 
 

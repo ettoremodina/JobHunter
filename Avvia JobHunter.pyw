@@ -30,7 +30,7 @@ def main():
     window.geometry('460x270')
     window.resizable(False, False)
     from jobhunter.workspace import Archive, settings
-    from jobhunter.dashboard import create_server
+    from jobhunter.exploration.dashboard import create_server
     cfg = settings()
     database = root/cfg['database']
     base = f"http://127.0.0.1:{cfg['port']}"
