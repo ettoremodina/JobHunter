@@ -99,7 +99,7 @@ def create_server(database, cfg, port=8000):
                 elif parsed.path == "/api/debug":
                     from jobhunter.exploration.debug import lenses, rows
                     payload = rows(archive, query["lens"], query.get("value", ""), int(query.get("offset", 0)),
-                                   int(query.get("limit", 50))) if query.get("lens") else lenses(archive)
+                                   int(query.get("limit", 50)), query.get("facet_set") == "1") if query.get("lens") else lenses(archive)
                 elif parsed.path == "/api/places":
                     from jobhunter.exploration.places import options
                     payload = options(archive)
