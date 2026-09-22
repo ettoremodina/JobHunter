@@ -8,10 +8,20 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 from jobhunter.acquisition.collection import postings
-from jobhunter.evaluation.selection import evaluate, requirements, saved
-from jobhunter.workspace import Archive
+from jobhunter.evaluation.selection import evaluate as evaluate_with, requirements, saved
+from jobhunter.workspace import Archive, ROOT
 from jobhunter.acquisition.descriptions import recover
 from jobhunter.operations.maintenance import reparse
+
+# Le regole vengono dal file di esempio versionato, non da quello personale di chi lancia i test:
+# questi casi presuppongono un profilo che accetta solo italiano e inglese.
+RULES = json.loads((ROOT / 'examples/config/role_filters.json').read_text(encoding='utf-8'))
+RULES['allowed_languages'] = ['Italian', 'English']
+
+
+def evaluate(job):
+    """Evaluate a job against the pinned example rules."""
+    return evaluate_with(job, RULES)
 
 
 class ProductSelectionTests(unittest.TestCase):
