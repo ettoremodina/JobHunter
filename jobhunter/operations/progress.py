@@ -1,4 +1,4 @@
-"""Read workflow checkpoints without SQLite writes, including runs started before tracking existed."""
+"""Read current workflow checkpoints without SQLite writes."""
 
 from collections import Counter
 from datetime import datetime, timezone
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 PHASES = {'listings': 'Raccolta listing', 'descriptions': 'Recupero descrizioni',
           'categories': 'Ricategorizzazione', 'coverage': 'Copertura descrizioni',
           'analytics': 'Statistiche e filtri', 'queue': 'Aggiornamento coda',
-          'finished': 'Terminato', 'post_details': 'Fasi finali: dettaglio non disponibile nel vecchio run'}
+          'finished': 'Terminato'}
 
 
 def write_checkpoint(path, report):
@@ -35,7 +35,7 @@ def write_checkpoint(path, report):
 
 
 def read_json(path):
-    """Read and close promptly; incomplete legacy reports are unavailable rather than successful."""
+    """Read and close promptly; incomplete reports are unavailable rather than successful."""
     try:
         result = json.loads(Path(path).read_text(encoding='utf-8-sig'))
         return result if isinstance(result, dict) else {}
@@ -80,17 +80,6 @@ def timestamp(value):
         return 0
 
 
-def tail(path):
-    """Read only a bounded log tail, even when the acquisition log is large."""
-    try:
-        with Path(path).open('rb') as stream:
-            stream.seek(0, 2)
-            stream.seek(max(0, stream.tell() - 65536))
-            return stream.read().decode('utf-8', errors='replace')
-    except OSError:
-        return ''
-
-
 def snapshot(root, cfg, run=None):
     """Select a run and distinguish process liveness, stage progress and useful recovered data."""
     root = Path(root)
@@ -111,10 +100,6 @@ def snapshot(root, cfg, run=None):
             return {'status': 'unavailable', 'report': str(selected), 'message': 'Report assente, illeggibile o in aggiornamento; riprovare.'}
     else:
         candidates = [(p, read_json(p)) for p in resolve(cfg['raw_directory']).glob('*-official/report.json')]
-        legacy_path = root / 'data/active-resume.json'
-        legacy = read_json(legacy_path)
-        if legacy:
-            candidates.append((legacy_path, legacy))
         # Detail runs belonging to a workflow are shown inside that workflow, not as a separate latest run.
         workflow_pids = {r.get('pid') for _, r in candidates if r.get('pid')}
         linked = {str(resolve(r['description_report'])) for _, r in candidates if r.get('description_report')}
@@ -123,15 +108,6 @@ def snapshot(root, cfg, run=None):
         if not candidates:
             return {'status': 'not_found', 'message': 'Nessun workflow o recupero descrizioni con un report disponibile.'}
         selected, report = max(candidates, key=lambda pair: timestamp(pair[1].get('started_at')))
-    legacy_meta = read_json(root / 'data/active-resume.json')
-    linked_workflow = legacy_meta.get('workflow_report') and resolve(legacy_meta['workflow_report']) == selected
-    if linked_workflow:
-        report = {**legacy_meta, **report}
-    legacy = selected.name == 'active-resume.json' or bool(linked_workflow)
-    if legacy:
-        workflow = read_json(resolve(report.get('workflow_report', 'data/nonexistent-report.json')))
-        if workflow:
-            report = {**report, **workflow}
     started = timestamp(report.get('started_at'))
     alive = process_alive(report.get('pid'))
     terminal = bool(report.get('finished_at'))
@@ -147,15 +123,6 @@ def snapshot(root, cfg, run=None):
             if matching:
                 detail_path, detail = max(matching, key=lambda pair: timestamp(pair[1].get('started_at')))
     warnings = []
-    if legacy:
-        warnings.append('Run avviato prima del monitor: alcune fasi finali non hanno checkpoint precisi.')
-        log = tail(resolve(report['stderr'])) if report.get('stderr') else ''
-        if 'Description follow-up failed' in log:
-            warnings.append('Recupero dettagli fallito nel vecchio run; il report dettagli può essere rimasto su running.')
-            if not terminal:
-                phase = 'post_details'
-        elif detail.get('finished_at') and not terminal:
-            phase = 'post_details'
     error = report.get('description_followup', {}).get('error')
     if error:
         warnings.append('Errore recupero dettagli: ' + error)

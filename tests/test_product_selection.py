@@ -98,8 +98,8 @@ class ProductSelectionTests(unittest.TestCase):
             archive.ingest([{**raw, 'source_url': 'https://example.org/3'}], 'test')
             company = archive.show(cid)
             self.assertEqual(company['status'], 'discarded')
-            # Il verdetto della pipeline resta quello dei filtri: la scelta manuale non lo riscrive.
-            self.assertEqual({job['verdict']['verdetto'] for job in company['opportunities']}, {'tieni'})
+            # La scelta manuale non trasforma il match del titolo in un giudizio di compatibilità.
+            self.assertEqual({job['verdict']['verdetto'] for job in company['opportunities']}, {'non_so'})
             self.assertEqual(saved(archive)['items'], [])
 
     def test_recovery_remembers_failures_and_refreshes_old_text(self):

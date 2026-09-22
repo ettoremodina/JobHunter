@@ -83,6 +83,10 @@ richiesta Jev quando entrambe sono pendenti. Il codice salva i due risultati con
 **Il regex marca, non elimina.** È la condizione perché i passi successivi possano
 ignorarlo quando serve (vedi §4).
 
+Il regex può soltanto produrre uno scarto certo. Un titolo nella famiglia preferita conserva
+la priorità di carriera, ma resta `non so` sull'asse ruolo: tutti i non scartati con mansioni
+leggibili passano a Jev, che è l'unico giudice semantico automatico.
+
 **Il modello remoto non è più un giudice.** Dal 20 settembre 2026 Qwen fa una cosa sola:
 scrivere le schede dei ruoli sopravvissuti e la scheda dell'azienda. Non decide se un
 annuncio si tiene e non assegna categorie. Il confine non è il prezzo, è il mestiere: **chi

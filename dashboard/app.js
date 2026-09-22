@@ -276,7 +276,7 @@ function roleVerdict(verdict) {
   if (verdict.primary) line.append(el("span", " · ruolo prioritario"));
   if (verdict.prove?.length) {
     const proof = el("details");
-    proof.append(el("summary", "Prove del verdetto"));
+    proof.append(el("summary", verdict.giudice === "jev" ? "Evidenza usata da Jev" : "Regole applicate dalla regex"));
     for (const quote of verdict.prove) proof.append(el("blockquote", String(quote)));
     line.append(proof);
   }
@@ -1284,7 +1284,7 @@ function categorySlices(categories) {
   const slices = ranked(known, 5, "Altre categorie").map(([label, value, color], index) =>
     [label, value, color === "seg-pending" ? "seg-pending" : "cat-" + (index + 1)]);
   const unclassified = categories.find(row => row.label === "Da classificare");
-  if (unclassified) slices.push(["Da classificare", unclassified.count, "track"]);
+  if (unclassified) slices.push(["Senza categoria", unclassified.count, "track"]);
   return slices;
 }
 
@@ -1297,43 +1297,166 @@ function ranked(rows, limit, restLabel = "Altre voci") {
 }
 
 let analyticsRequest = 0;
-/** Refresh read-only distributions; stale responses cannot replace a newer scope. */
+
+/** Processing answers how much work is done; it never doubles as a compatibility verdict. */
+function renderProcessing(area, rows) {
+  const section = el('section', undefined, 'metrics-block processing-block');
+  section.append(el('h3', 'Stato di elaborazione'),
+    el('p', 'Ogni riga usa la popolazione ricevuta da quel passaggio. Gli annunci bloccati non vengono confusi con quelli ancora da elaborare.', 'hint'));
+  const list = el('ol', undefined, 'processing-list');
+  for (const row of rows) {
+    const item = el('li', undefined, 'processing-row');
+    item.append(el('h4', row.label));
+    const facts = el('dl', undefined, 'processing-facts');
+    for (const [label, value, tone] of [
+      ['In ingresso', row.input, 'neutral'], ['Completati', row.completed, 'ok'],
+      ['Da elaborare', row.pending, 'info'], ['Bloccati dai dati', row.blocked, 'warn']]) {
+      const fact = el('div', undefined, 'processing-fact ' + tone);
+      fact.append(el('dt', label), el('dd', nf(value)));
+      facts.append(fact);
+    }
+    item.append(facts);
+    list.append(item);
+  }
+  section.append(list);
+  area.append(section);
+}
+
+function outcome(label, value, total, color, note = '') {
+  const item = el('li', undefined, 'decision-outcome ' + color);
+  const swatch = el('span', undefined, 'swatch ' + color);
+  swatch.setAttribute('aria-hidden', 'true');
+  item.append(swatch, el('span', label), el('strong', `${nf(value)} · ${pf(value, total)}`));
+  if (note) item.append(el('small', note));
+  return item;
+}
+
+/** A decision tree keeps the changing denominator and the responsible judge visible. */
+function renderDecisionFlow(area, flow) {
+  const section = el('section', undefined, 'metrics-block decision-block');
+  section.append(el('h3', 'Esito della compatibilità'),
+    el('p', 'La Regex può solo scartare. Gli annunci che passano ricevono un esito Jev solo quando contengono mansioni utilizzabili.', 'hint'));
+  const tree = el('div', undefined, 'decision-tree');
+  const source = el('div', undefined, 'decision-source');
+  source.append(el('span', 'Annunci analizzati'), el('strong', nf(flow.regex.base)));
+  const arrowOne = el('span', '→', 'decision-arrow'); arrowOne.setAttribute('aria-hidden', 'true');
+  const regex = el('section', undefined, 'judge-node regex-node');
+  const regexHeading = el('div', undefined, 'judge-heading');
+  regexHeading.append(el('h4', 'Regex'), el('span', `su ${nf(flow.regex.base)} annunci`));
+  regex.append(regexHeading);
+  const regexOutcomes = el('ul', undefined, 'decision-outcomes');
+  regexOutcomes.append(
+    outcome('Scartati', flow.regex.discarded, flow.regex.base, 'seg-exclude'),
+    outcome('Passano a Jev', flow.regex.forwarded, flow.regex.base, 'seg-in', 'Solo questo ramo prosegue'));
+  regex.append(regexOutcomes);
+  const arrowTwo = el('span', '→', 'decision-arrow branch-arrow'); arrowTwo.setAttribute('aria-hidden', 'true');
+  const jev = el('section', undefined, 'judge-node jev-node');
+  const jevHeading = el('div', undefined, 'judge-heading');
+  jevHeading.append(el('h4', 'Jev'), el('span', `${nf(flow.jev.base)} annunci con esito`));
+  jev.append(jevHeading);
+  const jevOutcomes = el('ul', undefined, 'decision-outcomes');
+  jevOutcomes.append(
+    outcome('Compatibili', flow.jev.compatible, flow.jev.base, 'seg-keep'),
+    outcome('Scartati', flow.jev.discarded, flow.jev.base, 'seg-exclude'),
+    outcome('Da revisionare', flow.jev.review, flow.jev.base, 'seg-review'));
+  jev.append(jevOutcomes);
+  if (flow.overall.without_jev_outcome) {
+    const missing = el('p', undefined, 'judge-gap');
+    missing.append(el('strong', nf(flow.overall.without_jev_outcome)), ' annunci senza esito Jev');
+    const reasons = [];
+    if (flow.overall.jev_pending) reasons.push(`${nf(flow.overall.jev_pending)} ancora da elaborare`);
+    if (flow.overall.jev_blocked) reasons.push(`${nf(flow.overall.jev_blocked)} ${flow.overall.jev_blocked === 1 ? 'bloccato' : 'bloccati'} perché non hanno mansioni utilizzabili`);
+    if (reasons.length) missing.append(': ' + reasons.join(' e ') + '.');
+    jev.append(missing);
+  }
+  tree.append(source, arrowOne, regex, arrowTwo, jev);
+
+  const overall = el('dl', undefined, 'overall-outcome');
+  const overallBase = el('div');
+  overallBase.append(el('dt', `Esito finale su ${nf(flow.overall.base)} annunci già decisi`), el('dd', ''));
+  overall.append(overallBase);
+  for (const [label, value, color] of [['Compatibili', flow.overall.compatible, 'seg-keep'],
+                                       ['Scartati da Regex o Jev', flow.overall.discarded, 'seg-exclude'],
+                                       ['Da revisionare con Jev', flow.overall.review, 'seg-review']]) {
+    const fact = el('div', undefined, color);
+    const swatch = el('span', undefined, 'swatch ' + color); swatch.setAttribute('aria-hidden', 'true');
+    const term = el('dt'); term.append(swatch, label);
+    fact.append(term, el('dd', nf(value)));
+    overall.append(fact);
+  }
+  section.append(tree, overall,
+    el('p', 'Questo totale somma gli scarti della Regex e gli esiti già prodotti da Jev. Gli annunci senza esito Jev restano fuori.', 'hint overall-note'));
+  area.append(section);
+}
+
+function renderCompanyFlow(area, flow) {
+  const section = el('section', undefined, 'metrics-block company-flow compatible-company-map');
+  section.append(el('h3', 'Dagli annunci compatibili alle aziende'));
+  const bridge = el('p', undefined, 'company-bridge');
+  bridge.append(el('strong', nf(flow.compatible_jobs)), ' annunci compatibili appartengono a ',
+    el('strong', nf(flow.companies_with_compatible_jobs)), ' aziende distinte. Le righe sotto sommano esattamente a questo totale.');
+  section.append(bridge);
+  const grid = el('div', undefined, 'metrics-grid');
+  grid.append(
+    metricCard('Aziende con almeno un annuncio compatibile', flow.companies_with_compatible_jobs, 'aziende', [
+      ['Tier A · azienda e ruolo compatibili', flow.compatible_company_tiers.A, 'seg-keep'],
+      ['Tier B · esperienza · ruolo prioritario', flow.compatible_company_tiers['B-esperienza'], 'seg-review'],
+      ['Senza categoria aziendale', flow.compatible_company_tiers['evidenza-mancante'], 'seg-pending'],
+      ['Fuori selezione aziendale', flow.compatible_company_tiers.scarto, 'seg-exclude']],
+      'Tier B attesa non compare qui: per definizione non ha un annuncio compatibile.'));
+  section.append(grid);
+  area.append(section);
+
+  const all = el('section', undefined, 'metrics-block all-company-map');
+  all.append(el('h3', 'Mappa di tutte le aziende'),
+    el('p', `Qui il conteggio riparte da tutte le ${nf(flow.total)} aziende dell’archivio. Non è il seguito delle ${nf(flow.companies_with_compatible_jobs)} aziende sopra.`, 'hint'));
+  const allGrid = el('div', undefined, 'metrics-grid');
+  allGrid.append(
+    metricCard('Copertura della categoria aziendale', flow.total, 'aziende', [
+      ['Categoria assegnata', flow.categorized, 'seg-in'],
+      ['Senza categoria', flow.unclassified, 'seg-pending']],
+      'La Regex giudica gli annunci e non determina la categoria dell’azienda. Una categoria può mancare perché i dati non bastano o perché la valutazione del settore non è conclusa.'),
+    metricCard('Tier', flow.total, 'aziende', [
+      ['Tier A · azienda e ruolo compatibili', flow.tiers.A, 'seg-keep'],
+      ['Tier B · attesa · nessun ruolo compatibile', flow.tiers['B-attesa'], 'seg-in'],
+      ['Tier B · esperienza · ruolo prioritario', flow.tiers['B-esperienza'], 'seg-review'],
+      ['Senza categoria aziendale', flow.tiers['evidenza-mancante'], 'seg-pending'],
+      ['Fuori selezione', flow.tiers.scarto, 'seg-exclude']],
+      'Queste cinque righe sono una partizione completa di tutte le aziende.'));
+  all.append(allGrid);
+  area.append(all);
+}
+
+/** Refresh metrics; stale responses cannot replace a newer scope. */
 async function loadAnalytics() {
   const request = ++analyticsRequest;
   $("analytics-status").textContent = "Calcolo delle metriche in corso…";
   $("analytics-content").replaceChildren();
   try {
-    // Il percorso vive nel monitor della pipeline e riguarda sempre tutto l'archivio: le due letture
-    // sono indipendenti, e un funnel non disponibile non deve togliere le distribuzioni.
-    const [data, pipeline] = await Promise.all([
-      api("/api/analytics?" + new URLSearchParams({eligibility: $("analytics-scope").value})),
-      api("/api/pipeline").catch(() => null)]);
+    const data = await api("/api/analytics?" + new URLSearchParams({eligibility: $("analytics-scope").value}));
     if (request !== analyticsRequest) return;
-    $("analytics-status").textContent = `${nf(data.total)} annunci · ${nf(data.companies)} aziende · Aggiornato alle ${new Date(data.generated_at).toLocaleTimeString("it-IT")}`;
+    $("analytics-status").textContent = `Archivio: ${nf(data.archive_total)} annunci · ${nf(data.archive_companies)} aziende · Aggiornato alle ${new Date(data.generated_at).toLocaleTimeString("it-IT")}`;
     const content = $("analytics-content");
-    renderJourney(content, pipeline?.funnel);
-    if (!data.total) { content.append(el("p", "Nessun annuncio in questa selezione.")); return; }
+    renderProcessing(content, data.processing);
+    renderDecisionFlow(content, data.compatibility);
+    renderCompanyFlow(content, data.company_flow);
+    if (!data.total) { content.append(el("p", "Nessun annuncio nell’ambito scelto.")); return; }
 
     const scoped = el("section", undefined, "metrics-block");
     scoped.append(el("h3", "Qualità e composizione della selezione"));
     scoped.append(el("p", $("analytics-scope").value
-      ? "Questa sezione segue il filtro qui sopra; il percorso resta sull'intero archivio."
+      ? `Questa sezione segue il filtro scelto: ${nf(data.total)} annunci in ${nf(data.companies)} aziende.`
       : "Conteggi su annunci univoci. La categoria è il settore dell'azienda, non la mansione. Un campo presente non ne garantisce correttezza o attualità.", "hint"));
-    const selection = Object.fromEntries(data.selection.map(row => [row.label, row.count]));
     const grid = el("div", undefined, "metrics-grid");
     grid.append(
       metricCard("Completezza dei dati", data.total, "annunci", [
-        ["Con descrizione completa", data.health.with_description, "seg-keep"],
+        ["Con descrizione presente", data.health.with_description, "seg-in"],
+        ["Con mansioni utilizzabili", data.health.with_usable_description, "seg-keep"],
         ["Con categoria aziendale", data.health.categorized, "seg-keep"],
         ["Con paese riconosciuto", data.health.country_known, "seg-in"],
         ["Con salario dichiarato", data.health.with_salary, "seg-review"],
         ["Con data di pubblicazione", data.health.with_posted_date, "seg-review"]],
-        "Ogni anello è la parte presente: il tratto vuoto è il dato mancante.", gauges),
-      metricCard("Esito dei filtri locali", data.total, "annunci", [
-        ["Potenzialmente compatibili", selection.potential || 0, "seg-keep"],
-        ["Da verificare", selection.review || 0, "seg-review"],
-        ["Esclusi dai filtri locali", selection.excluded || 0, "seg-gone"]],
-        "Le tre quote sommano al totale: è la tappa 3 del percorso, ristretta a questa selezione.", donutWithLegend),
+        "Ogni anello mostra la quota presente; il tratto vuoto è il dato mancante.", gauges),
       metricCard("Categorie aziendali", data.total, "annunci", categorySlices(data.categories),
         "Categoria dell'azienda che pubblica, contata una volta per annuncio.", donutWithLegend));
     scoped.append(grid);
@@ -1370,7 +1493,7 @@ const pipelineAbout = {
   collection: ['Annunci', 'Scarica gli annunci dalle fonti configurate e li salva in archivio. Non classifica e non scarta nulla.'],
   normalization: ['Annunci → aziende', 'Automatico a ogni importazione: uniforma i campi e raggruppa gli annunci sotto la loro azienda. Non classifica e non scarta.'],
   descriptions: ['Aziende, tramite i loro annunci', 'Scarica il testo completo degli annunci, a partire da uno per ogni azienda ancora senza evidenza. Non giudica: prepara il materiale per i giudici.'],
-  filters: ['Annunci', 'Regole locali su titolo e descrizione, gratis. Classifica ogni annuncio: compatibile, escluso o «non so». Marca, non elimina: gli esclusi restano in archivio.'],
+  filters: ['Annunci', 'Regole locali su titolo e descrizione, gratis. Possono soltanto scartare; tutti gli altri annunci passano a Jev quando hanno mansioni utilizzabili. Gli esclusi restano in archivio.'],
   jev: ['Annunci e aziende', 'Una richiesta può decidere il ruolo e assegnare il settore dell’azienda. Jev risponde a domande indipendenti; il codice applica le soglie e salva i risultati separatamente. Non sovrascrive una categoria scelta in chat.'],
   remote: ['Aziende e annunci', 'Una chiamata a Qwen per azienda, a pagamento. È l’unico passaggio che scrive, e l’unico che non giudica: riassume gli annunci sopravvissuti di Tier A e B e compone la scheda dell’azienda. Verdetti e categorie arrivano già decisi dai passaggi precedenti.'],
   queue: ['Aziende', 'Incrocia asse ruolo e asse azienda nel Tier e mette in coda le aziende di Tier A e B. Non scarta: ordina e propone.'],
@@ -1421,7 +1544,11 @@ async function loadPipeline() {
       card.append(stepMeasure(step));
       const stamp = action?.last_success || step.updated_at;
       // Mentre gira, l'orario che conta e' quello di avvio, e lo scrive il pannello qui sotto.
-      if (!running) card.append(el('span', stamp ? 'Ultima esecuzione: ' + pipelineDate(stamp) : 'Mai eseguito da questo pannello', 'pipeline-time'));
+      if (!running) {
+        const stampLabel = action?.last_success ? 'Ultima esecuzione dalla dashboard' :
+          step.id === 'remote' ? 'Ultima scheda salvata' : 'Ultimo aggiornamento';
+        card.append(el('span', stamp ? `${stampLabel}: ${pipelineDate(stamp)}` : 'Mai eseguito da questo pannello', 'pipeline-time'));
+      }
       card.append(el('span', action ? 'Parametri e avvio' : 'Dettagli del passaggio', 'pipeline-affordance'));
       card.addEventListener('click', () => openPipeline(step.id));
       row.append(card);
@@ -1447,7 +1574,6 @@ async function loadPipeline() {
       list.append(row);
     }
     renderPipelineActivity();
-    renderPipelineHandoff(data.funnel?.handoff);
     $('pipeline-runs').replaceChildren();
     for (const run of data.controls.history) {
       const button = el('button', `${data.controls.actions[run.step]?.label || 'Sequenza'} · ${pipelineStates[run.status]} · ${pipelineDate(run.started_at)}`, 'pipeline-history');
@@ -1466,30 +1592,6 @@ async function loadPipeline() {
       if (!$('pipeline-view').hidden || $('pipeline-dialog').open) loadPipeline().catch(error => message(error.message, true));
     }, (pipelineData?.controls.poll_seconds || 5) * 1000);
   }
-}
-
-/** Summarize current archive work without promising which records a future paid run will submit. */
-function renderPipelineHandoff(handoff) {
-  const area = $('pipeline-handoff');
-  const heading = $('pipeline-handoff-title');
-  area.replaceChildren(heading);
-  if (!handoff) {
-    area.append(el('p', 'Riepilogo operativo non disponibile.', 'hint'));
-    return;
-  }
-  const counts = handoff.counts || {};
-  const facts = el('dl', undefined, 'pipeline-handoff-facts');
-  for (const [label, value, note] of [
-    ['Candidati a Jev', counts.jev_ready, 'Il comando applicherà ancora limiti e vincoli del payload.'],
-    ['Indecisi dopo Jev', counts.jev_review, 'Nessun giudice automatico viene dopo: restano a te.'],
-    ['Bloccati dai dati', counts.blocked, 'Serve una descrizione utilizzabile prima del giudizio semantico.'],
-    ['Da aggiornare o verificare', counts.stale, 'Testo, regole, profilo o configurazione non coincidono più.']]) {
-    facts.append(el('dt', label));
-    const detail = el('dd');
-    detail.append(el('strong', nf(value || 0)), el('small', note));
-    facts.append(detail);
-  }
-  area.append(facts, el('p', 'Sono conteggi dell’archivio corrente, non chiamate API garantite.', 'hint'));
 }
 
 /** Render a proportional bar with a single labelled count for every share, including zeroes. */
@@ -1538,141 +1640,40 @@ dal nulla: e' esattamente il punto in cui il lettore perde il filo fra una card 
 function stepMeasure(step) {
   const box = el('div', undefined, 'pipeline-measure');
   if (step.inflow) box.append(el('p', step.inflow, 'pipeline-inflow'));
-  if (step.total !== null && step.total > 0) {
-    // Un passaggio che si ferma per informazione mancante ha tre quote, non due: le dichiara lui.
-    // La barra usa `base`: dove una quota non e' lavorabile, il totale disegnato non e' il denominatore
-    // della copertura, e sommare le quote contro quest'ultimo le disegnerebbe piu' larghe del vero.
-    box.append(pipelineShares(step.measure || '', step.base ?? step.total, step.parts || [
-      ['seg-in', step.done_label, step.done],
-      ['seg-pending', step.rest_label || 'Da elaborare', step.pending ?? Math.max(0, step.total - step.done)]]));
+  if (step.workloads?.length) {
+    const list = el('div', undefined, 'pipeline-workloads');
+    for (const work of step.workloads) {
+      const item = el('section', undefined, 'pipeline-workload');
+      const heading = el('div', undefined, 'pipeline-workload-heading');
+      heading.append(el('h4', work.label), el('strong', `${nf(work.completed)} / ${nf(work.total)}`));
+      const counts = el('dl', undefined, 'pipeline-work-counts');
+      counts.append(el('dt', 'Completate'), el('dd', nf(work.completed)),
+        el('dt', 'Da elaborare'), el('dd', nf(Math.max(0, work.total - work.completed))));
+      item.append(heading, el('p', work.note, 'hint'), counts);
+      list.append(item);
+    }
+    box.append(list);
+  } else if (step.total !== null && step.total > 0) {
+    const facts = el('dl', undefined, 'pipeline-work-counts');
+    for (const [label, value] of [
+      ['Completati', step.done],
+      ['Da elaborare', step.pending ?? Math.max(0, step.total - step.done)],
+      ['Bloccati dai dati', Math.max(0, (step.base ?? step.total) - step.total)]]) {
+      if (!value && label === 'Bloccati dai dati') continue;
+      facts.append(el('dt', label), el('dd', nf(value)));
+    }
+    box.append(facts);
   } else {
     box.append(el('strong', Number(step.done || 0).toLocaleString('it-IT') + ' ' + step.done_label));
   }
-  // Un passaggio che lavora su due popolazioni ne mostra due: una sola barra racconta meta' lavoro.
-  for (const bar of step.extra || []) box.append(pipelineShares(bar.title, bar.total, bar.parts));
   if (step.scope) box.append(el('small', step.scope));
   return box;
 }
 
-/** Il percorso come sequenza di barre tutte larghe uguali: il denominatore non cambia mai da una tappa
-all'altra, percio' due quote di tappe diverse si confrontano a occhio senza rifare il conto.
-
-La fascia scura a sinistra e' chi e' gia' uscito nelle tappe precedenti: cresce verso destra riga dopo
-riga, e quel bordo che scivola e' il funnel. Il colore non porta mai da solo un'informazione: ogni
-numero e' scritto nella barra quando ci sta, e comunque nella legenda della riga.
-*/
-function renderJourney(area, funnel) {
-  const stages = funnel?.percorso;
-  if (!stages?.length) {
-    area.append(el('p', 'Percorso non disponibile. Riavvia il server al termine dell’esecuzione.', 'hint'));
-    return;
-  }
-  const block = el('section', undefined, 'metrics-block journey');
-  block.append(el('h3', 'Il percorso degli annunci'));
-  block.append(el('p', 'Il percorso riguarda sempre tutto l’archivio, anche quando il filtro qui sopra è attivo. Ogni barra dichiara la propria unità; l’ultima passa dagli annunci alle aziende.', 'hint'));
-  if (funnel.handoff) {
-    const handoff = el('section', undefined, 'journey-handoff');
-    handoff.append(el('h4', 'Cosa arriva, si ferma o è già deciso prima di una nuova chiamata'));
-    handoff.append(pipelineShares('Partizione corrente · annunci', funnel.handoff.base, funnel.handoff.parts));
-    handoff.append(el('p', funnel.handoff.note, 'hint'));
-    block.append(handoff);
-  }
-  const key = el('ul', undefined, 'funnel-legend journey-key');
-  for (const [color, label] of [['seg-gone', 'Usciti'], ['seg-keep', 'Compatibili'], ['seg-in', 'In gioco'],
-                               ['seg-review', 'Ancora da decidere'], ['seg-pending', 'Fermi: manca un’informazione']]) {
-    const item = el('li');
-    const swatch = el('span', undefined, 'swatch ' + color);
-    swatch.setAttribute('aria-hidden', 'true');
-    item.append(swatch, el('span', label));
-    key.append(item);
-  }
-  block.append(key);
-
-  const W = 1000, BAR = 42, ROW = 82, TOP = 26;
-  const chart = svgNode('svg', {viewBox: `0 0 ${W} ${TOP + stages.length * ROW}`, class: 'funnel-chart journey-chart', role: 'img'});
-  let previous = null;
-  for (const [index, stage] of stages.entries()) {
-    const base = stage.base || 0;
-    const label = TOP + index * ROW, top = label + 10;
-    chart.append(svgNode('text', {x: 0, y: label, class: 'stage-label'}, stage.title));
-    chart.append(svgNode('text', {x: W, y: label, class: 'stage-total', 'text-anchor': 'end'}, `${nf(base)} ${stage.unit}`));
-    chart.append(svgNode('rect', {x: 0, y: top, width: W, height: BAR, rx: 5, class: 'track'}));
-    let x = 0, gone = 0;
-    for (const [color, text, value] of stage.parts) {
-      const width = base > 0 ? (value / base) * W : 0;
-      if (width >= 0.5) {
-        // Il tooltip dice solo la quota sotto il puntatore: il riepilogo intero sta nel riquadro espandibile.
-        const seg = svgNode('rect', {x, y: top, width, height: BAR, class: 'seg ' + color});
-        seg.append(svgNode('title', {}, `${stage.title} · ${text}: ${nf(value)} ${stage.unit} (${pf(value, base)})`));
-        chart.append(seg);
-        const middle = x + width / 2;
-        if (width >= 46) chart.append(svgNode('text', {x: middle, y: top + (width >= 84 ? 19 : BAR / 2 + 5), class: 'seg-label', 'text-anchor': 'middle'}, nf(value)));
-        if (width >= 84) chart.append(svgNode('text', {x: middle, y: top + 33, class: 'seg-share', 'text-anchor': 'middle'}, pf(value, base)));
-      }
-      x += width;
-      if (color === 'seg-gone') gone = x;
-    }
-    // Il bordo di chi e' uscito scivola verso destra: la riga che segue eredita il taglio della
-    // precedente. Dove il taglio non c'era ancora non si disegna nulla: una diagonale lunga tutta la
-    // pagina direbbe solo che la tappa prima non escludeva nessuno, e lo dice gia' la barra piena.
-    if (gone > 0 && previous > 0 && !stage.unit_change)
-      chart.append(svgNode('line', {x1: previous, y1: top - ROW + BAR, x2: gone, y2: top, class: 'gone-edge'}));
-    previous = gone;
-  }
-  chart.setAttribute('aria-label', stages.map(stage =>
-    `${stage.title}: ${nf(stage.base)} ${stage.unit}, di cui ` +
-    stage.parts.map(([, text, value]) => `${nf(value)} ${text}`).join(', ')).join('. '));
-  const scroll = el('div', undefined, 'journey-scroll');
-  scroll.append(chart);
-  block.append(scroll);
-
-  const detail = el('details', undefined, 'journey-detail');
-  detail.append(el('summary', 'I numeri di ogni tappa, con le etichette per esteso'));
-  for (const stage of stages) {
-    detail.append(pipelineShares(`${stage.title} · ${stage.unit}`, stage.base, stage.parts));
-    if (stage.note) detail.append(el('p', stage.note, 'muted'));
-  }
-  if (funnel.basis) detail.append(el('p', funnel.basis, 'muted'));
-  block.append(detail);
-
-  const axes = el('section', undefined, 'metrics-block');
-  axes.append(el('h3', 'Due assi indipendenti → Tier'),
-    el('p', 'Ruolo e azienda si giudicano separatamente; il tier nasce dal loro incrocio e si ricalcola a ogni lettura.', 'hint'));
-  const axesGrid = el('div', undefined, 'metrics-grid');
-  axesGrid.append(
-    axisCard('Asse ruolo · annunci', funnel.archive.jobs, [
-      ['seg-keep', 'Compatibili', funnel.ruolo.tieni],
-      ['seg-review', 'Da decidere', funnel.ruolo.non_so],
-      ['seg-gone', 'Scartati', funnel.ruolo.scarta]]),
-    axisCard('Asse azienda · aziende', funnel.archive.companies, [
-      ['seg-keep', 'Interessanti', funnel.azienda.interessante],
-      ['seg-pending', 'Evidenza mancante', funnel.azienda.evidenza_mancante],
-      ['seg-gone', 'Fuori preferenze', funnel.azienda.non_interessante]]),
-    axisCard('Tier dagli esiti salvati · aziende', funnel.archive.companies, [
-      ['seg-keep', 'A · azienda e ruolo sì', funnel.tier.A],
-      ['seg-in', 'B · attesa di un ruolo', funnel.tier['B-attesa']],
-      ['seg-review', 'B · solo esperienza', funnel.tier['B-esperienza']],
-      ['seg-pending', 'Evidenza mancante', funnel.tier['evidenza-mancante']],
-      ['seg-gone', 'Scarto', funnel.tier.scarto]]),
-    axisCard('Origine dei giudizi · annunci', funnel.archive.jobs, [
-      ['seg-in', 'Regex', funnel.giudici?.regex || 0],
-      ['seg-review', 'Jev', funnel.giudici?.jev || 0],
-      ['seg-pending', 'Senza giudizio', funnel.giudici?.nessuno || 0]]));
-  axes.append(axesGrid);
-  area.append(block, axes);
-}
-
-/** Una partizione completa: la barra impilata per il colpo d'occhio, i metri sotto per i confronti fini. */
-function axisCard(title, total, parts) {
-  const section = el('section', undefined, 'metric-section');
-  section.append(pipelineShares(title, total, parts, false));
-  for (const [color, label, value] of parts) section.append(meter(label, value, total, color));
-  return section;
-}
-
 /** Read the two live progress shapes: companies for Qwen, single records for the descriptions. */
 function progressOf(detail) {
-  if (detail.total_companies !== undefined) return {done: detail.completed_companies || 0, total: detail.total_companies, label: 'Aziende attraversate'};
+  if (detail.total_companies !== undefined) return {done: detail.completed_companies || 0, total: detail.total_companies,
+    label: detail.queue_scope === 'tier-a-b' ? 'Aziende Tier A/B' : 'Aziende archivio attraversate'};
   if (detail.phase === 'descriptions' && detail.total) return {done: detail.done || 0, total: detail.total, label: 'Annunci elaborati'};
   if (detail.phase === 'company_profile' && detail.total) return {done: detail.done || 0, total: detail.total, label: 'Aziende esaminate'};
   return null;
@@ -1692,9 +1693,8 @@ function etaValue(detail, startedAt) {
 
 /** Show run-only consumption as labelled facts; cached records never masquerade as paid requests. */
 function pipelineProgress(detail, startedAt) {
-  const c = detail.counts || {}, u = detail.usage || {}, b = detail.request_breakdown;
+  const c = detail.counts || {}, u = detail.usage || {};
   const n = value => Number(value || 0).toLocaleString('it-IT');
-  const modern = detail.task === 'company-batch';
   let rows;
   if (detail.phase === 'descriptions' && detail.total) {
     rows = [['Annunci elaborati', `${n(detail.done)} / ${n(detail.total)}`, `${n(detail.workers)} recuperi contemporanei`],
@@ -1703,21 +1703,20 @@ function pipelineProgress(detail, startedAt) {
     rows = [['Aziende esaminate', `${n(detail.done)} / ${n(detail.total)}`, 'ogni strada provata resta registrata'],
       ['Descrizioni trovate', n(detail.trovata), 'scheda aggregatore, sito aziendale o annuncio']];
   } else {
+    const companyLabel = detail.queue_scope === 'tier-a-b' ? 'Aziende Tier A/B' : 'Aziende archivio attraversate';
+    const companyHint = detail.queue_scope === 'tier-a-b'
+      ? 'solo la coda eleggibile; include cache e schede già presenti'
+      : 'esecuzione avviata con la vecchia coda; include aziende poi saltate';
     rows = [
-      ['Aziende attraversate', `${n(detail.completed_companies)} / ${n(detail.total_companies)}`, 'comprese quelle saltate senza chiamata'],
-      ['Schede dei ruoli', modern ? `${n(c.saved_summaries)} / ${n(c.summary_requests)}` : b ? `${n(b.validated_jobs)} / ${n(b.submitted_jobs)}` : '—',
-        modern || b ? 'schede salvate su ruoli inviati' : 'non registrato dalla vecchia versione'],
-      ['Schede aziendali', modern ? `${n(c.saved_company_cards)} / ${n(c.company_requests)}` : '—',
+      [companyLabel, `${n(detail.completed_companies)} / ${n(detail.total_companies)}`, companyHint],
+      ['Schede dei ruoli', `${n(c.saved_summaries)} / ${n(c.summary_requests)}`,
+        'schede salvate su ruoli inviati'],
+      ['Schede aziendali', `${n(c.saved_company_cards)} / ${n(c.company_requests)}`,
         'una per azienda di Tier A o B, indipendente dai ruoli'],
-      ['Riusate dalla cache', modern ? n(c.cached_summaries) : n(c.cached), 'schede già valide: nessuna nuova chiamata'],
-      ['Chiamate API', modern ? `${n(c.api_calls)} per ${n(c.api_companies)} aziende` : b ? n(b.calls) : '—',
-        modern && c.rejected_companies ? `${n(c.rejected_companies)} con errore o risposta rifiutata` : 'una per azienda'],
+      ['Riusate dalla cache', n(c.cached_summaries), 'schede già valide: nessuna nuova chiamata'],
+      ['Chiamate API', `${n(c.api_calls)} per ${n(c.api_companies)} aziende`,
+        c.rejected_companies ? `${n(c.rejected_companies)} con errore o risposta rifiutata` : 'una per azienda'],
       ['Token consumati', n(u.total_tokens), `${n(u.prompt_tokens)} input + ${n(u.completion_tokens)} output`]];
-    // Le esecuzioni salvate prima del 20 settembre 2026 portano ancora i verdetti: vanno mostrate
-    // come sono state, non riscritte con i conteggi di oggi.
-    if (c.evaluated_jobs !== undefined) rows.splice(1, 0,
-      ['Annunci valutati', `${n(c.evaluated_jobs)} / ${n(c.submitted_jobs)}`, 'quando questo passaggio giudicava ancora'],
-      ['Esiti di allora', `${n(c.kept_jobs)} · ${n(c.review_jobs)} · ${n(c.remote_excluded)}`, 'da tenere · da verificare · esclusioni proposte']);
     if (c.unreadable_jobs) rows.push(['Senza mansioni leggibili', n(c.unreadable_jobs), 'niente da riassumere: mai inviati']);
     if (c.rejected_jobs) rows.push(['Annunci scartati dalla risposta', n(c.rejected_jobs), 'il resto della chiamata è stato salvato']);
     if (c.deferred_companies) rows.push(['Aziende oltre i limiti', n(c.deferred_companies), 'nessuna chiamata: da riprendere']);
@@ -1730,14 +1729,6 @@ function pipelineProgress(detail, startedAt) {
     panel.append(pipelineShares(progress.label, progress.total, [
       ['seg-in', 'Elaborati', progress.done], ['seg-pending', 'Rimanenti', Math.max(0, progress.total - progress.done)]]));
     rows = rows.filter(([label]) => label !== progress.label);
-  }
-  // La barra dei verdetti resta solo per le esecuzioni che i verdetti li producevano davvero.
-  if (b || c.evaluated_jobs !== undefined) {
-    const outcomes = [['seg-keep', 'Da tenere', b ? b.keep : c.kept_jobs],
-      ['seg-review', 'Da verificare', b ? b.review : c.review_jobs],
-      ['seg-exclude', 'Esclusioni proposte', b ? b.exclude : c.remote_excluded]];
-    panel.append(pipelineShares('Esiti di allora · annunci', outcomes.reduce((sum, part) => sum + (part[2] || 0), 0), outcomes));
-    rows = rows.filter(([label]) => label !== 'Esiti di allora');
   }
   const list = el('dl', undefined, 'run-facts');
   if (detail.company_name) panel.append(el('p', detail.company_name));
@@ -1788,11 +1779,12 @@ function pipelineResult(run) {
   container.replaceChildren();
   const detail = run.detail || {};
   if (detail.message) container.append(el('p', detail.message));
-  if (detail.total_companies !== undefined) container.append(el('p', `${detail.completed_companies} / ${detail.total_companies} aziende attraversate, incluse quelle saltate`));
+  if (detail.total_companies !== undefined) container.append(el('p', detail.queue_scope === 'tier-a-b'
+    ? `${detail.completed_companies} / ${detail.total_companies} aziende Tier A/B completate, incluse quelle già in cache`
+    : `${detail.completed_companies} / ${detail.total_companies} aziende dell’archivio attraversate; questa esecuzione usa la vecchia coda`));
   if (detail.task === 'company-batch') {
     if (detail.mode === 'preview') container.append(el('p', `Anteprima: ${detail.counts?.planned_api_calls || 0} chiamate aziendali previste per ${detail.counts?.planned_summaries || 0} schede di ruolo e ${detail.counts?.planned_company_cards || 0} schede aziendali. Nessuna chiamata API effettuata, nessun costo.`));
     else container.append(pipelineProgress(detail));
-  } else if (detail.request_breakdown) { container.append(pipelineProgress(detail));
   } else if (detail.counts) container.append(el('p', `Richieste previste: ${detail.counts.selected || 0} · Risultati salvati: ${detail.counts.processed || 0} · Già in cache: ${detail.counts.cached || 0}`));
   if (detail.usage) container.append(el('p', `Token: ${detail.usage.total_tokens || 0} · Costo API: ${detail.usage.cost === undefined ? 'non restituito dal provider' : '$' + detail.usage.cost.toFixed(6)}`));
   if (detail.counts?.requests_without_cost) container.append(el('p', `Costo incompleto: ${detail.counts.requests_without_cost} risposte non riportano il costo. Controlla il consuntivo LLM remoto.`, 'error'));
@@ -1804,7 +1796,7 @@ function pipelineResult(run) {
 /** Build native controls from server-provided limits, with an explicit paid mode. */
 function pipelineField(key, scope, step) {
   const data = pipelineData.controls;
-  const labels = {source: 'Fonte', limit: step === 'jev' ? 'Numero massimo di richieste Jev' : 'Numero massimo di annunci', workers: step === 'remote' ? 'Chiamate API contemporanee' : 'Recuperi contemporanei', all: step === 'jev' ? 'Tutti i ruoli e le aziende eleggibili' : 'Tutte le descrizioni recuperabili', refresh_stale: 'Aggiorna anche descrizioni scadute', force: 'Riprova gli errori, rispettando i blocchi della fonte', revisit: 'Rivedi anche le aziende già classificate', company_limit: 'Numero di aziende del campione', all_companies: "Tutte le aziende dell'archivio", mode: step === 'jev' ? 'Modalità Jev' : 'Modalità LLM remoto'};
+  const labels = {source: 'Fonte', limit: step === 'jev' ? 'Numero massimo di richieste Jev' : 'Numero massimo di annunci', workers: step === 'remote' ? 'Chiamate API contemporanee' : 'Recuperi contemporanei', all: step === 'jev' ? 'Tutti i ruoli e le aziende eleggibili' : 'Tutte le descrizioni recuperabili', refresh_stale: 'Aggiorna anche descrizioni scadute', force: 'Riprova gli errori, rispettando i blocchi della fonte', revisit: 'Rivedi anche le aziende già classificate', company_limit: 'Numero di aziende Tier A/B del campione', all_companies: 'Tutte le aziende Tier A e B', mode: step === 'jev' ? 'Modalità Jev' : 'Modalità LLM remoto'};
   const label = el('label', labels[key]);
   let input;
   if (key === 'source' || key === 'mode') {

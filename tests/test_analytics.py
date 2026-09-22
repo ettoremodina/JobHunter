@@ -1,4 +1,5 @@
-"""Metrics count roles, preserve missing facts and deduplicate geographic membership."""
+"""Metrics separate processing coverage, judge outcomes and archive composition."""
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,11 @@ class AnalyticsTests(unittest.TestCase):
                 {'company_name': 'Example', 'title': 'Senior Developer', 'source_url': 'https://example.org/2', 'locations': ['Remote']},
                 {'company_name': 'Other', 'title': 'Software Developer', 'source_url': 'https://example.org/3', 'locations': ['San Jose, CA']},
             ], 'test')
+            archive.evaluations()
+            first = archive.db.execute("SELECT id FROM opportunities WHERE json_extract(data,'$.description')!=''").fetchone()[0]
+            archive.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
+                               ('jev:selection', first, 'source', 'key',
+                                json.dumps({'result': {'decision': 'keep'}}), 'test', '2026-01-01'))
             result = summary(archive)
             self.assertEqual(result['total'], 3)
             self.assertEqual(result['health']['with_description'], 1)
@@ -25,5 +31,15 @@ class AnalyticsTests(unittest.TestCase):
             # «Remote» invece non è un luogo e resta non determinato.
             self.assertEqual(result['health']['country_known'], 2)
             self.assertEqual({r['label']: r['count'] for r in result['countries']}, {'Italia': 1, 'Francia': 1, 'Stati Uniti': 1, 'Non determinato': 1})
+            self.assertEqual(result['compatibility']['regex'], {'base': 3, 'discarded': 1, 'forwarded': 2})
+            self.assertEqual(result['compatibility']['jev'], {'base': 1, 'compatible': 1, 'discarded': 0, 'review': 0})
+            self.assertEqual(result['compatibility']['overall']['without_jev_outcome'], 1)
+            self.assertEqual(result['compatibility']['overall']['jev_blocked'], 1)
+            self.assertEqual(result['compatibility']['overall']['jev_pending'], 0)
+            self.assertEqual(sum(result['company_flow']['compatible_company_tiers'].values()),
+                             result['company_flow']['companies_with_compatible_jobs'])
+            self.assertEqual(result['company_flow']['compatible_company_tiers']['evidenza-mancante'], 1)
+            self.assertEqual(result['processing'][-1], {'id': 'jev', 'label': 'Jev', 'input': 2,
+                                                       'completed': 1, 'pending': 0, 'blocked': 1})
             self.assertEqual(summary(archive, 'potential')['total'], 2)
             archive.close()

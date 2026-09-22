@@ -32,7 +32,7 @@ L’anteprima è offline e conta chiamate, schede e aziende differite senza legg
 
 ## Stato, persistenza e interruzioni
 
-Il funnel, gli assi e il percorso vivono ora tutti nella tab Metriche: la pagina Pipeline resta il pannello operativo. Ogni card si apre dichiarando quanti elementi ha ricevuto e da quale passaggio: e' l'unico posto in cui un totale nato da una sottrazione viene spiegato, e in cui un cambio di unita di misura fra annunci e aziende si dichiara invece di lasciare il salto al lettore. Il giudice 2 disegna una barra sola, sui «non so» che il regex gli ha passato; la copertura resta pero misurata sugli annunci chiamabili, perche una quota ferma per descrizione mancante non deve tenere la card per sempre su copertura parziale. I numeri scritti nelle frasi hanno la stessa forma di quelli scritti nelle barre. Le card usano lo stesso formato per lavoro completato e rimanente. Il pannello attivo mostra avanzamento e nuovi esiti; consumi e contatori aggiuntivi sono in «Consumi e dettagli». I conteggi dell'archivio e quelli della singola esecuzione restano distinti.
+Gli esiti vivono nella tab Metriche: la pagina Pipeline resta il pannello operativo. Ogni card dichiara cosa riceve e mostra soltanto lavoro completato, da fare e bloccato. Non presenta compatibili, scartati o indecisi, perché quelli sono esiti dei giudici e non stati di esecuzione. Il filtro regex può solo escludere; tutti gli annunci non scartati e leggibili passano a Jev. La card Qwen espone due code separate: schede annuncio sui ruoli compatibili di Tier A e B esperienza, schede azienda su tutte le aziende Tier A, B attesa e B esperienza. Non somma mai annunci e aziende. Il pannello attivo mostra avanzamento della run; consumi e contatori aggiuntivi sono in «Consumi e dettagli».
 
 La pagina aggiorna lo stato ogni trenta secondi mentre è aperta. La frequenza limita il lavoro del monitor sull'intero archivio; il pulsante Aggiorna stato permette una lettura manuale. Le esecuzioni vengono salvate in SQLite nella tabella `pipeline_jobs`: parametri, orario, stato, progressi, risultato e impronta degli input. Chiudere la scheda del browser non ferma il worker. Il server deve rimanere attivo.
 
@@ -58,26 +58,26 @@ Le chiamate Qwen sono parallele. `company_batch.workers` stabilisce quante richi
 
 
 ### Progresso remoto
-Lo step attivo ha sfondo e bordo evidenziati, etichetta e barra per aziende attraversate. I dettagli mostrano azienda corrente, annunci valutati, keep/review/exclude, cache, esclusioni locali, chiamate API, input/output token della sola run e aziende differite. Le vecchie run indicano i contatori non disponibili. Il nuovo raggruppamento richiede il riavvio del server dopo la run corrente.
+Lo step attivo ha sfondo e bordo evidenziati, etichetta e barra per le sole aziende Tier A/B in coda. I dettagli mostrano azienda corrente, schede richieste, cache, chiamate API, input/output token della sola run e aziende differite. Le esecuzioni avviate prima di questa correzione restano riconoscibili come "vecchia coda" e continuano a mostrare l'intero archivio attraversato. Il nuovo raggruppamento richiede il riavvio del server dopo la run corrente.
 
 
-### La tab Metriche: percorso, assi e distribuzioni
+### La tab Metriche: elaborazione, esiti e aziende
 
-Tutte le metriche dell'archivio stanno in una pagina sola. Si apre con il percorso degli annunci: cinque tappe, dalla raccolta alle aziende risultanti. Ogni tappa è una barra larga quanto l'intero archivio, sempre lo stesso denominatore. Il numero e la percentuale sono scritti dentro ogni quota, così una quota di una tappa si confronta a occhio con quella di un'altra senza rifare il conto.
+Tutte le metriche dell'archivio stanno in una pagina sola, ma non condividono lo stesso significato. In alto, lo **stato di elaborazione** usa una riga per passaggio e separa completati, da elaborare e bloccati dai dati. Il totale in ingresso può cambiare scendendo nella pipeline; la riga lo rende esplicito.
 
-La fascia scura a sinistra è chi è già uscito nelle tappe precedenti: cresce da una riga alla successiva, e quel bordo che scivola verso destra è il funnel. Quello che resta a destra è ciò che prosegue: compatibili in verde, ancora da decidere in ambra, fermi per informazione mancante in grigio. Nessuna quota è mai affidata al solo colore: il numero è nella barra quando ci sta, e comunque nel riepilogo espandibile sotto il disegno, con le etichette per esteso e le note di ogni tappa. La quinta tappa cambia unità di misura e lo dichiara: lì il totale sono le aziende.
+Segue l'**albero degli esiti**. Il nodo Regex divide soltanto fra scartati e annunci che passano a Jev. Il nodo Jev mostra compatibili, scartati e indecisi usando come totale solo gli annunci che Jev ha già analizzato. Pendenti e bloccati rimangono nella sezione operativa e non ricevono un esito inventato. Un riepilogo complessivo dichiara il proprio totale analizzato.
 
-Un annuncio senza esito locale salvato resta un residuo visibile invece di sparire dal conto: la somma delle quote di ogni tappa è sempre l'archivio intero. Le tappe sugli annunci sono monotone, chi è uscito non rientra. Il percorso riguarda sempre tutto l'archivio, anche quando il filtro della pagina è attivo, e la pagina lo dichiara.
+La sezione **Dagli annunci compatibili alle aziende** rende visibile il cambio di unità e ripartisce quelle aziende in gruppi che sommano allo stesso totale. La successiva **Mappa di tutte le aziende** riparte dall'intero archivio e lo dichiara: non è la continuazione del primo gruppo. Qualità dei dati, categorie ereditate dagli annunci e geografia restano una sezione separata e seguono il filtro della pagina.
 
-Seguono i due assi indipendenti e il tier, ciascuno come partizione completa: una barra impilata per il colpo d'occhio e sotto un metro per quota, con conteggio e percentuale. Poi la qualità e la composizione della selezione, che seguono il filtro della pagina: completezza dei dati, esito dei filtri locali, categorie aziendali e distribuzione geografica. Ogni metro è disegnato contro il totale della scheda, mai contro il massimo della lista, così due voci di schede diverse restano confrontabili. Le distribuzioni lunghe mostrano le prime voci e raccolgono la coda in una riga sola invece di troncarla.
+Le evidenze del verdetto sono attuali. La regex mostra le regole applicate; Jev mostra la frase dell'annuncio usata per il giudizio. Qwen non produce verdetti né evidenze di selezione. I vecchi contatori Qwen di selezione non sono supportati dalla UI corrente.
 
-Gli esiti dei modelli sono quelli salvati da tutte le esecuzioni: sono proposte, non esclusioni definitive. Nessuna operazione di filtraggio o API viene avviata dalla lettura.
+Gli esiti Jev sono quelli salvati dalle esecuzioni. Nessuna API o modello viene invocato dalla lettura delle metriche.
 
 ### Unita di misura
 
 Una azienda e esclusa localmente solo se non ha annunci rimasti. Cache locale mancante o scaduta non causa esclusioni implicite.
 I giudizi Jev salvati sui soli annunci passati dal regex formano quattro gruppi disgiunti: keep, review, exclude, senza giudizio. La loro somma coincide con gli annunci affidati al secondo giudice. Sono risultati storici salvati, non una certificazione di validità con le domande correnti; la UI esplicita questo limite. La presenza di schede Qwen non misura la selezione.
-La run corrente rimane separata: aziende attraversate includono quelle saltate; risultati in cache nelle vecchie run possono comprendere piu elaborazioni dello stesso annuncio. Token input/output riguardano solo la run. Nessuna operazione di filtraggio o API viene avviata dal monitor.
+La run corrente rimane separata: per le nuove esecuzioni il denominatore comprende soltanto aziende Tier A/B, incluse quelle già coperte dalla cache. Le esecuzioni precedenti possono ancora riportare tutte le aziende dell'archivio attraversate e quelle saltate. Token input/output riguardano solo la run. Nessuna operazione di filtraggio o API viene avviata dal monitor.
 
 ### Salvate: la scelta a mano, dopo la pipeline
 

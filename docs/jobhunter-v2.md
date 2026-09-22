@@ -99,7 +99,7 @@ Gli output derivati possono essere ricostruibili, ma contengono anche costi, pro
 
 ## Prestazioni della dashboard
 
-La prima pagina valida la cache dei filtri soltanto per le aziende mostrate. I report globali continuano a validare tutto l'archivio. Il benchmark ripetibile vive in `tests/benchmark_search.py`; il test di regressione controlla la quantità di lavoro, non una soglia instabile in millisecondi.
+La prima pagina valida la cache dei filtri soltanto per le aziende mostrate. I report globali continuano a validare tutto l'archivio, ma Metriche e Pipeline leggono dalla cache il flag «mansioni utilizzabili»: non ripetono il parsing HTML su ogni annuncio. La tab Metriche usa un solo endpoint e non aspetta il riepilogo operativo della Pipeline. Dopo un cambio alle regole, la prima lettura può ricostruire la cache; le successive la riusano. Il benchmark ripetibile vive in `tests/benchmark_search.py`; il test di regressione controlla la quantità di lavoro, non una soglia instabile in millisecondi.
 
 ## Verifica
 

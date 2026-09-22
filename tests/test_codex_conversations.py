@@ -80,7 +80,8 @@ class CodexConversationTests(unittest.TestCase):
 
     def test_selection_session_uses_tiers_filters_and_compact_cards(self):
         """Tier A/B exploration returns summaries, not complete source descriptions."""
-        cid, _ = self.add_job("Energy Co", "Data Scientist", "Develop climate models in Python")
+        cid, oid = self.add_job("Energy Co", "Data Scientist", "Develop climate models in Python")
+        self.save_jev(oid, "keep")
         self.archive.categorize(cid, "Energia", "Test category")
 
         session = conversations.start(

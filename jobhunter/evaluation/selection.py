@@ -51,7 +51,9 @@ def evaluate(job, rules=None):
         """Expose career priority and missing evidence independently of compatibility."""
         return {"status": status, "reasons": reasons, "requirements": facts,
                 "career_priority": "primary" if re.search(rules.get("primary_title_pattern", r"(?!)"), title, re.I) else "secondary",
-                "verification": {"description": bool(job.get("description")), "experience_determined": facts["required_years"] is not None,
+                "verification": {"description": bool(job.get("description")),
+                                 "description_usable": facts["description_usable"],
+                                 "experience_determined": facts["required_years"] is not None,
                                  "language_requirement": facts["languages"]["status"], "opening": "not_verified"}}
     if reasons:
         return decision("excluded", reasons)
@@ -66,10 +68,10 @@ def evaluate(job, rules=None):
 
 
 def regex_judgement(decision):
-    """Esito del giudice 1 nel contratto comune: marca, non elimina, e cita la regola (DESIGN §10)."""
-    verdetto = {"excluded": tier.DROP, "potential": tier.KEEP, "review": tier.UNKNOWN}[decision["status"]]
-    motivo = {tier.DROP: "Escluso dalle regole sui titoli", tier.KEEP: "Titolo nella famiglia di ruoli preferita",
-              tier.UNKNOWN: "Il titolo da solo non basta a decidere"}[verdetto]
+    """Use deterministic rules only to reject; every surviving role still needs Jev."""
+    verdetto = tier.DROP if decision["status"] == "excluded" else tier.UNKNOWN
+    motivo = ("Escluso dalle regole locali" if verdetto == tier.DROP else
+              "Non escluso dalle regole locali: passa a Jev")
     return {"verdetto": verdetto, "motivo": motivo, "prove": list(decision["reasons"]), "giudice": "regex",
             "primary": decision["career_priority"] == "primary"}
 
@@ -172,7 +174,8 @@ def requirements(text):
             quotes.append(sentence.strip())
         if re.search(r"must (?:reside|be based)|right to work|work authori[sz]ation|no visa sponsorship|remote (?:within|only)|residenza obbligatoria", lower):
             restrictions.append(sentence.strip())
-    return {"required_years": max(mandatory) if mandatory else None, "preferred_years": max(preferred) if preferred else None,
+    return {"description_usable": bool(text),
+            "required_years": max(mandatory) if mandatory else None, "preferred_years": max(preferred) if preferred else None,
             "people_management": management, "eligibility_quotes": restrictions, "evidence": list(dict.fromkeys(quotes)),
             "unknown": [] if mandatory else ["Esperienza obbligatoria non determinata"]}
 

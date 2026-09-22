@@ -65,7 +65,7 @@ class Archive:
     """Transactional local archive shared by the CLI, Codex and dashboard."""
 
     def __init__(self, path):
-        """Open the archive and initialize missing tables without touching legacy files."""
+        """Open the archive and initialize missing tables without touching unrelated files."""
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.path, timeout=20)

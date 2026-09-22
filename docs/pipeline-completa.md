@@ -49,10 +49,9 @@ flowchart TD
     D1 --> G1
     D2 --> G1
 
-    G1{{"3 · GIUDICE 1 · REGEX<br/><i>selection.evaluate</i><br/>titolo + descrizione"}}
+    G1{{"3 · FILTRO REGEX<br/><i>selection.evaluate</i><br/>titolo + descrizione"}}
     G1 -->|"titolo escluso"| X1["<b>scarta</b> · definitivo"]
-    G1 -->|"titolo nella famiglia preferita"| K1["<b>tieni</b> · non si ripaga mai"]
-    G1 -->|"il titolo non basta"| U1["<b>non so</b>"]
+    G1 -->|"nessuna esclusione certa"| U1["<b>passa a Jev</b><br/>la priorità del titolo resta un metadato"]
 
     U1 --> J{"c'è una descrizione<br/>da leggere?<br/><i>selection.judgeable</i>"}
     J -->|"no"| W["FERMO<br/>nessun modello viene chiamato"]
@@ -81,9 +80,13 @@ successiva non rifà quello che ha già funzionato e rispetta i blocchi della fo
 Questo passaggio **non esclude nessuno**: decide solo con quanta evidenza l'annuncio verrà
 giudicato.
 
-**3 · Giudice 1 · regex.** Legge **solo l'annuncio**: il titolo con i pattern di
+**3 · Filtro regex.** Legge **solo l'annuncio**: il titolo con i pattern di
 `config/role_filters.json`, la descrizione per anni di esperienza richiesti, gestione di
 persone e requisiti di lingua. La descrizione dell'azienda non la guarda mai.
+
+Può produrre un solo esito definitivo: **scarto**. Se non trova un'esclusione certa,
+l'annuncio passa a Jev. Un titolo nella famiglia preferita conserva la priorità di carriera,
+ma non diventa per questo compatibile: la compatibilità richiede la lettura delle mansioni.
 
 Il suo esito sta in `search_eligibility`, che è una **cache pigra**: viene ricalcolata a
 ogni lettura se il `content_hash` dell'annuncio o l'impronta delle regole sono cambiati.
@@ -97,7 +100,7 @@ cambia il `content_hash`, il verdetto si rifà da solo.
 modello solo il titolo produce sempre `review`: il costo di una chiamata per nessuna
 informazione nuova. Senza descrizione, l'annuncio resta fermo e in attesa — non respinto.
 
-**4 · Giudice 2 · System One (Jev).** Vede i «non so» del regex che hanno un testo da
+**4 · Giudice · System One (Jev).** Vede tutti gli annunci non scartati dal filtro regex che hanno un testo da
 leggere. Fa **una richiesta combinata** per il ruolo e, quando serve, per il settore
 dell'azienda. Non genera testo: risponde a domande tipizzate e
 restituisce una probabilità per ognuna, quindi un giudizio mancante o una citazione fuori
@@ -121,9 +124,9 @@ Fra il regex e il remoto c'era già stato un giudice, un modello su Ollama, **ri
 settembre 2026**: decideva 0 ruoli su 4.918 e non toglieva lavoro al remoto (`DESIGN.md` §3).
 System One occupa quel posto per un motivo diverso — non il costo, il formato della risposta.
 
-La cascata è la regola: **vince il primo giudice che sa decidere**, l'altro non lo rivede.
-Un titolo già accettato dal regex non si paga mai, e dopo System One non c'è nessun altro
-giudice automatico.
+La cascata è la regola: il filtro regex ferma soltanto le esclusioni certe; Jev giudica le
+mansioni di tutti gli altri annunci leggibili. Dopo System One non c'è nessun altro giudice
+automatico.
 
 ---
 

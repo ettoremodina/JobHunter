@@ -37,12 +37,11 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(sum(f['ruolo'].values()), 4)
             self.assertEqual(sum(f['azienda'].values()), 2)
             self.assertEqual(sum(f['tier'].values()), 2)
-            self.assertEqual((f['ruolo']['tieni'], f['ruolo']['scarta']), (2, 2))
-            # Nessuna azienda ha una categoria: l'asse azienda non è valutabile, ma i ruoli primari valgono da soli.
+            self.assertEqual((f['ruolo']['tieni'], f['ruolo']['non_so'], f['ruolo']['scarta']), (0, 2, 2))
+            # Nessuna azienda ha una categoria e nessun ruolo è compatibile senza il giudizio Jev.
             self.assertEqual(f['azienda']['evidenza_mancante'], 2)
-            self.assertEqual((f['tier']['B-esperienza'], f['tier']['evidenza-mancante']), (1, 1))
-            # Il regex ha già deciso ogni ruolo: Jev non entra nella cascata.
-            self.assertEqual(f['giudici'], {'regex': 4})
+            self.assertEqual(f['tier']['evidenza-mancante'], 2)
+            self.assertEqual(f['giudici'], {'regex': 2, 'nessuno': 2})
             # Il denominatore non cambia mai fra le tappe: ogni quota si legge contro lo stesso totale.
             for stage in f['percorso']:
                 expected = 2 if stage.get('unit_change') else 4
@@ -82,9 +81,10 @@ class PipelineTests(unittest.TestCase):
             remote = steps['remote']
             self.assertIsNone(remote['parts'])
             self.assertEqual(remote['base'], remote['total'])
-            self.assertIn(it(remote['total']), remote['inflow'])
-            aziendali = next(bar for bar in remote['extra'] if 'Schede aziendali' in bar['title'])
-            self.assertEqual(sum(value for _, _, value in aziendali['parts']), aziendali['total'])
+            self.assertEqual([work['id'] for work in remote['workloads']], ['job-cards', 'company-cards'])
+            self.assertEqual(remote['workloads'][0]['total'], remote['total'])
+            self.assertEqual(remote['workloads'][1]['total'],
+                             sum(remote['workloads'][1]['tiers'].values()))
             self.assertEqual((it(23049), it(5908)), ('23.049', '5908'))
             # Dove cambia l'unita' di misura la card lo dichiara invece di lasciare il salto al lettore.
             self.assertIn('Cambia unità di misura', steps['descriptions']['inflow'])
@@ -113,9 +113,8 @@ class PipelineTests(unittest.TestCase):
             handoff = summary(archive, settings(), Path(directory))['funnel']['handoff']
             self.assertEqual(sum(value for _, _, value in handoff['parts']), len(rows))
             self.assertEqual(handoff['counts'], {
-                'regex_compatible': 1, 'regex_discarded': 1,
-                'jev_compatible': 1, 'jev_discarded': 1,
-                'jev_review': 1, 'jev_ready': 1, 'blocked': 1, 'stale': 0,
+                'regex_discarded': 1, 'jev_compatible': 1, 'jev_discarded': 1,
+                'jev_review': 1, 'jev_ready': 2, 'blocked': 1, 'stale': 0,
             })
 
     def test_description_card_counts_company_coverage(self):

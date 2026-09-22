@@ -20,7 +20,7 @@ COMPANY_FIELDS = ("company_name", "company_description", "sectors", "website_url
 
 
 def clean(value):
-    """Normalize display text while treating legacy sentinels as missing."""
+    """Normalize display text while treating common source sentinels as missing."""
     if value is None:
         return ""
     if isinstance(value, list):

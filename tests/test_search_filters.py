@@ -4,7 +4,19 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import json
+
 from jobhunter.workspace import Archive
+
+
+def keep(archive, opportunity_id):
+    """Save the Jev keep that makes a fixture role compatible."""
+    payload = {'result': {'decision': 'keep', 'rationale': 'Fixture Jev',
+                          'evidence': [], 'missing_information': []}}
+    with archive.db:
+        archive.db.execute('INSERT OR REPLACE INTO enrichments VALUES(?,?,?,?,?,?,?)',
+                           ('jev:selection', opportunity_id, 'source', 'fixture',
+                            json.dumps(payload), 'fixture', '2026-09-22'))
 
 
 class SearchFilterTests(unittest.TestCase):
@@ -19,6 +31,9 @@ class SearchFilterTests(unittest.TestCase):
             {'company_name': 'Acme', 'title': 'Marketing Specialist', 'source_url': 'https://example.org/2',
              'location': 'Milano, IT'}], 'test')
         cid = archive.search(query='Acme')['items'][0]['id']
+        oid = archive.db.execute(
+            "SELECT id FROM opportunities WHERE json_extract(data,'$.title')='Data Scientist'").fetchone()[0]
+        keep(archive, oid)
         archive.categorize(cid, 'Energia', 'Fixture: settore preferito')
         return archive, cid
 
@@ -44,6 +59,8 @@ class SearchFilterTests(unittest.TestCase):
                 archive.ingest([{'company_name': 'Beta', 'title': 'Data Scientist',
                                  'source_url': 'https://example.org/3', 'location': 'Milano, IT'}], 'test')
                 cid = archive.search(query='Beta')['items'][0]['id']
+                oid = archive.db.execute('SELECT id FROM opportunities').fetchone()[0]
+                keep(archive, oid)
                 archive.categorize(cid, 'Energia', 'Fixture: settore preferito')
                 self.assertEqual([i['id'] for i in archive.search(tier='A', location='Milano')['items']], [cid])
             finally:

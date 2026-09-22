@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from contextlib import closing
 
-from jobhunter.evaluation.selection import evaluate
+from jobhunter.evaluation.selection import evaluate, regex_judgement
+from jobhunter.evaluation.tier import UNKNOWN
 from jobhunter.evaluation.company_categories import replace
 from jobhunter.workspace import Archive, now
 
@@ -15,9 +16,11 @@ class CompanyAxisTests(unittest.TestCase):
     """Il giudice a regex sui titoli, e chi può riscrivere una categoria già assegnata."""
 
     def test_role_boundaries(self):
-        """Il regex tiene sviluppo e ML, esclude i ruoli senior, e non guarda l'azienda."""
+        """Il regex riconosce le famiglie ammesse, ma solo un'esclusione chiude il giudizio."""
         for title in ("Software Developer", "Machine Learning Engineer", "Mechanical Simulation Engineer"):
-            self.assertEqual(evaluate({"title": title})["status"], "potential")
+            decision = evaluate({"title": title})
+            self.assertEqual(decision["status"], "potential")
+            self.assertEqual(regex_judgement(decision)["verdetto"], UNKNOWN)
         for title in ("Senior Data Scientist", "Marketing Specialist", "Engineering Manager", "Mechanical Engineer"):
             self.assertEqual(evaluate({"title": title})["status"], "excluded")
         self.assertEqual(evaluate({"title": "Data Scientist", "description": "Work with senior managers"})["status"], "potential")
@@ -82,7 +85,7 @@ class CompanyAxisTests(unittest.TestCase):
             path = Path(directory) / "test.db"
             archive = Archive(path)
             archive.ingest([{"company_name": "Legacy", "title": "Engineer",
-                             "source_url": "https://example.org/legacy"}], "test")
+                             "source_url": "https://example.org/existing"}], "test")
             cid = archive.search(query="Legacy")["items"][0]["id"]
             archive.close()
             with closing(sqlite3.connect(path)) as db:

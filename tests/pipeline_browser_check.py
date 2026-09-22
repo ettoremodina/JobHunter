@@ -18,7 +18,9 @@ def save_jev_result(archive, opportunity_id, decision):
     """Store a fixture Jev verdict."""
     archive.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
                        ('jev:selection', opportunity_id, 'source', 'key',
-                        json.dumps({'result': {'decision': decision}}), 'browser-fixture', '2026-01-01'))
+                        json.dumps({'result': {'decision': decision, 'rationale': 'Mansioni coerenti',
+                                               'evidence': ['Build forecasting models.']}}),
+                        'browser-fixture', '2026-01-01'))
 
 
 def main():
@@ -39,7 +41,10 @@ def main():
         archive.evaluations()
         ids = {json.loads(row['data'])['title']: row['id']
                for row in archive.db.execute('SELECT id,data FROM opportunities')}
+        save_jev_result(archive, ids['Data Scientist'], 'keep')
         save_jev_result(archive, ids['Growth Hacker Review'], 'review')
+        company_id = archive.db.execute('SELECT id FROM companies').fetchone()[0]
+        archive.categorize(company_id, 'Energia', 'Fixture: azienda interessante')
         archive.close()
 
         server = create_server(database, settings(), 0)
@@ -58,24 +63,38 @@ def main():
                 expect(page.locator('#pipeline-status')).to_contain_text('Archivio: 4 annunci · 1 aziende')
                 expect(page.locator('#pipeline-active')).to_contain_text('Attività della web app')
                 expect(page.locator('#pipeline-active')).to_contain_text('Nessun comando attivo')
-                expect(page.locator('#pipeline-handoff')).to_contain_text('Indecisi dopo Jev')
-                expect(page.locator('#pipeline-handoff')).to_contain_text('Da aggiornare o verificare')
-                expect(page.locator('#pipeline-handoff')).to_contain_text('Candidati a Jev')
                 expect(page.locator('#pipeline-steps > li')).to_have_count(6)
+                expect(page.locator('#pipeline-steps .pipeline-work-counts')).not_to_have_count(0)
+                expect(page.locator('.pipeline-workload')).to_have_count(2)
+                expect(page.locator('.pipeline-workload').first).to_contain_text('Schede annuncio')
+                expect(page.locator('.pipeline-workload').nth(1)).to_contain_text('Schede azienda')
+                expect(page.locator('#pipeline-handoff')).to_have_count(0)
+                expect(page.locator('.pipeline-card .pipeline-shares')).to_have_count(0)
                 assert page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth')
 
                 page.get_by_role('button', name='Metriche', exact=True).click()
-                expect(page.locator('.journey-handoff')).to_contain_text('Partizione corrente · annunci')
-                expect(page.locator('.journey-handoff')).to_contain_text('Indecisi dopo Jev')
-                expect(page.locator('.journey-chart rect.track')).not_to_have_count(0)
-                expect(page.locator('.journey-chart rect.seg')).not_to_have_count(0)
+                expect(page.locator('.processing-row')).to_have_count(4)
+                expect(page.locator('.decision-tree')).to_be_visible()
+                expect(page.locator('.decision-tree')).to_contain_text('Regex')
+                expect(page.locator('.decision-tree')).to_contain_text('Passano a Jev')
+                expect(page.locator('.decision-tree')).to_contain_text('Compatibili')
+                expect(page.locator('.decision-tree')).to_contain_text('Da revisionare')
+                expect(page.locator('.company-bridge')).to_contain_text('aziende distinte')
+                expect(page.locator('.compatible-company-map')).to_be_visible()
+                expect(page.locator('.all-company-map')).to_contain_text('riparte da tutte')
+
+                page.get_by_role('button', name='Aziende', exact=True).click()
+                page.get_by_role('button', name='Signal Works', exact=True).click()
+                page.locator('#detail details.opportunity > summary').first.click()
+                expect(page.get_by_text('Evidenza usata da Jev', exact=True).first).to_be_visible()
 
                 page.set_viewport_size({'width': 390, 'height': 844})
                 page.get_by_role('button', name='Pipeline', exact=True).click()
-                expect(page.locator('#pipeline-handoff')).to_be_visible()
+                expect(page.locator('#pipeline-steps .pipeline-work-counts').first).to_be_visible()
                 assert page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth')
                 page.get_by_role('button', name='Metriche', exact=True).click()
-                expect(page.locator('.journey-handoff')).to_be_visible()
+                expect(page.locator('.decision-tree')).to_be_visible()
+                expect(page.locator('.company-bridge')).to_be_visible()
                 assert page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth')
                 browser.close()
         finally:

@@ -9,6 +9,7 @@ from unittest.mock import patch
 from jobhunter.workspace import Archive, settings, ROOT, search_rules_hash
 from jobhunter.evaluation.selection import evaluate, saved, shortlist, filters
 from jobhunter.exploration.analytics import summary
+from jobhunter.operations.pipeline import summary as pipeline_summary
 from jobhunter.exploration.interview import questions
 from jobhunter.exploration.dashboard import create_server
 from jobhunter.evaluation.enrichment import company_input
@@ -27,7 +28,9 @@ class SharedEvaluationTests(unittest.TestCase):
                            'source_url': 'https://example.org/1'}], 'test')
                 a.search(eligibility='potential')
             with closing(Archive(path)) as a, patch('jobhunter.evaluation.selection.evaluate', wraps=evaluate) as check:
-                summary(a)
+                with patch('jobhunter.evaluation.enrichment.lines', side_effect=AssertionError('description parsed again')):
+                    summary(a)
+                    pipeline_summary(a, settings(), Path(d))
                 saved(a)
                 questions(a)
                 shortlist(a)

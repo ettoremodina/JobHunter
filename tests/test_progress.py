@@ -9,7 +9,7 @@ from jobhunter.workspace import now
 
 
 class ProgressTests(unittest.TestCase):
-    """Test legacy attachment, terminal precedence and sharing-conflict resilience offline."""
+    """Test current reports, terminal precedence and sharing-conflict resilience offline."""
 
     def test_live_detail_eta_and_blocked_jobs(self):
         """Only a sufficiently sampled unblocked phase gets an ETA; batch totals are explicit."""
@@ -29,24 +29,6 @@ class ProgressTests(unittest.TestCase):
                 self.assertIsNone(snapshot(root, {'raw_directory': 'raw'}, str(path))['details']['phase_eta_seconds'])
             with patch('jobhunter.operations.progress.process_alive', return_value=False):
                 self.assertEqual(snapshot(root, {'raw_directory': 'raw'}, str(path))['status'], 'not_running')
-
-    def test_legacy_workflow_failure_overrides_running_detail(self):
-        """Attach the pre-monitor run and retain details even when its final report wins selection."""
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root/'data').mkdir()
-            workflow = root/'raw/run-official/report.json'
-            workflow.parent.mkdir(parents=True)
-            details = root/'details.json'
-            details.write_text(json.dumps({'started_at': now(), 'status': 'running', 'eligible_missing': 10, 'attempted': 2, 'saved': 1, 'items': [{'status': 'saved'}, {'status': 'failed'}]}))
-            (root/'data/active-resume.json').write_text(json.dumps({'started_at': '2020-01-01T00:00:00+00:00', 'pid': 123, 'workflow_report': str(workflow), 'description_report': str(details)}))
-            workflow.write_text(json.dumps({'started_at': now(), 'finished_at': now(), 'status': 'partial', 'description_followup': {'error': 'locked report'}}))
-            with patch('jobhunter.operations.progress.process_alive', return_value=False):
-                value = snapshot(root, {'raw_directory':'raw'})
-            self.assertEqual(value['status'], 'partial')
-            self.assertEqual(value['phase'], 'finished')
-            self.assertEqual(value['details']['saved'], 1)
-            self.assertTrue(any('locked report' in x for x in value['warnings']))
 
     def test_unreadable_and_absent_reports(self):
         """Missing evidence is never shown as completed or running."""
