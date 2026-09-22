@@ -129,9 +129,6 @@ def main():
                 expect(page.locator('#saved-brief-box textarea')).to_have_value(__import__('re').compile('Energy Lab'))
                 page.get_by_role("button", name="Rimuovi dalle salvate").first.click()
                 page.get_by_text("Nessuna azienda salvata.", exact=False).wait_for()
-                # Domande e preferenze non si perdono con la coda: vivono nel riquadro in fondo.
-                page.get_by_text("Da chiarire insieme e preferenze proposte", exact=True).click()
-                expect(page.get_by_role("heading", name="Da chiarire insieme", exact=True)).to_be_visible()
                 page.get_by_role("button", name="Aziende", exact=True).click()
                 page.locator("#query").fill("no-such-company")
                 page.get_by_role("button", name="Cerca", exact=True).click()
@@ -208,6 +205,8 @@ def main():
                 page.get_by_role('button', name='Salva azienda', exact=True).click()
                 page.get_by_text("Salvato l'azienda: lo trovi nella tab Salvate.", exact=True).wait_for()
                 page.get_by_role('button', name='Salvate', exact=True).click()
+                expect(page.locator('#saved-view')).not_to_contain_text('Da chiarire insieme')
+                expect(page.locator('#saved-view')).not_to_contain_text('Preferenze proposte')
                 page.get_by_role('button', name='Apri Search QA Mixed', exact=True).click()
                 expect(page.locator('#saved-detail > details.opportunity')).to_have_count(2)
                 expect(page.locator('#saved-detail .other-roles')).to_have_count(0)
@@ -219,7 +218,7 @@ def main():
                 expect(page.locator("#rows .company-link")).to_have_count(30)
                 assert not errors, errors
                 page.get_by_role("button", name="Pipeline", exact=True).click()
-                # Sette passaggi: coda e valutazione manuale non sono passaggi della pipeline.
+                # Sei passaggi automatici: le conversazioni Codex restano strumenti separati.
                 expect(page.locator("#pipeline-steps > li")).to_have_count(6)
                 expect(page.locator('#pipeline-steps details.pipeline-about')).to_have_count(6)
                 expect(page.locator("#pipeline-status")).to_contain_text("annunci")
@@ -227,6 +226,10 @@ def main():
                 expect(page.locator("#pipeline-steps")).not_to_contain_text("Statistiche dell")
                 for retired in ("HTML salvato", "Impaginazione Ollama"):
                     expect(page.locator("#pipeline-steps")).not_to_contain_text(retired)
+                page.get_by_role('button', name='Prepara revisione degli indecisi', exact=True).click()
+                assert 'codex-session start --mode indecisi' in page.locator('#codex-prompt-box textarea').input_value()
+                page.get_by_role('button', name='Prepara esplorazione della selezione', exact=True).click()
+                assert 'codex-session start --mode selezione' in page.locator('#codex-prompt-box textarea').input_value()
                 page.screenshot(path=str(destination / "pipeline-mobile.png"), full_page=True)
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
                 page.set_viewport_size({"width": 1440, "height": 1050})

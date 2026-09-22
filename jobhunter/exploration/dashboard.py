@@ -79,9 +79,6 @@ def create_server(database, cfg, port=8000):
                 elif parsed.path in ("/api/saved", "/api/metrics", "/api/proposals"):
                     from jobhunter.evaluation.selection import saved, metrics, proposals
                     payload = {"/api/saved": saved, "/api/metrics": metrics, "/api/proposals": proposals}[parsed.path](archive)
-                elif parsed.path == "/api/review-questions":
-                    from jobhunter.exploration.interview import questions
-                    payload = questions(archive)
                 elif parsed.path.startswith("/api/research/"):
                     from jobhunter.evaluation.selection import research_brief
                     payload = research_brief(archive, parsed.path.rsplit("/", 1)[-1])

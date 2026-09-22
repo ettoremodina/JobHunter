@@ -766,49 +766,13 @@ async function exportCSV() {
   setTimeout(() => URL.revokeObjectURL(address), 1000);
   message(`${items.length} aziende esportate.`);
 }
-/** Separate reusable preference questions from facts that require source verification. */
-function renderReviewQuestions(data) {
-  $("queue-questions").replaceChildren();
-  $("queue-evidence").replaceChildren();
-  if (!data.questions.length) $("queue-questions").append(el("p", "Nessuna nuova domanda sulle preferenze. Restano disponibili le verifiche sulle fonti."));
-  for (const group of [...data.questions, ...(data.evidence_tasks || [])]) {
-    const article = el("article", undefined, "queue-company");
-    article.append(el("h4", group.title), el("p", group.question), el("p", `${group.companies} aziende · ${group.opportunities} annunci interessati`, "muted"));
-    const list = el("ul");
-    for (const example of group.examples) {
-      const item = el("li");
-      const button = el("button", `${example.company} · ${example.title}`);
-      button.addEventListener("click", guarded(async () => {
-        document.querySelector('[data-view="companies"]').click();
-        await show(example.company_id);
-        $("detail").scrollIntoView({block: "start"});
-      }));
-      item.append(button); list.append(item);
-    }
-    article.append(list);
-    if (group.kind !== "source_evidence") {
-      const prepare = el("button", "Prepara domanda per la chat");
-      prepare.addEventListener("click", () => {
-        const label = el("label", "Domanda e casi da copiare nella chat");
-        const area = el("textarea"); area.rows = 6; area.readOnly = true;
-        area.value = `Aiutami a chiarire questa preferenza: ${group.question}\nGruppo: ${group.id}. Riguarda ${group.opportunities} annunci in ${group.companies} aziende.\nEsempi:\n${group.examples.map(e => `${e.company}: ${e.title} (${e.id})`).join("\n")}\nDopo la mia risposta, mostra l'impatto della regola prima di applicarla. I fatti mancanti vanno verificati sulla fonte.`;
-        label.append(area); article.append(label); area.focus(); area.select(); prepare.disabled = true;
-      });
-      article.append(prepare);
-    }
-    $(group.kind === "source_evidence" ? "queue-evidence" : "queue-questions").append(article);
-  }
-}
-
 /** Le aziende messe da parte a mano: si aprono qui dentro, senza passare dai filtri della tab Aziende. */
 async function loadSaved() {
   $("saved-items").textContent = "Lettura delle salvate…";
-  const [data, stats, proposals, review] = await Promise.all([
-    api("/api/saved"), api("/api/metrics"), api("/api/proposals"), api("/api/review-questions")]).catch(error => {
+  const data = await api("/api/saved").catch(error => {
       $("saved-items").textContent = "Elenco non disponibile. Riprova con Ricarica.";
       throw error;
     });
-  renderReviewQuestions(review);
   savedItems = data.items;
   $("saved-brief").disabled = !data.items.length;
   const roles = data.items.reduce((sum, company) => sum + company.roles.length, 0);
@@ -854,19 +818,6 @@ async function loadSaved() {
     row.append(actions);
     $("saved-items").append(row);
   }
-  $("queue-metrics").textContent = `${stats.saved_or_contacted} aziende interessanti o contattate · ${stats.discarded} scartate. `
-    + (stats.save_fraction_decided === null ? "Servono decisioni per misurare l'utilità." : `${Math.round(stats.save_fraction_decided * 100)}% delle aziende decise è interessante.`);
-  $("queue-proposals").replaceChildren();
-  if (!proposals.items.length) $("queue-proposals").append(el("p", "Non ci sono ancora preferenze ricorrenti da proporre."));
-  for (const proposal of proposals.items) {
-    const row = el("p", "Settore scartato spesso: " + proposal.category + " · " + proposal.state + " ");
-    for (const [state, label] of (proposal.state === "accepted" ? [["disabled", "Disattiva"]] : [["accepted", "Accetta"], ["dismissed", "Ignora"]])) {
-      const button = el("button", label);
-      button.addEventListener("click", guarded(async () => {await api("/api/proposal", {id: proposal.id, state}); await loadSaved();}));
-      row.append(button);
-    }
-    $("queue-proposals").append(row);
-  }
 }
 
 let savedItems = [];
@@ -882,6 +833,20 @@ function copyBox(title, text) {
   label.append(area);
   setTimeout(() => { area.focus(); area.select(); }, 0);
   return label;
+}
+
+/** Prepara un ingresso esplicito alla skill; la sessione persistente nasce poi dalla chat. */
+function prepareCodexConversation(mode) {
+  const text = mode === "indecisi"
+    ? ["Usa la skill jobhunter e avvia o riprendi una revisione degli indecisi di Jev.",
+       "Lavora in piccoli batch con `python main.py codex-session start --mode indecisi`.",
+       "Escludi gli annunci senza descrizione, carica il testo integrale solo quando serve e fammi al massimo tre domande mirate per volta.",
+       "Se emerge una regola generale, mostrane l'impatto prima di proporre modifiche alla pipeline. Salva come memoria solo ciò che confermo esplicitamente."].join("\n")
+    : ["Usa la skill jobhunter e avvia un'esplorazione della selezione Tier A/B.",
+       "Prima definisci con me paese, città, categoria o ricerca testuale; poi usa `python main.py codex-session start --mode selezione` con quei filtri.",
+       "Confronta piccoli batch usando prima riassunti e metadati. Espandi i testi originali solo per i casi davvero utili.",
+       "Le mie osservazioni non devono diventare filtri automatici: salva come memoria solo le preferenze che confermo esplicitamente."].join("\n");
+  $("codex-prompt-box").replaceChildren(copyBox("Testo da copiare nella chat di Codex", text));
 }
 
 /** Apre la scheda dentro la tab Salvate, sul ruolo scelto quando ce n'è uno. */
@@ -1176,6 +1141,8 @@ async function init() {
   $("saved-brief").addEventListener("click", guarded(savedBrief));
   $("refresh-analytics").addEventListener("click", guarded(loadAnalytics));
   $("refresh-pipeline").addEventListener("click", guarded(loadPipeline));
+  $("codex-review-prompt").addEventListener("click", () => prepareCodexConversation("indecisi"));
+  $("codex-selection-prompt").addEventListener("click", () => prepareCodexConversation("selezione"));
   $('pipeline-close').addEventListener('click', () => $('pipeline-dialog').close());
   $('pipeline-form').addEventListener('submit', launchPipeline);
   $('pipeline-stop').addEventListener('click', () => stopPipeline(pipelineData?.controls.active?.id));

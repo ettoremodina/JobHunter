@@ -72,6 +72,23 @@ def parser():
     rule = sub.add_parser("review-rule", help="Preview a user preference rule; persist only with --apply")
     rule.add_argument("path")
     rule.add_argument("--apply", action="store_true")
+    conversation = sub.add_parser("codex-session", help="Persistent, token-bounded review sessions for Codex chat")
+    conversation_actions = conversation.add_subparsers(dest="codex_action", required=True)
+    conversation_start = conversation_actions.add_parser("start", help="Freeze a new review population and show its first batch")
+    conversation_start.add_argument("--mode", choices=("indecisi", "selezione"), required=True)
+    conversation_start.add_argument("--batch-size", type=int, default=5)
+    conversation_start.add_argument("--tier", action="append", choices=("A", "B-attesa", "B-esperienza"), dest="tiers")
+    for field in ("query", "country", "city", "category"):
+        conversation_start.add_argument("--" + field, default="")
+    conversation_show = conversation_actions.add_parser("show", help="Resume a session at its next compact batch")
+    conversation_show.add_argument("id")
+    conversation_expand = conversation_actions.add_parser("expand", help="Read source text only for one in-session item")
+    conversation_expand.add_argument("id")
+    conversation_expand.add_argument("item_id")
+    conversation_expand.add_argument("--opportunity", help="One role belonging to a selection-mode company")
+    conversation_record = conversation_actions.add_parser("record", help="Record reviewed IDs, session notes and confirmed memories")
+    conversation_record.add_argument("id")
+    conversation_record.add_argument("path", help="Explicit JSON event file")
     sub.add_parser("research-brief", help="Prepare focused online research in chat").add_argument("id")
     proposal = sub.add_parser("proposals", help="List or explicitly accept/dismiss/disable learned preferences")
     proposal.add_argument("id", nargs="?")
@@ -188,6 +205,18 @@ def execute(args, archive, cfg):
     if command == "review-rule":
         from jobhunter.exploration.interview import review_rule
         return review_rule(archive, read_json(args.path), args.apply)
+    if command == "codex-session":
+        from jobhunter.exploration import conversations
+        if args.codex_action == "start":
+            scope = {key: getattr(args, key) for key in ("query", "country", "city", "category") if getattr(args, key)}
+            if args.tiers:
+                scope["tiers"] = args.tiers
+            return conversations.start(archive, args.mode, scope, args.batch_size)
+        if args.codex_action == "show":
+            return conversations.view(archive, args.id)
+        if args.codex_action == "expand":
+            return conversations.expand(archive, args.id, args.item_id, args.opportunity)
+        return conversations.record(args.id, read_json(args.path))
     if command == "import":
         path = Path(args.path)
         if path.suffix.lower() == ".csv":

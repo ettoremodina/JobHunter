@@ -40,15 +40,6 @@
             <p>Si apre qui, senza passare dalla tab Aziende e senza i filtri che hai attivo lì.</p>
           </aside>
         </div>
-        <details class="queue-help">
-          <summary>Da chiarire insieme e preferenze proposte</summary>
-          <h3>Da chiarire insieme</h3>
-          <p>Una tua risposta può orientare la selezione di altri annunci simili. I conteggi indicano i casi interessati, non esclusioni automatiche.</p>
-          <div id="queue-questions" aria-live="polite"></div>
-          <details class="queue-help"><summary>Informazioni da cercare nelle fonti</summary><p>Qui la preferenza è nota: servono fatti sul singolo annuncio.</p><div id="queue-evidence"></div></details>
-          <h3>Le tue decisioni</h3><p id="queue-metrics"></p>
-          <h3>Preferenze proposte</h3><p>Derivano da scelte ripetute. Restano un promemoria: da quando la coda non c'è più, accettarle non cambia niente in automatico.</p><div id="queue-proposals"></div>
-        </details>
       </section>
       <section id="companies-view">
         <form id="filters" class="filters">
@@ -149,6 +140,25 @@
           <h3 id="pipeline-handoff-title">Lavoro al confine con i giudici semantici</h3>
         </section>
         <ol id="pipeline-steps" aria-label="Fasi della pipeline"></ol>
+        <section class="codex-conversations" aria-labelledby="codex-conversations-title">
+          <h3 id="codex-conversations-title">Conversazioni con Codex</h3>
+          <p>Questi ingressi preparano il testo per la chat. Non eseguono modelli e non cambiano la pipeline.</p>
+          <div class="codex-conversation-grid">
+            <article>
+              <p class="eyebrow">Correzione della pipeline</p>
+              <h4>Rivedi gli indecisi di Jev</h4>
+              <p>Analizza solo annunci con descrizione che Jev non ha deciso. Le risposte possono diventare decisioni puntuali, memoria o proposte di regola.</p>
+              <button id="codex-review-prompt" type="button">Prepara revisione degli indecisi</button>
+            </article>
+            <article>
+              <p class="eyebrow">Esplorazione facoltativa</p>
+              <h4>Confronta la selezione Tier A e B</h4>
+              <p>Parte da filtri espliciti, confronta piccoli gruppi e salva solo preferenze che confermi. Non modifica automaticamente i criteri.</p>
+              <button id="codex-selection-prompt" type="button">Prepara esplorazione della selezione</button>
+            </article>
+          </div>
+          <div id="codex-prompt-box" aria-live="polite"></div>
+        </section>
         <p class="hint">Il percorso completo degli annunci e tutte le distribuzioni dell'archivio sono nella tab Metriche.</p>
         <details><summary>Workflow esterni e copertura</summary><div id="pipeline-workflow"></div></details>
         <details class="queue-help"><summary>Ultime esecuzioni registrate</summary><div id="pipeline-runs"></div></details>
