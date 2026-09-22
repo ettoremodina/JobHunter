@@ -92,20 +92,24 @@ def verdicts(archive, cid=None):
     decisions = archive.evaluations(cid)
     # ponytail: legge gli esiti LLM salvati senza rivalidare la loro cache, troppo cara su 23k
     # annunci; la scadenza resta visibile in aggregato da pipeline.summary().
-    saved = {}
+    saved = {"jev:selection": {}, "remote:selection": {}}
     # Scoped reads already know their opportunity IDs. Use the existing (task, record_id)
     # primary key instead of loading every saved LLM response for each search page.
-    saved_sql = "SELECT record_id,data FROM enrichments WHERE task='remote:selection'"
+    # I due giudici LLM si leggono in una query sola: erano due scansioni della stessa tabella.
+    saved_sql = "SELECT task,record_id,data FROM enrichments WHERE task IN ('jev:selection','remote:selection')"
     saved_args = ()
     if cid is not None:
         saved_sql += " AND record_id IN (SELECT value FROM json_each(?))"
         saved_args = (json.dumps(list(decisions)),)
     for row in archive.db.execute(saved_sql, saved_args):
-        saved[row["record_id"]] = json.loads(row["data"]).get("result") or {}
+        saved[row["task"]][row["record_id"]] = json.loads(row["data"]).get("result") or {}
     roles = {}
     for oid, decision in decisions.items():
+        # DESIGN §3, la cascata: dopo il regex decide il giudice System One, e solo i suoi «non so»
+        # arrivano al modello remoto, che li paga. L'ordine di questa tupla *e'* la cascata.
         chain = [j for j in (regex_judgement(decision),
-                             llm_judgement(saved.get(oid), "llm_remoto")) if j]
+                             llm_judgement(saved["jev:selection"].get(oid), "jev"),
+                             llm_judgement(saved["remote:selection"].get(oid), "llm_remoto")) if j]
         roles[oid] = {**tier.role_verdict(chain), "primary": chain[0]["primary"], "catena": chain}
     if cid is None:
         scope, own_scope, arguments = "", "", ()

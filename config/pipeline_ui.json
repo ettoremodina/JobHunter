@@ -6,6 +6,7 @@
     "collection",
     "filters",
     "descriptions",
+    "jev",
     "remote"
   ],
   "actions": {
@@ -34,9 +35,19 @@
       "note": "Ricalcola gli esiti con contenuti e preferenze correnti. Non modifica le regole.",
       "fields": []
     },
+    "jev": {
+      "label": "Scegli e categorizza con Jev",
+      "note": "Una richiesta riusa lo stesso stato per decidere il ruolo e, quando serve, assegnare il settore dell'azienda. Le domande restano indipendenti e il codice combina le risposte. Le domande stanno in config/system-one-questions.json e le soglie in config/system_one.json. L'anteprima non legge la chiave e non chiama TypeSafe.",
+      "fields": [
+        "limit",
+        "all",
+        "revisit",
+        "mode"
+      ]
+    },
     "remote": {
-      "label": "Seleziona e arricchisci con Qwen",
-      "note": "Qwen giudica in una sola chiamata per azienda solo gli annunci che il regex ha lasciato aperti, e produce le schede dei ruoli Tier A e B più quella aziendale, che non dipende dai ruoli. Controlla anche un campione di annunci esclusi dal regex. Le chiamate contemporanee riducono il tempo totale, non il costo. Anteprima: nessuna chiamata.",
+      "label": "Scrivi le schede con Qwen",
+      "note": "Ultimo passaggio, e l'unico che genera testo: le schede dei ruoli sopravvissuti di Tier A e B e la scheda dell'azienda. Non giudica e non assegna categorie — quelle arrivano dal regex e dal giudice System One. Una sola chiamata per azienda, che porta insieme tutte le sue schede. Le chiamate contemporanee riducono il tempo totale, non il costo. Anteprima: nessuna chiamata.",
       "fields": [
         "company_limit",
         "all_companies",
@@ -44,6 +55,5 @@
         "mode"
       ]
     }
-  },
-  "remote_audit_excluded": 5
+  }
 }

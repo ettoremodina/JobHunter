@@ -36,16 +36,12 @@
       "items": {
         "type": "string"
       }
-    },
-    "category": {
-      "type": "string"
     }
   },
   "required": [
     "summary",
     "facts",
-    "missing_information",
-    "category"
+    "missing_information"
   ],
   "additionalProperties": false
 }

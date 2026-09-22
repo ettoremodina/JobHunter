@@ -1,4 +1,9 @@
-"""Check company batching without contacting a paid provider."""
+"""Check company batching without contacting a paid provider.
+
+Dal 20 settembre 2026 questo passaggio **non giudica**: scrive solo le schede dei ruoli
+sopravvissuti e la scheda dell'azienda. Chi decide se un ruolo si tiene e' il giudice System One,
+un passaggio prima; quello che si prova qui e' che non si paghi per schede che nessuno leggera'.
+"""
 import json
 import tempfile
 import threading
@@ -8,6 +13,42 @@ from unittest.mock import patch
 from jobhunter.workspace import Archive
 from jobhunter.evaluation.company_batch import run, response_schema
 from jobhunter.evaluation.remote_llm import digest, inputs, request as request_remote, validate
+
+# «Data Scientist» supera il regex ed e' un titolo primario: l'azienda finisce in Tier B-esperienza
+# e i suoi ruoli compatibili meritano una scheda. E' la condizione minima perche' si paghi qualcosa.
+SURVIVOR = 'Data Scientist'
+EMPTY = {'summary': '', 'facts': [], 'missing_information': ['Dati insufficienti']}
+
+
+def workspace(folder, titles, description='Build models.', company=''):
+    """A disposable archive plus a config whose reports land in the test directory."""
+    archive = Archive(Path(folder)/'db.sqlite3')
+    archive.ingest([{'company_name': 'Example', 'title': title, 'description': description,
+                     'source_url': f'https://example.org/{index}'} for index, title in enumerate(titles)], 'test')
+    if company:
+        with archive.db:
+            archive.db.execute('UPDATE companies SET description=?', (company,))
+    cfg = json.loads(Path('config/remote_llm.json').read_text())
+    cfg['output_directory'] = folder
+    return archive, cfg
+
+
+def redirect(cfg):
+    """Send the batch's own config read to the test copy, leaving every other read alone."""
+    original = json.loads
+
+    def config_read(value, *args, **kwargs):
+        """Redirect reports to the disposable test directory."""
+        result = original(value, *args, **kwargs)
+        return cfg if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY' else result
+    return original, config_read
+
+
+def card(payload, oid):
+    """One grounded role card citing the first excerpt this role was actually offered."""
+    return {'summary': 'Sviluppa modelli.', 'missing_information': [],
+            'facts': [{'field': 'responsibilities', 'text': 'Sviluppa modelli.',
+                       'quote': next(iter(payload['jobs'][oid]['evidence_catalog']))}]}
 
 
 class BatchTests(unittest.TestCase):
@@ -22,110 +63,113 @@ class BatchTests(unittest.TestCase):
         schema = response_schema(cfg, company)
         # Nessun ID di annuncio e nessun enum di citazioni: quelli li verificano apply() e validate().
         self.assertEqual(schema['properties']['jobs']['items'], {'$ref': '#/$defs/role'})
-        self.assertNotIn('enum', schema['$defs']['selection']['properties']['evidence']['items'])
-        self.assertEqual(schema['$defs']['role']['required'], ['id', 'selection', 'summary'])
+        self.assertNotIn('enum', schema['$defs']['job-summary']['properties']['facts']['items']['properties']['quote'])
+        # Nessun giudizio: una riga porta il suo riassunto e basta.
+        self.assertEqual(schema['$defs']['role']['required'], ['id', 'summary'])
+        self.assertNotIn('selection', schema['$defs'])
+        self.assertNotIn('category', company['properties'])
 
     def test_batch_resume_and_invalid_ids(self):
-        """Two roles share one paid request; invalid responses persist usage but no derivatives."""
+        """Two cards share one paid request; invalid responses persist usage but no derivatives."""
         with tempfile.TemporaryDirectory() as folder:
-            arc = Archive(Path(folder)/'db.sqlite3')
+            arc, cfg = workspace(folder, [SURVIVOR, SURVIVOR])
+            original, config_read = redirect(cfg)
             try:
-                arc.ingest([{'company_name': 'Example', 'title': 'Analyst', 'source_url': 'https://example.org/'+str(i), 'description': 'Build models.'} for i in range(2)], 'test')
-                cfg = json.loads(Path('config/remote_llm.json').read_text())
-                cfg['output_directory'] = folder
-                original = json.loads
-                def config_read(value, *args, **kwargs):
-                    """Redirect reports to the disposable test directory."""
-                    result = original(value, *args, **kwargs)
-                    return cfg if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY' else result
                 def response(config, prompt, payload, key):
-                    """Exclude each role with a valid scoped source reference."""
-                    return {'company': {'summary': 'Unrequested and never stored'}, 'jobs': [{'id': oid, 'selection': {'decision': 'exclude', 'rationale': 'Test', 'evidence': ['S0'], 'missing_information': []}, 'summary': None} for oid in payload['jobs']]}, {'prompt_tokens': 100, 'completion_tokens': 20, 'total_tokens': 120}, []
+                    """Return a grounded card for every role the caller submitted."""
+                    return {'company': {'summary': 'Non richiesta e mai salvata', 'facts': [], 'missing_information': []},
+                            'jobs': [{'id': oid, 'summary': card(payload, oid)} for oid in payload['jobs']]}, \
+                        {'prompt_tokens': 100, 'completion_tokens': 20, 'total_tokens': 120}, []
                 values = {'all_companies': True, 'mode': 'execute'}
-                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='test'), patch('jobhunter.evaluation.remote_llm.request', side_effect=response) as request, patch('jobhunter.evaluation.company_batch.time.sleep'):
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='test'), \
+                        patch('jobhunter.evaluation.remote_llm.request', side_effect=response) as request, \
+                        patch('jobhunter.evaluation.company_batch.time.sleep'):
                     first = run(arc, values, lambda d: None)
                     self.assertEqual(request.call_count, 1)
-                    self.assertEqual(first['counts']['evaluated_jobs'], 2)
-                    self.assertEqual(first['counts']['ignored_company_summaries'], 1)
-                    self.assertEqual(arc.db.execute("SELECT count(*) FROM enrichments WHERE task='remote:company-summary'").fetchone()[0], 0)
-                    self.assertEqual(first['counts']['submitted_jobs'], 2)
+                    self.assertEqual(first['counts']['saved_summaries'], 2)
+                    self.assertEqual(first['counts']['summary_requests'], 2)
                     self.assertEqual(first['counts']['api_companies'], 1)
                     self.assertEqual(first['usage']['total_tokens'], 120)
+                    # L'azienda non era richiesta: la sua scheda arriva lo stesso e non viene salvata.
+                    self.assertEqual(first['counts']['ignored_company_summaries'], 1)
+                    self.assertEqual(arc.db.execute("SELECT count(*) FROM enrichments WHERE task='remote:company-summary'").fetchone()[0], 0)
                     run(arc, values, lambda d: None)
-                    self.assertEqual(request.call_count, 1)
+                    self.assertEqual(request.call_count, 1, 'una scheda gia\' valida non si ripaga')
                     arc.db.execute('DELETE FROM enrichments'); arc.db.commit()
                     request.side_effect = None
                     request.return_value = ({'company': None, 'jobs': []}, {'total_tokens': 99}, [])
                     failed = run(arc, values, lambda d: None)
                     self.assertEqual(failed['status'], 'partial')
                     self.assertEqual(failed['usage']['total_tokens'], 99)
-                    self.assertEqual(failed['counts']['submitted_jobs'], 2)
-                    self.assertEqual(failed['counts']['evaluated_jobs'], 0)
+                    self.assertEqual(failed['counts']['summary_requests'], 2)
+                    self.assertEqual(failed['counts']['saved_summaries'], 0)
                     self.assertEqual(failed['counts']['rejected_companies'], 1)
                     saved = original(Path(failed['report_path']).read_text(encoding='utf-8'))
                     self.assertEqual(saved['items'][0]['rejected_answer'], {'company': None, 'jobs': []})
                     self.assertEqual(arc.db.execute('SELECT count(*) FROM enrichments').fetchone()[0], 0)
-                    def retained(config, prompt, payload, key):
-                        """Return a review decision and a grounded structured role summary."""
-                        empty = {'summary': '', 'facts': [], 'missing_information': ['Dati insufficienti']}
-                        company = {**empty, 'category': 'Da classificare'} if payload['company_requested'] else None
-                        return {'company': company, 'jobs': [{'id': oid, 'selection': {'decision': 'review', 'rationale': 'Da verificare', 'evidence': [], 'missing_information': ['Dettagli']}, 'summary': empty} for oid in payload['jobs']]}, {'total_tokens': 130}, []
-                    request.side_effect = retained
-                    kept = run(arc, values, lambda d: None)
-                    self.assertEqual(kept['status'], 'success')
-                    self.assertEqual(kept['counts']['review_jobs'], 2)
-                    before = request.call_count
-                    run(arc, values, lambda d: None)
-                    self.assertEqual(request.call_count, before)
+                    # Senza mansioni da leggere non c'e' niente da riassumere: nessuna chiamata.
                     for row in arc.db.execute('SELECT id,data FROM opportunities').fetchall():
                         data = json.loads(row['data']); data['description'] = ''
-                        arc.db.execute('UPDATE opportunities SET data=?,content_hash=? WHERE id=?', (json.dumps(data), 'no-description', row['id']))
+                        arc.db.execute('UPDATE opportunities SET data=?,content_hash=? WHERE id=?',
+                                       (json.dumps(data), 'no-description', row['id']))
                     arc.db.commit()
-                    # Senza descrizione non si paga nessuna chiamata: il modello direbbe solo «review».
+
                     def never_called(config, prompt, payload, key):
+                        """Fail loudly if an unreadable role is ever submitted."""
                         raise AssertionError('Un annuncio senza descrizione non deve essere spedito')
                     request.side_effect = never_called
                     before = request.call_count
                     result = run(arc, values, lambda d: None)
-                    self.assertEqual(result['status'], 'success')
-                    self.assertEqual(result['counts']['evaluated_jobs'], 0)
-                    self.assertEqual(request.call_count, before)
-
-
+                    self.assertEqual((result['status'], request.call_count), ('success', before))
+                    self.assertEqual(result['counts']['unreadable_jobs'], 2)
             finally:
                 arc.close()
-    def test_one_unusable_part_does_not_discard_the_billed_rest(self):
-        """A missing company card or a bad role summary must not throw away the other grounded derivatives."""
+
+    def test_only_surviving_roles_of_a_presented_company_are_paid_for(self):
+        """Il passaggio non giudica: paga solo per chi ha gia' superato i giudici, e mai per gli altri."""
         with tempfile.TemporaryDirectory() as folder:
-            arc = Archive(Path(folder)/'db.sqlite3')
+            arc, cfg = workspace(folder, [SURVIVOR, 'HR Manager', 'Analyst'])
+            original, config_read = redirect(cfg)
             try:
-                arc.ingest([{'company_name': 'Example', 'title': 'Data Scientist', 'description': 'Build models.',
-                             'source_url': 'https://example.org/'+str(i)} for i in range(2)], 'test')
-                with arc.db:
-                    arc.db.execute("UPDATE companies SET description='Costruisce modelli di rete elettrica.'")
-                cfg = json.loads(Path('config/remote_llm.json').read_text())
-                cfg['output_directory'] = folder
-                original = json.loads
-                def config_read(value, *args, **kwargs):
-                    """Redirect reports to the disposable test directory."""
-                    result = original(value, *args, **kwargs)
-                    return cfg if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY' else result
-                def partial(config, prompt, payload, key):
-                    """Invent a quote in the first summary and omit the requested company card."""
-                    ids = list(payload['jobs'])
-                    empty = {'summary': '', 'facts': [], 'missing_information': ['Dati insufficienti']}
-                    invented = {'summary': 'Inventata', 'facts': [{'field': 'responsibilities', 'text': 'x', 'quote': 'S99'}], 'missing_information': []}
-                    jobs = [{'id': oid, 'selection': None, 'summary': invented if oid == ids[0] else empty} for oid in ids]
-                    return {'company': None, 'jobs': jobs}, {'total_tokens': 200}, []
+                submitted = []
+
+                def response(config, prompt, payload, key):
+                    """Record exactly which roles the caller chose to pay for."""
+                    submitted.append(set(payload['jobs']))
+                    return {'company': None, 'jobs': [{'id': oid, 'summary': card(payload, oid)} for oid in payload['jobs']]}, \
+                        {'total_tokens': 10}, []
                 with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'), \
-                     patch('jobhunter.evaluation.remote_llm.request', side_effect=partial), patch('jobhunter.evaluation.company_batch.time.sleep'):
+                        patch('jobhunter.evaluation.remote_llm.request', side_effect=response), \
+                        patch('jobhunter.evaluation.company_batch.time.sleep'):
+                    report = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
+                titles = {r['id']: json.loads(r['data'])['title'] for r in arc.db.execute('SELECT id,data FROM opportunities')}
+                # «HR Manager» lo scarta il regex, «Analyst» resta un «non so»: nessuno dei due si paga.
+                self.assertEqual({titles[oid] for oid in submitted[0]}, {SURVIVOR})
+                self.assertEqual(report['counts']['summary_requests'], 1)
+                self.assertEqual(report['counts']['saved_summaries'], 1)
+            finally:
+                arc.close()
+
+    def test_one_unusable_part_does_not_discard_the_billed_rest(self):
+        """A bad role card must not throw away the other grounded derivatives of the same paid call."""
+        with tempfile.TemporaryDirectory() as folder:
+            arc, cfg = workspace(folder, [SURVIVOR, SURVIVOR], company='Costruisce modelli di rete elettrica.')
+            original, config_read = redirect(cfg)
+            try:
+                def partial(config, prompt, payload, key):
+                    """Invent a quote in the first card and omit the requested company card."""
+                    ids = list(payload['jobs'])
+                    invented = {'summary': 'Inventata', 'missing_information': [],
+                                'facts': [{'field': 'responsibilities', 'text': 'x', 'quote': 'S99'}]}
+                    return {'company': None, 'jobs': [{'id': oid, 'summary': invented if oid == ids[0] else card(payload, oid)}
+                                                      for oid in ids]}, {'total_tokens': 200}, []
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'), \
+                        patch('jobhunter.evaluation.remote_llm.request', side_effect=partial), \
+                        patch('jobhunter.evaluation.company_batch.time.sleep'):
                     result = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
                 self.assertEqual(result['status'], 'partial')
-                # I ruoli sono già decisi dal regex: si paga solo la scheda, non un secondo giudizio.
-                self.assertEqual(result['counts']['submitted_jobs'], 0)
                 self.assertEqual(result['counts']['summary_requests'], 2)
                 # La scheda valida sopravvive; la citazione inventata e la scheda azienda assente no.
-                self.assertEqual(arc.db.execute("SELECT count(*) FROM enrichments WHERE task='remote:selection'").fetchone()[0], 0)
                 self.assertEqual(arc.db.execute("SELECT count(*) FROM enrichments WHERE task='remote:job-summary'").fetchone()[0], 1)
                 self.assertEqual(arc.db.execute("SELECT count(*) FROM enrichments WHERE task='remote:company-summary'").fetchone()[0], 0)
                 errors = [r['error'] for item in result['items'] for r in item.get('rejected', [])]
@@ -138,30 +182,20 @@ class BatchTests(unittest.TestCase):
     def test_requested_null_summary_is_partial_and_valid_sibling_persists(self):
         """Omitted requested summaries must be reported and remain eligible on the next run."""
         with tempfile.TemporaryDirectory() as folder:
-            arc = Archive(Path(folder)/'db.sqlite3')
+            arc, cfg = workspace(folder, [SURVIVOR, SURVIVOR])
+            original, config_read = redirect(cfg)
             try:
-                arc.ingest([{'company_name': 'Example', 'title': 'Data Scientist',
-                             'description': 'Build models.', 'source_url': 'https://example.org/'+str(i)}
-                            for i in range(2)], 'test')
-                cfg = json.loads(Path('config/remote_llm.json').read_text())
-                cfg['output_directory'] = folder
-                original = json.loads
-                def config_read(value, *args, **kwargs):
-                    """Keep report writes inside the temporary directory."""
-                    result = original(value, *args, **kwargs)
-                    return cfg if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY' else result
                 submitted = []
+
                 def response(config, prompt, payload, key):
                     """Omit one requested summary and provide its sibling with grounded facts."""
                     ids = list(payload['jobs'])
                     submitted.append(ids)
-                    return {'company': None, 'jobs': [
-                        {'id': oid, 'selection': None, 'summary': None if i == 0 else {
-                            'summary': 'Sviluppa modelli.', 'facts': [{'field': 'responsibilities',
-                            'text': 'Sviluppa modelli.', 'quote': next(iter(payload['jobs'][oid]['evidence_catalog']))}],
-                            'missing_information': []}} for i, oid in enumerate(ids)]}, {'total_tokens': 20}, []
+                    return {'company': None, 'jobs': [{'id': oid, 'summary': None if i == 0 else card(payload, oid)}
+                                                      for i, oid in enumerate(ids)]}, {'total_tokens': 20}, []
                 with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='dummy'), \
-                     patch('jobhunter.evaluation.remote_llm.request', side_effect=response), patch('jobhunter.evaluation.company_batch.time.sleep'):
+                        patch('jobhunter.evaluation.remote_llm.request', side_effect=response), \
+                        patch('jobhunter.evaluation.company_batch.time.sleep'):
                     report = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
                     self.assertEqual(report['status'], 'partial')
                     self.assertEqual(report['counts']['rejected_jobs'], 1)
@@ -170,7 +204,7 @@ class BatchTests(unittest.TestCase):
                     self.assertEqual(saved['usage']['total_tokens'], 20)
                     self.assertEqual(arc.db.execute("SELECT record_id FROM enrichments WHERE task='remote:job-summary'").fetchone()[0], submitted[0][1])
                     run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
-                    self.assertEqual(submitted[1], [submitted[0][0]])
+                    self.assertEqual(submitted[1], [submitted[0][0]], 'solo il ruolo rimasto senza scheda riparte')
             finally:
                 arc.close()
 
@@ -179,94 +213,60 @@ class BatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             arc = Archive(Path(folder)/'db.sqlite3')
             try:
-                arc.ingest([{'company_name': 'Example', 'title': 'Analyst', 'description': 'Alpha only.', 'source_url': 'https://example.org/a'},
-                            {'company_name': 'Example', 'title': 'Reviewer', 'description': 'Beta only.', 'source_url': 'https://example.org/b'}], 'test')
+                arc.ingest([{'company_name': 'Example', 'title': SURVIVOR, 'description': 'Alpha only.', 'source_url': 'https://example.org/a'},
+                            {'company_name': 'Example', 'title': SURVIVOR, 'description': 'Beta only.', 'source_url': 'https://example.org/b'}], 'test')
                 cfg = json.loads(Path('config/remote_llm.json').read_text())
                 cfg['output_directory'] = folder
-                original = json.loads
-                def config_read(value, *args, **kwargs):
-                    """Redirect reports to the disposable test directory."""
-                    result = original(value, *args, **kwargs)
-                    return cfg if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY' else result
+                original, config_read = redirect(cfg)
                 seen = {}
+
                 def crossed(config, prompt, payload, key):
-                    """Cite the second role's namespace while judging the first one."""
+                    """Cite the second role's namespace while describing both."""
                     seen.update(payload['jobs'])
                     ids = list(payload['jobs'])
-                    return {'company': None, 'jobs': [
-                        {'id': ids[0], 'selection': {'decision': 'keep', 'rationale': 'x', 'evidence': ['J1-S0'], 'missing_information': []}, 'summary': None},
-                        {'id': ids[1], 'selection': {'decision': 'keep', 'rationale': 'x', 'evidence': ['J1-S0'], 'missing_information': []}, 'summary': None}]}, {'total_tokens': 10}, []
+                    stolen = {'summary': 'Rubata', 'missing_information': [],
+                              'facts': [{'field': 'responsibilities', 'text': 'x', 'quote': 'J1-S0'}]}
+                    return {'company': None, 'jobs': [{'id': ids[0], 'summary': stolen},
+                                                      {'id': ids[1], 'summary': stolen}]}, {'total_tokens': 10}, []
                 with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'), \
-                     patch('jobhunter.evaluation.remote_llm.request', side_effect=crossed), patch('jobhunter.evaluation.company_batch.time.sleep'):
+                        patch('jobhunter.evaluation.remote_llm.request', side_effect=crossed), \
+                        patch('jobhunter.evaluation.company_batch.time.sleep'):
                     result = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
                 self.assertTrue(all(ref.startswith('J') for job in seen.values() for ref in job['evidence_catalog']))
-                self.assertEqual(result['counts']['evaluated_jobs'], 1)
+                # Solo il proprietario di quel namespace puo' citarlo: l'altro viene rifiutato.
+                self.assertEqual(result['counts']['saved_summaries'], 1)
                 self.assertEqual(result['counts']['rejected_jobs'], 1)
-            finally:
-                arc.close()
-
-    def test_local_exclusions_skip_the_call_except_for_a_bounded_audit(self):
-        """Locally excluded roles must not be paid for, beyond the explicit audit allowance."""
-        with tempfile.TemporaryDirectory() as folder:
-            arc = Archive(Path(folder)/'db.sqlite3')
-            try:
-                arc.ingest([{'company_name': 'Example', 'title': 'Analyst', 'source_url': 'https://example.org/'+str(i), 'description': 'Build models.'} for i in range(4)], 'test')
-                ids = [r[0] for r in arc.db.execute('SELECT id FROM opportunities')]
-                cfg = json.loads(Path('config/remote_llm.json').read_text())
-                cfg['output_directory'] = folder
-                original = json.loads
-                def config_read(value, *args, **kwargs):
-                    """Redirect reports to the disposable test directory and cap the audit at one role."""
-                    result = original(value, *args, **kwargs)
-                    if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY':
-                        return cfg
-                    if isinstance(result, dict) and 'remote_audit_excluded' in result:
-                        return {**result, 'remote_audit_excluded': 1}
-                    return result
-                def response(config, prompt, payload, key):
-                    """Judge exactly the roles the caller chose to submit."""
-                    return {'company': None, 'jobs': [{'id': oid, 'selection': {'decision': 'exclude', 'rationale': 'Test', 'evidence': [oid[:2] + '-S0'], 'missing_information': []}, 'summary': None} for oid in payload['jobs']]}, {'total_tokens': 10}, []
-                with patch('json.loads', side_effect=config_read), patch.object(arc, 'evaluations', return_value={oid: {'status': 'excluded', 'reasons': ['seniority'], 'career_priority': 'secondary'} for oid in ids}),                      patch('jobhunter.evaluation.remote_llm.api_key', return_value='test'), patch('jobhunter.evaluation.remote_llm.request', side_effect=response) as request,                      patch('jobhunter.evaluation.company_batch.time.sleep'):
-                    report = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
-                self.assertEqual(request.call_count, 1)
-                self.assertEqual(report['counts']['locally_decided'], 3)
-                self.assertEqual(report['counts']['submitted_jobs'], 1)
             finally:
                 arc.close()
 
     def test_company_card_does_not_depend_on_surviving_roles(self):
         """DESIGN §2: i due assi sono indipendenti. Nessun ruolo sopravvive, la scheda azienda si chiede lo stesso."""
         with tempfile.TemporaryDirectory() as folder:
-            arc = Archive(Path(folder)/'db.sqlite3')
+            arc, cfg = workspace(folder, ['Senior Engineer', 'Senior Engineer'],
+                                 description='Lead the team.', company='Costruisce modelli di rete elettrica.')
+            original, config_read = redirect(cfg)
             try:
-                arc.ingest([{'company_name': 'Example', 'title': 'Senior Engineer', 'description': 'Lead the team.',
-                             'source_url': 'https://example.org/'+str(i)} for i in range(2)], 'test')
+                # Azienda interessante e nessun ruolo compatibile: Tier B-attesa, la presentazione si paga.
+                cid = arc.db.execute('SELECT id FROM companies').fetchone()[0]
                 with arc.db:
-                    arc.db.execute("UPDATE companies SET description='Costruisce modelli di rete elettrica.'")
-                cfg = json.loads(Path('config/remote_llm.json').read_text())
-                cfg['output_directory'] = folder
-                original = json.loads
-                def config_read(value, *args, **kwargs):
-                    """Redirect reports to the disposable test directory and disable the audit sample."""
-                    result = original(value, *args, **kwargs)
-                    if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY':
-                        return cfg
-                    if isinstance(result, dict) and 'remote_audit_excluded' in result:
-                        return {**result, 'remote_audit_excluded': 0}
-                    return result
+                    arc.db.execute('INSERT INTO categories VALUES(?,?,?,?,?)', (cid, 'Energia', 'jev', 'Settore «Energia» al 90%', '2026-09-20'))
+
                 def card_only(config, prompt, payload, key):
-                    """Return only the company card; no role was submitted for judgement."""
+                    """Return only the company card; no role survived to be summarised."""
                     self.assertEqual(payload['jobs'], {})
                     self.assertTrue(payload['company_requested'])
-                    return {'company': {'summary': 'Costruisce modelli di rete elettrica.', 'category': 'Energia',
-                                        'facts': [{'section': 'business', 'text': 'Modelli di rete', 'quote': 'S0'}],
-                                        'missing_information': []}, 'jobs': []}, {'total_tokens': 40}, []
-                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'),                      patch('jobhunter.evaluation.remote_llm.request', side_effect=card_only) as request, patch('jobhunter.evaluation.company_batch.time.sleep'):
+                    return {'company': {'summary': 'Costruisce modelli di rete elettrica.', 'missing_information': [],
+                                        'facts': [{'section': 'business', 'text': 'Modelli di rete', 'quote': 'S0'}]},
+                            'jobs': []}, {'total_tokens': 40}, []
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'), \
+                        patch('jobhunter.evaluation.remote_llm.request', side_effect=card_only) as request, \
+                        patch('jobhunter.evaluation.company_batch.time.sleep'):
                     result = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
                 self.assertEqual(request.call_count, 1)
-                self.assertEqual(result['counts']['submitted_jobs'], 0)
+                self.assertEqual((result['counts']['summary_requests'], result['counts']['saved_company_cards']), (0, 1))
                 self.assertEqual(arc.db.execute("SELECT count(*) FROM enrichments WHERE task='remote:company-summary'").fetchone()[0], 1)
-                self.assertEqual(arc.db.execute('SELECT category FROM categories').fetchone()[0], 'Energia')
+                # La categoria resta quella del giudice System One: questo passaggio non la tocca.
+                self.assertEqual(tuple(arc.db.execute('SELECT category,method FROM categories').fetchone()), ('Energia', 'jev'))
             finally:
                 arc.close()
 
@@ -319,7 +319,7 @@ class BatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             arc = Archive(Path(folder)/'test.db')
             try:
-                arc.ingest([{'company_name': 'Unknown', 'title': 'Data Scientist',
+                arc.ingest([{'company_name': 'Unknown', 'title': SURVIVOR,
                              'source_url': 'https://example.org/empty'}], 'test')
                 cid = arc.db.execute('SELECT id FROM companies').fetchone()[0]
                 payload = inputs(arc, 'company-summary', cid, cfg)
@@ -329,7 +329,7 @@ class BatchTests(unittest.TestCase):
                 schema = response_schema(cfg, payload['response_schema'])
                 self.assertIn({'type': 'null'}, schema['properties']['company']['anyOf'])
                 with self.assertRaisesRegex(ValueError, 'Unknown source evidence'):
-                    validate('company-summary', {'summary': 'Made up', 'category': 'Da classificare',
+                    validate('company-summary', {'summary': 'Made up',
                         'facts': [{'section': 'business', 'text': 'Made up', 'quote': 'S0'}],
                         'missing_information': []}, payload['source'])
             finally:
@@ -345,16 +345,13 @@ class BatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             arc = Archive(Path(folder)/'db.sqlite3')
             try:
-                arc.ingest([{'company_name': 'Company '+str(i), 'title': 'Analyst', 'description': 'Build models.',
+                arc.ingest([{'company_name': 'Company '+str(i), 'title': SURVIVOR, 'description': 'Build models.',
                              'source_url': 'https://example.org/'+str(i)} for i in range(5)], 'test')
                 cfg = json.loads(Path('config/remote_llm.json').read_text())
                 cfg['output_directory'] = folder
-                original = json.loads
-                def config_read(value, *args, **kwargs):
-                    """Redirect reports to the disposable test directory."""
-                    result = original(value, *args, **kwargs)
-                    return cfg if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY' else result
+                original, config_read = redirect(cfg)
                 lock, released, slow, done, throttled = threading.Lock(), threading.Event(), [], set(), []
+
                 def response(config, prompt, payload, key):
                     """Hold the first request open; reject exactly one other with a provider 429."""
                     oid = sorted(payload['jobs'])[0]
@@ -376,17 +373,16 @@ class BatchTests(unittest.TestCase):
                             done.add(oid)
                             if len(done) == 4:
                                 released.set()
-                    empty = {'summary': '', 'facts': [], 'missing_information': ['Dati insufficienti']}
-                    company = {**empty, 'category': 'Da classificare'} if payload['company_requested'] else None
-                    return ({'company': company, 'jobs': [{'id': oid, 'selection': {'decision': 'review', 'rationale': 'Da verificare', 'evidence': [], 'missing_information': []}, 'summary': None} for oid in payload['jobs']]},
+                    return ({'company': None, 'jobs': [{'id': oid, 'summary': card(payload, oid)} for oid in payload['jobs']]},
                             {'total_tokens': 10}, [])
                 values = {'all_companies': True, 'mode': 'execute', 'workers': 2}
                 with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='test'), \
-                     patch('jobhunter.evaluation.remote_llm.request', side_effect=response), patch('jobhunter.evaluation.company_batch.time.sleep'):
+                        patch('jobhunter.evaluation.remote_llm.request', side_effect=response), \
+                        patch('jobhunter.evaluation.company_batch.time.sleep'):
                     report = run(arc, values, lambda d: None)
                 self.assertTrue(released.is_set())
                 self.assertEqual(report['status'], 'success')
-                self.assertEqual(report['counts']['evaluated_jobs'], 5)
+                self.assertEqual(report['counts']['saved_summaries'], 5)
                 self.assertEqual(report['counts']['api_calls'], 5)
                 self.assertEqual(report['counts']['throttled_retries'], 1)
                 self.assertEqual(report['completed_companies'], 5)
@@ -422,8 +418,8 @@ class BatchTests(unittest.TestCase):
             finally:
                 arc.close()
 
-    def test_a_null_judgement_rejects_one_role_and_never_aborts_a_paid_run(self):
-        """Visto in produzione: `selection: null` su un ruolo richiesto fermava tutta la run.
+    def test_a_null_card_rejects_one_company_and_never_aborts_a_paid_run(self):
+        """Visto in produzione: una parte `null` su una richiesta fermava tutta la run.
 
         Le risposte gia' pagate e ancora in volo venivano buttate via insieme all'eccezione. Una
         forma inattesa nella risposta del provider deve scartare *quel* pezzo e basta.
@@ -431,35 +427,35 @@ class BatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             arc = Archive(Path(folder)/'db.sqlite3')
             try:
-                arc.ingest([{'company_name': 'Company '+str(i), 'title': 'Analyst', 'description': 'Build models.',
+                arc.ingest([{'company_name': 'Company '+str(i), 'title': SURVIVOR, 'description': 'Build models.',
                              'source_url': 'https://example.org/'+str(i)} for i in range(4)], 'test')
                 cfg = json.loads(Path('config/remote_llm.json').read_text())
                 cfg['output_directory'] = folder
-                original = json.loads
-                def config_read(value, *args, **kwargs):
-                    """Redirect reports to the disposable test directory."""
-                    result = original(value, *args, **kwargs)
-                    return cfg if isinstance(result, dict) and result.get('api_key_env') == 'JOBHUNTER_API_KEY' else result
+                original, config_read = redirect(cfg)
                 answered = []
+
                 def response(config, prompt, payload, key):
-                    """Null the judgement of the first company only; the others answer normally."""
+                    """Null the card of the first company only; the others answer normally."""
                     ids = sorted(payload['jobs'])
                     answered.append(ids[0])
                     null = len(answered) == 1
-                    empty = {'summary': '', 'facts': [], 'missing_information': ['Dati insufficienti']}
-                    company = {**empty, 'category': 'Da classificare'} if payload['company_requested'] else None
-                    return ({'company': company, 'jobs': [{'id': oid, 'selection': None if null else {'decision': 'review', 'rationale': 'Da verificare', 'evidence': [], 'missing_information': []}, 'summary': None} for oid in ids]},
+                    return ({'company': None, 'jobs': [{'id': oid, 'summary': None if null else card(payload, oid)} for oid in ids]},
                             {'total_tokens': 10}, [])
                 with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'), \
-                     patch('jobhunter.evaluation.remote_llm.request', side_effect=response), patch('jobhunter.evaluation.company_batch.time.sleep'):
+                        patch('jobhunter.evaluation.remote_llm.request', side_effect=response), \
+                        patch('jobhunter.evaluation.company_batch.time.sleep'):
                     report = run(arc, {'all_companies': True, 'mode': 'execute', 'workers': 1}, lambda d: None)
                 self.assertEqual(report['status'], 'partial')
                 self.assertEqual(report['counts']['api_calls'], 4)
-                self.assertEqual(report['counts']['evaluated_jobs'], 3)
+                self.assertEqual(report['counts']['saved_summaries'], 3)
                 self.assertEqual(report['counts']['rejected_jobs'], 1)
                 self.assertEqual(report['counts']['rejected_companies'], 0)
                 self.assertEqual([r['error'] for item in report['items'] for r in item.get('rejected', [])],
-                                 ['Selection requested but not returned'])
-                self.assertEqual(arc.db.execute("SELECT count(*) FROM enrichments WHERE task='remote:selection'").fetchone()[0], 3)
+                                 ['Job summary requested but not returned'])
+                self.assertEqual(arc.db.execute("SELECT count(*) FROM enrichments WHERE task='remote:job-summary'").fetchone()[0], 3)
             finally:
                 arc.close()
+
+
+if __name__ == '__main__':
+    unittest.main()

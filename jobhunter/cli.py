@@ -86,6 +86,13 @@ def parser():
     remote.add_argument("--record-id", help="Opportunity ID for jobs, company ID for company summary")
     remote.add_argument("--llm-config", help="Remote model configuration JSON")
     remote.add_argument("--execute", action="store_true", help="Send selected source text to the configured paid API")
+    jev = sub.add_parser("system-one", help="Use one Jev request for role selection and company sector")
+    jev.add_argument("--limit", type=int, help="Requests this pass may send; ignored with --all")
+    jev.add_argument("--all", action="store_true", help="Every eligible role and company instead of a bounded sample")
+    jev.add_argument("--workers", type=int, help="Concurrent requests, capped by the configured maximum")
+    jev.add_argument("--revisit", action="store_true", help="Ask again about companies already classified")
+    jev.add_argument("--system-one-config", help="System One configuration JSON")
+    jev.add_argument("--execute", action="store_true", help="Send the selected records to the configured paid API")
     profile = sub.add_parser("company-profile", help="Recover company sector, website and description from public pages")
     profile.add_argument("--limit", type=int)
     profile.add_argument("--id", action="append", dest="ids", help="Limit to one company; repeatable")
@@ -131,6 +138,11 @@ def execute(args, archive, cfg):
     if command == "llm":
         from jobhunter.evaluation.remote_llm import run
         return run(archive, args.task, args.limit, args.execute, args.llm_config, args.record_id)
+    if command == "system-one":
+        from jobhunter.evaluation.system_one import run
+        values = {"limit": args.limit, "all": args.all, "workers": args.workers,
+                  "revisit": args.revisit, "mode": "execute" if args.execute else "preview"}
+        return run(archive, values, config_path=args.system_one_config)
     if command == "analytics":
         from jobhunter.exploration.analytics import summary
         return summary(archive, args.eligibility)

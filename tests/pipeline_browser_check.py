@@ -69,10 +69,11 @@ def main():
                 expect(page.locator('#pipeline-status')).to_contain_text('Archivio: 5 annunci · 1 aziende')
                 expect(page.locator('#pipeline-active')).to_contain_text('Attività della web app')
                 expect(page.locator('#pipeline-active')).to_contain_text('Nessun comando attivo')
-                expect(page.locator('#pipeline-handoff')).to_contain_text('Candidati alla preparazione')
+                expect(page.locator('#pipeline-handoff')).to_contain_text('Indecisi anche per System One')
                 expect(page.locator('#pipeline-handoff')).to_contain_text('Già valutati, ancora indecisi')
                 expect(page.locator('#pipeline-handoff')).to_contain_text('Da aggiornare o verificare')
-                expect(page.locator('#pipeline-steps > li')).to_have_count(5)
+                expect(page.locator('#pipeline-handoff')).to_contain_text('Candidati al giudice System One')
+                expect(page.locator('#pipeline-steps > li')).to_have_count(6)
                 assert page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth')
 
                 page.get_by_role('button', name='Metriche', exact=True).click()

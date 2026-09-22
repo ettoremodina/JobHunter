@@ -29,6 +29,10 @@ def input_versions(archive):
     rules = {k: v for k, v in files.items() if k.startswith('user_context/') or 'role_filter' in k or 'categor' in k}
     remote = {k: v for k, v in files.items() if 'remote' in k or 'job_summary_fields' in k or 'job_field_sections' in k or k == 'config/categories.json' or k.startswith('user_context/')}
     versions = {'filters': digest([data, rules])}
+    # Il giudice System One dipende dalle sue domande e dalle sue soglie: cambiarle invalida i suoi
+    # esiti salvati, esattamente come il prompt invalida quelli del remoto.
+    system_one = {k: v for k, v in files.items() if 'system' in k}
+    versions['jev'] = digest([data, system_one, rules, files.get('config/categories.json')])
     listing_inputs = [tuple(r) for r in archive.db.execute("SELECT id,json_extract(data,'$.source_url'),json_extract(data,'$.title') FROM opportunities ORDER BY id")]
     versions.update(remote=digest([data, remote]),
                     descriptions=digest([listing_inputs, files.get('config/descriptions.json'), rules]),
@@ -41,6 +45,8 @@ def controls(archive, cfg):
     ui = configuration()
     desc = json.loads((ROOT/'config/descriptions.json').read_text())
     batch = json.loads((ROOT/'config/remote_llm.json').read_text())['company_batch']
+    from jobhunter.evaluation.system_one import config as system_one_config
+    jev = system_one_config()
     versions = input_versions(archive)
     history = []
     for row in archive.db.execute("SELECT * FROM pipeline_jobs WHERE id IN (SELECT id FROM pipeline_jobs ORDER BY id DESC LIMIT 100) OR status='running' ORDER BY id DESC"):
@@ -62,7 +68,8 @@ def controls(archive, cfg):
             'sequence': ui['sequence'],
             'poll_seconds': ui['poll_seconds'], 'collection_sources': [k for k, v in cfg['sources'].items() if v.get('enabled')],
             'description_sources': sources, 'limits': {'collection': cfg['max_jobs'], 'descriptions': desc['max_limit'],
-            'workers': desc['max_workers'], 'remote_workers': batch['max_workers'], 'remote': ui['remote_max_companies']},
+            'workers': desc['max_workers'], 'remote_workers': batch['max_workers'], 'remote': ui['remote_max_companies'],
+            'jev': jev['max_limit']},
             'defaults': {'workers': desc['workers'], 'remote_workers': batch['workers'], 'company_limit': ui['remote_company_limit']}}
 
 
@@ -75,13 +82,17 @@ def parameters(step, supplied, archive, cfg):
         raise ValueError('Parametro non previsto per questo passaggio')
     values = dict(supplied)
     desc = json.loads((ROOT/'config/descriptions.json').read_text())
-    for key in ('all', 'refresh_stale', 'force', 'all_companies'):
+    for key in ('all', 'refresh_stale', 'force', 'all_companies', 'revisit'):
         if key in ui['actions'][step]['fields']:
             values.setdefault(key, False)
             if type(values[key]) is not bool:
                 raise ValueError('Valore booleano richiesto')
     batch = json.loads((ROOT/'config/remote_llm.json').read_text())['company_batch']
-    for key, default, maximum in [('limit', min(10, cfg['max_jobs']), cfg['max_jobs'] if step == 'collection' else desc['max_limit']),
+    from jobhunter.evaluation.system_one import config as system_one_config
+    jev = system_one_config()
+    for key, default, maximum in [('limit', jev['default_limit'] if step == 'jev' else min(10, cfg['max_jobs']),
+                                   cfg['max_jobs'] if step == 'collection' else
+                                   jev['max_limit'] if step == 'jev' else desc['max_limit']),
                                   ('workers', desc['workers'] if step == 'descriptions' else batch['workers'],
                                    desc['max_workers'] if step == 'descriptions' else batch['max_workers']),
                                   ('company_limit', ui['remote_company_limit'], ui['remote_max_companies'])]:
@@ -97,7 +108,8 @@ def parameters(step, supplied, archive, cfg):
         sources = {r[0] for r in archive.db.execute("SELECT DISTINCT json_extract(data,'$.source') FROM opportunities")}
         if values['source'] and values['source'] not in sources:
             raise ValueError('Fonte non presente in archivio')
-    if step == 'remote':
+    if 'mode' in ui['actions'][step]['fields']:
+        # Ogni passaggio che può spendere ha lo stesso cancello: `preview` è il valore di riposo.
         values.setdefault('mode', 'preview')
         if values['mode'] not in ('preview', 'execute'):
             raise ValueError('Modalità remota non valida')
@@ -115,6 +127,9 @@ def execute(archive, cfg, step, values, progress):
     if step == 'filters':
         result = Counter(x['status'] for x in archive.evaluations().values())
         return {'counts': dict(result)}
+    if step == 'jev':
+        from jobhunter.evaluation.system_one import run
+        return run(archive, values, progress)
     if step == 'remote':
         from jobhunter.evaluation.company_batch import run
         return run(archive, values, progress)
@@ -136,9 +151,16 @@ def start(database, cfg, step, supplied, lock, continue_after=False, remote_para
             raise ValueError('La sequenza parte dai passaggi principali')
         steps = sequence[sequence.index(step):] if continue_after else [step]
         remote_values = parameters('remote', remote_parameters or {}, archive, cfg) if 'remote' in steps and step != 'remote' else values
-        if 'remote' in steps and remote_values.get('mode') == 'execute':
+        # In sequenza i passaggi che spendono condividono la modalità scelta per la parte pagata: uno
+        # che restasse in anteprima dentro una sequenza «esegui» non farebbe nulla, e in silenzio.
+        paid_mode = (remote_values if 'remote' in steps else values).get('mode') or 'preview'
+        if paid_mode == 'execute':
             from jobhunter.evaluation.remote_llm import api_key
-            api_key(json.loads((ROOT/'config/remote_llm.json').read_text()))
+            if 'remote' in steps:
+                api_key(json.loads((ROOT/'config/remote_llm.json').read_text()))
+            if 'jev' in steps:
+                from jobhunter.evaluation.system_one import config as system_one_config
+                api_key(system_one_config())
         if archive.path.resolve() == (ROOT/cfg['database']).resolve():
             from jobhunter.operations.progress import snapshot
             if snapshot(ROOT, cfg).get('status') == 'running':
@@ -175,7 +197,9 @@ def start(database, cfg, step, supplied, lock, continue_after=False, remote_para
 
             results = []
             for current in steps:
-                current_values = values if current == step else remote_values if current == 'remote' else parameters(current, {'all': True} if current == 'descriptions' else {}, worker, cfg)
+                chained = ({'all': True, 'mode': paid_mode} if current == 'jev'
+                           else {'all': True} if current == 'descriptions' else {})
+                current_values = values if current == step else remote_values if current == 'remote' else parameters(current, chained, worker, cfg)
                 current_basis = input_versions(worker)[current]
                 started = now()
                 progress({'phase': current, 'steps': steps, 'completed_steps': [r['step'] for r in results]})

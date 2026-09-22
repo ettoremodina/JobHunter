@@ -214,9 +214,9 @@ def main():
                 expect(page.locator("#rows .company-link")).to_have_count(30)
                 assert not errors, errors
                 page.get_by_role("button", name="Pipeline", exact=True).click()
-                # Cinque passaggi: coda e valutazione manuale non sono passaggi della pipeline.
-                expect(page.locator("#pipeline-steps > li")).to_have_count(5)
-                expect(page.locator('#pipeline-steps details.pipeline-about')).to_have_count(5)
+                # Sette passaggi: coda e valutazione manuale non sono passaggi della pipeline.
+                expect(page.locator("#pipeline-steps > li")).to_have_count(6)
+                expect(page.locator('#pipeline-steps details.pipeline-about')).to_have_count(6)
                 expect(page.locator("#pipeline-status")).to_contain_text("annunci")
                 expect(page.locator("#pipeline-steps")).not_to_contain_text("Categorie locali")
                 expect(page.locator("#pipeline-steps")).not_to_contain_text("Statistiche dell")
@@ -226,7 +226,12 @@ def main():
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
                 page.set_viewport_size({"width": 1440, "height": 1050})
                 page.screenshot(path=str(destination / "pipeline-desktop.png"), full_page=True)
-                page.get_by_role('button', name='Apri Giudice 2 · Qwen sui «non so»', exact=True).click()
+                # Jev sceglie ruolo e settore nello stesso passaggio, con il cancello dell'anteprima.
+                page.get_by_role('button', name='Apri Giudice 2 · Jev sceglie il ruolo e il settore', exact=True).click()
+                expect(page.get_by_label('Modalità Jev', exact=True)).to_have_value('preview')
+                expect(page.get_by_role('button', name='Prepara anteprima', exact=True)).to_be_visible()
+                page.get_by_role('button', name='Chiudi parametri', exact=True).click()
+                page.get_by_role('button', name='Apri Schede · Qwen sugli annunci sopravvissuti', exact=True).click()
                 expect(page.locator('#pipeline-dialog')).to_be_visible()
                 expect(page.get_by_label('Numero di aziende del campione', exact=True)).to_have_value('100')
                 expect(page.get_by_label('Modalità LLM remoto', exact=True)).to_have_value('preview')

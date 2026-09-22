@@ -54,7 +54,6 @@
     "company-summary": "config/remote-company-summary-schema.json"
   },
   "field_sections_path": "config/job_field_sections.json",
-  "company_categories_path": "config/categories.json",
   "company_batch": {
     "prompt_path": "config/prompts/remote-company-batch.txt",
     "max_input_chars": 80000,

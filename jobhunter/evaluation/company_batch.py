@@ -28,22 +28,21 @@ def signature(cfg):
 def response_schema(cfg, company_schema):
     """Lo stesso schema per ogni chiamata: un prefisso stabile è ciò che fa agganciare la cache del provider.
 
-    Gli ID degli annunci e le citazioni ammesse **non** stanno più qui dentro. Non è una perdita di
+    Gli ID degli annunci e le citazioni ammesse **non** stanno qui dentro. Non è una perdita di
     controllo: `apply()` rifiuta già un insieme di ID diverso da quello richiesto e `validate()`
     rifiuta già una citazione fuori catalogo. Enumerarli anche nello schema rendeva ogni richiesta
     diversa dalla precedente fin dal primo token, e la cache non poteva agganciare mai.
-    Cosa serve per ogni riga lo dicono `selection_requested` e `summary_requested` nel payload.
+
+    Da qui è sparito il giudizio: ogni riga porta solo la sua scheda. Chi decide se un annuncio si
+    tiene è il giudice System One, un passaggio prima (DESIGN §3).
     """
-    definitions = {task: json.loads((ROOT/cfg['response_schemas'][task]).read_text(encoding='utf-8'))
-                   for task in ('selection', 'job-summary')}
+    summary = json.loads((ROOT/cfg['response_schemas']['job-summary']).read_text(encoding='utf-8'))
     # Source references remain strings in the shared schema. validate() checks their scoped membership.
-    definitions['selection']['properties']['evidence']['items'] = {'type': 'string'}
-    definitions['job-summary']['properties']['facts']['items']['properties']['quote'] = {'type': 'string'}
-    definitions['role'] = {'type': 'object', 'additionalProperties': False,
-        'required': ['id', 'selection', 'summary'], 'properties': {
+    summary['properties']['facts']['items']['properties']['quote'] = {'type': 'string'}
+    definitions = {'job-summary': summary, 'role': {
+        'type': 'object', 'additionalProperties': False, 'required': ['id', 'summary'], 'properties': {
             'id': {'type': 'string'},
-            'selection': {'anyOf': [{'$ref': '#/$defs/selection'}, {'type': 'null'}]},
-            'summary': {'anyOf': [{'$ref': '#/$defs/job-summary'}, {'type': 'null'}]}}}
+            'summary': {'anyOf': [{'$ref': '#/$defs/job-summary'}, {'type': 'null'}]}}}}
     return {'type': 'object', '$defs': definitions, 'additionalProperties': False,
             'required': ['company', 'jobs'], 'properties': {
                 'company': {'anyOf': [company_schema, {'type': 'null'}]},
@@ -60,8 +59,6 @@ def resolve_namespace(answer, tag):
     def clean(value):
         return value[len(tag)+1:] if isinstance(value, str) and value.startswith(tag+'-') else value
     answer = copy.deepcopy(answer)
-    if isinstance(answer.get('evidence'), list):
-        answer['evidence'] = [clean(x) for x in answer['evidence']]
     if isinstance(answer.get('facts'), list):
         for fact in answer['facts']:
             if isinstance(fact, dict) and 'quote' in fact:
@@ -69,97 +66,84 @@ def resolve_namespace(answer, tag):
     return answer
 
 
-def prepare(archive, cfg, prompt, cid, state, audit, counts):
-    """Read everything one company needs for a single request. All SQLite access happens here, never in a worker."""
+def prepare(archive, cfg, prompt, cid, state, counts):
+    """Read everything one company needs for a single request. All SQLite access happens here, never in a worker.
+
+    Questo passaggio **non giudica piu'**: i verdetti li hanno gia' dati il regex e il giudice
+    System One. Qui si scrivono solo le schede dei ruoli sopravvissuti e la scheda dell'azienda.
+    """
     limits = cfg['company_batch']
     # Un solo passaggio sull'evidenza aziendale per tutta la richiesta: senza, ogni ruolo in attesa
     # faceva rileggere e ripulire l'HTML di tutti gli annunci dell'azienda (`enrichment.company_input`).
     shared = {}
     jobs = [r[0] for r in archive.db.execute('SELECT id FROM opportunities WHERE company_id=? ORDER BY id', (cid,))]
     name = archive.db.execute('SELECT name FROM companies WHERE id=?', (cid,)).fetchone()[0]
-    judged, carded, payloads = [], [], {}
+    carded, payloads = [], {}
     # DESIGN §4: la sintesi si fa dopo l'assegnazione del tier e solo su Tier A e B.
     wants_cards = state['tier'] in ('A', 'B-esperienza')
     for oid in jobs:
-        verdict = state['ruoli'].get(oid) or {}
+        if not wants_cards or (state['ruoli'].get(oid) or {}).get('verdetto') != tier.KEEP:
+            continue
         description = json.loads(archive.db.execute('SELECT data FROM opportunities WHERE id=?', (oid,)).fetchone()[0]).get('description', '')
-        # DESIGN §3: il remoto giudica solo i «non so» dei due giudici precedenti, più il campione di audit.
-        # Un annuncio senza mansioni da leggere non si manda: si pagherebbe una chiamata per un `review`
-        # già noto (`selection.judgeable`).
-        if (verdict.get('verdetto') == tier.UNKNOWN or oid in audit) and judgeable(description):
-            if llm.current_result(archive, 'selection', oid, cfg, cache=shared):
-                counts['cached_jobs'] += 1
-            else:
-                judged.append(oid)
+        if not judgeable(description):
+            # Senza mansioni da leggere non c'e' niente da riassumere, e la chiamata si pagherebbe uguale.
+            counts['unreadable_jobs'] += 1
+        elif llm.current_result(archive, 'job-summary', oid, cfg, cache=shared):
+            counts['cached_summaries'] += 1
         else:
-            counts['locally_decided'] += 1
-        if wants_cards and verdict.get('verdetto') == tier.KEEP and not llm.current_result(archive, 'job-summary', oid, cfg, cache=shared) and judgeable(description):
             carded.append(oid)
-    pending = sorted(set(judged) | set(carded))
-    for oid in pending:
-        payloads[oid] = {task: llm.inputs(archive, task, oid, cfg, cache=shared)
-                         for task in (('selection',) if oid in judged else ()) + (('job-summary',) if oid in carded else ())}
+    for oid in carded:
+        payloads[oid] = {'job-summary': llm.inputs(archive, 'job-summary', oid, cfg, cache=shared)}
     company = llm.inputs(archive, 'company-summary', cid, cfg, cache=shared)
-    # DESIGN §2 e §3: i due assi sono indipendenti, ma la cascata vale per entrambi. La scheda
-    # azienda non aspetta che un ruolo sopravviva, e non si paga per un'azienda che i giudici
-    # gratuiti hanno già categorizzato: solo per un «non so», o per la presentazione di un Tier A/B.
-    unresolved = state['azienda']['verdetto'] == tier.NO_EVIDENCE
-    company_needed = (bool(company['source']['facts']) and not llm.current_result(archive, 'company-summary', cid, cfg, cache=shared)
-                      and (unresolved or state['tier'] in ('A', 'B-attesa', 'B-esperienza')))
-    if not pending and not company_needed:
+    # DESIGN §2 e §4: la scheda azienda e' presentazione, non categoria. La categoria la assegna il
+    # giudice System One un passaggio prima; qui si paga solo per presentare un Tier A o B.
+    company_needed = (bool(company['source']['facts']) and state['tier'] in ('A', 'B-attesa', 'B-esperienza')
+                      and not llm.current_result(archive, 'company-summary', cid, cfg, cache=shared))
+    if not carded and not company_needed:
         return None
     source = copy.deepcopy(company['source'])
     for field in ('facts', 'job_evidence', 'categories', 'website'):
         source.pop(field, None)
-    tags = {oid: f'J{index}' for index, oid in enumerate(pending)}
-    wire_jobs = {oid: {'evidence_catalog': namespaced(next(iter(payloads[oid].values()))['source']['evidence_catalog'], tags[oid]),
-                       'selection_requested': oid in judged, 'summary_requested': oid in carded} for oid in pending}
+    tags = {oid: f'J{index}' for index, oid in enumerate(carded)}
+    wire_jobs = {oid: {'evidence_catalog': namespaced(payloads[oid]['job-summary']['source']['evidence_catalog'], tags[oid])}
+                 for oid in carded}
     # Profilo ed etichette vanno in ogni chiamata *identici*: `request()` li sposta nel messaggio di
-    # sistema, dove diventano il prefisso in cache. Mandarli solo dove servono costerebbe di più, non
-    # di meno: sotto i 1.024 token di prefisso il provider non mette niente in cache.
+    # sistema, dove diventano il prefisso in cache. Mandarli solo dove servono costerebbe di piu', non
+    # di meno: sotto i 1.024 token di prefisso il provider non mette niente in cache. Il profilo serve
+    # ancora: dice quali fatti vale la pena tirare fuori per *questo* lettore.
     payload = {'candidate_profile': (ROOT/cfg['profile_path']).read_text(encoding='utf-8'),
                'field_labels': json.loads((ROOT/cfg['job_fields_path']).read_text()),
                'company': source, 'company_requested': company_needed, 'jobs': wire_jobs,
                'response_schema': response_schema(cfg, company['response_schema'])}
-    oversized = len(pending) > limits['max_jobs'] or len(prompt)+len(json.dumps(payload)) > limits['max_input_chars']
-    return {'id': cid, 'name': name, 'pending': pending, 'payloads': payloads, 'tags': tags,
-            'judged': set(judged), 'carded': set(carded), 'company': company, 'company_needed': company_needed,
+    oversized = len(carded) > limits['max_jobs'] or len(prompt)+len(json.dumps(payload)) > limits['max_input_chars']
+    return {'id': cid, 'name': name, 'pending': carded, 'payloads': payloads, 'tags': tags,
+            'carded': set(carded), 'company': company, 'company_needed': company_needed,
             'payload': payload, 'oversized': oversized}
 
 
 def apply(archive, cfg, prompt, job, answer, counts, report_path=''):
-    """Validate and save each derivative on its own evidence; one unusable part never discards the others."""
+    """Validate and save each card on its own evidence; one unusable part never discards the others."""
     pending, payloads = job['pending'], job['payloads']
     if not isinstance(answer, dict) or set(answer) != {'company', 'jobs'} or not isinstance(answer['jobs'], list):
         raise ValueError('Missing, duplicate or unexpected job IDs')
-    # Lo schema non elenca più gli ID: l'insieme esatto si verifica qui, dove si verificava già.
+    # Lo schema non elenca gli ID: l'insieme esatto si verifica qui, dove si verificava gia'.
     returned = {}
     for entry in answer['jobs']:
-        if not isinstance(entry, dict) or set(entry) != {'id', 'selection', 'summary'} or entry['id'] in returned:
+        if not isinstance(entry, dict) or set(entry) != {'id', 'summary'} or entry['id'] in returned:
             raise ValueError('Missing, duplicate or unexpected job IDs')
         returned[entry['id']] = entry
     if set(returned) != set(pending):
         raise ValueError('Missing, duplicate or unexpected job IDs')
     results, rejected = [], []
     for oid in pending:
-        entry = returned[oid]
         try:
-            if oid in job['judged']:
-                sp = payloads[oid]['selection']
-                if entry['selection'] is None:
-                    # Come per la scheda azienda: un giudizio chiesto e non dato e' una risposta
-                    # inutilizzabile per *questo* ruolo, non un motivo per buttare via gli altri.
-                    raise ValueError('Selection requested but not returned')
-                results.append(('selection', oid, sp, llm.validate('selection', resolve_namespace(entry['selection'], job['tags'][oid]), sp['source'])))
-            elif entry['selection'] is not None:
-                counts['ignored_job_selections'] += 1
-            if oid in job['carded']:
-                if entry['summary'] is None:
-                    raise ValueError('Job summary requested but not returned')
-                jp = payloads[oid]['job-summary']
-                results.append(('job-summary', oid, jp, llm.validate('job-summary', resolve_namespace(entry['summary'], job['tags'][oid]), jp['source'], jp['field_labels'])))
-            elif entry['summary'] is not None:
-                counts['ignored_job_summaries'] += 1
+            if returned[oid]['summary'] is None:
+                # Una scheda chiesta e non data e' inutilizzabile per *questo* ruolo, non un motivo
+                # per buttare via gli altri della stessa chiamata.
+                raise ValueError('Job summary requested but not returned')
+            jp = payloads[oid]['job-summary']
+            results.append(('job-summary', oid, jp, llm.validate(
+                'job-summary', resolve_namespace(returned[oid]['summary'], job['tags'][oid]), jp['source'], jp['field_labels'])))
         except (AttributeError, ValueError, TypeError, KeyError) as exc:
             rejected.append({'id': oid, 'error': str(exc)})
     if job['company_needed']:
@@ -168,7 +152,7 @@ def apply(archive, cfg, prompt, job, answer, counts, report_path=''):
                 raise ValueError('Company summary requested but not returned')
             results.append(('company-summary', job['id'], job['company'], llm.validate('company-summary', answer['company'], job['company']['source'])))
         except (AttributeError, ValueError, TypeError, KeyError) as exc:
-            # The company card is retried next run; the role decisions above are grounded independently.
+            # The company card is retried next run; the role cards above are grounded independently.
             rejected.append({'id': job['id'], 'task': 'company-summary', 'error': str(exc)})
     elif answer['company'] is not None:
         counts['ignored_company_summaries'] += 1
@@ -179,18 +163,19 @@ def apply(archive, cfg, prompt, job, answer, counts, report_path=''):
             fingerprint = llm.digest({'source': original, 'prompt': original_prompt, 'settings': settings})
             stored = {'result': result, 'usage': {}, 'batch_signature': signature(cfg), 'batch_report': report_path, 'settings': settings, 'prompt_hash': llm.digest(prompt)}
             archive.db.execute('INSERT OR REPLACE INTO enrichments VALUES(?,?,?,?,?,?,?)', ('remote:'+task, oid, llm.digest(original), fingerprint, json.dumps(stored, ensure_ascii=False), cfg['model'], now()))
-            if task == 'company-summary':
-                archive.db.execute("INSERT INTO categories VALUES(?,?,?,?,?) ON CONFLICT(company_id) DO UPDATE SET category=excluded.category,method=excluded.method,reason=excluded.reason,updated_at=excluded.updated_at WHERE categories.method!='chat'", (job['id'], result['category'], 'remote', result['summary'], now()))
-    decided = [r for r in results if r[0] == 'selection']
-    counts['evaluated_jobs'] += len(decided)
+    # La categoria non si scrive piu' da qui: la assegna il giudice System One (DESIGN §2).
+    counts['saved_summaries'] += sum(1 for r in results if r[0] == 'job-summary')
+    counts['saved_company_cards'] += sum(1 for r in results if r[0] == 'company-summary')
     counts['rejected_jobs'] += len(rejected)
-    for key, decision in (('kept_jobs', 'keep'), ('review_jobs', 'review'), ('remote_excluded', 'exclude')):
-        counts[key] += sum(r[3]['decision'] == decision for r in decided)
     return rejected
 
 
 def run(archive, values, progress):
-    """Process eligible roles in one request per company, keeping `workers` requests in flight.
+    """Write one request per company of cards, keeping `workers` requests in flight.
+
+    E' l'ultimo passaggio della pipeline e l'unico che **scrive**: schede dei ruoli sopravvissuti e
+    scheda dell'azienda. Non giudica e non categorizza — lo fanno il regex e il giudice System One,
+    prima di qui (DESIGN §3).
 
     Il calcolo non e' su questa macchina: il tempo totale lo decide quante risposte si aspettano
     insieme, non quanto costa prepararle. Le richieste non partono piu' a ondate di `workers` che
@@ -209,14 +194,10 @@ def run(archive, values, progress):
     ids = sorted((r[0] for r in archive.db.execute('SELECT id FROM companies')), key=llm.digest)
     if not values['all_companies']:
         ids = ids[:values['company_limit']]
-    decisions = archive.evaluations()
     assessment = verdicts(archive)
-    audit_limit = json.loads((ROOT/'config/pipeline_ui.json').read_text()).get('remote_audit_excluded', 5)
-    excluded = [r[0] for cid in ids for r in archive.db.execute('SELECT id FROM opportunities WHERE company_id=?', (cid,)) if decisions[r[0]]['status'] == 'excluded']
-    audit = set(sorted(excluded, key=llm.digest)[:audit_limit])
-    counts = Counter({key: 0 for key in ('api_calls', 'api_companies', 'submitted_jobs', 'evaluated_jobs',
-                     'cached_jobs', 'locally_decided', 'kept_jobs', 'review_jobs', 'remote_excluded',
-                     'rejected_companies', 'rejected_jobs', 'summary_requests', 'throttled_retries')})
+    counts = Counter({key: 0 for key in ('api_calls', 'api_companies', 'summary_requests', 'company_requests',
+                     'saved_summaries', 'saved_company_cards', 'cached_summaries', 'unreadable_jobs',
+                     'rejected_companies', 'rejected_jobs', 'throttled_retries')})
     usage = Counter()
     execute = values['mode'] == 'execute'
     report = {'status': 'success', 'mode': values['mode'], 'total_companies': len(ids), 'started_at': now(),
@@ -284,15 +265,15 @@ def run(archive, values, progress):
         """
         for cid in queue:
             cancellation.check()
-            job = prepare(archive, cfg, prompt, cid, assessment[cid], audit, counts)
+            job = prepare(archive, cfg, prompt, cid, assessment[cid], counts)
             if job is not None and job['oversized']:
                 counts['deferred_companies'] += 1
                 report['items'].append({'id': job['id'], 'error': 'Azienda oltre i limiti configurati: nessuna chiamata, nessun annuncio troncato'})
                 report['status'] = 'partial'
             elif job is not None and not execute:
                 counts['planned_api_calls'] += 1
-                counts['planned_jobs'] += len(job['judged'])
                 counts['planned_summaries'] += len(job['carded'])
+                counts['planned_company_cards'] += int(job['company_needed'])
             elif job is not None:
                 return job
             report['completed_companies'] += 1
@@ -309,8 +290,8 @@ def run(archive, values, progress):
                     break
                 counts['api_calls'] += 1
                 counts['api_companies'] += 1
-                counts['submitted_jobs'] += len(job['judged'])
                 counts['summary_requests'] += len(job['carded'])
+                counts['company_requests'] += int(job['company_needed'])
                 inflight[pool.submit(call, {**job, 'key': key})] = job
             if not inflight:
                 break

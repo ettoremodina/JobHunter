@@ -96,17 +96,32 @@ cambia il `content_hash`, il verdetto si rifà da solo.
 modello solo il titolo produce sempre `review`: il costo di una chiamata per nessuna
 informazione nuova. Senza descrizione, l'annuncio resta fermo e in attesa — non respinto.
 
-**4 · Giudice 2 · Qwen remoto.** Vede i «non so» del regex che hanno un testo da leggere.
-**Una sola chiamata per azienda**, che porta insieme: i giudizi dei ruoli ancora aperti, le
-schede degli annunci compatibili di Tier A e B, e la scheda aziendale con la sua categoria.
-Il profilo, le etichette e il vocabolario delle categorie stanno nel messaggio di sistema
-perché il provider possa metterlo in cache.
+**4 · Giudice 2 · System One (Jev).** Vede i «non so» del regex che hanno un testo da
+leggere. Fa **una richiesta combinata** per il ruolo e, quando serve, per il settore
+dell'azienda. Non genera testo: risponde a domande tipizzate e
+restituisce una probabilità per ognuna, quindi un giudizio mancante o una citazione fuori
+catalogo non sono possibili. Le soglie che trasformano le probabilità in verdetto stanno in
+`config/system_one.json`, le domande in `config/system-one-questions.json`. Le risposte
+restano indipendenti e vengono salvate separatamente. Il settore legge il **testo vero** degli
+annunci invece delle frasi che il regex lascia passare. Dettagli in
+[docs/system-one.md](system-one.md).
 
-Fra i due c'era un terzo giudice, un modello su Ollama, **rimosso il 10 settembre 2026**:
-decideva 0 ruoli su 4.918 e non toglieva lavoro al remoto (`DESIGN.md` §3).
+**5 · Schede · Qwen remoto.** Non giudica e non categorizza: è l'unico passaggio che
+**scrive**, e scrive soltanto. **Una sola chiamata per azienda**, che porta insieme le schede
+degli annunci compatibili di Tier A e B e la scheda aziendale. Il profilo e le etichette
+stanno nel messaggio di sistema perché il provider possa metterlo in cache; il profilo qui
+non seleziona niente, dice solo quali fatti vale la pena estrarre per chi leggerà la scheda.
+
+Quello che System One lascia indeciso **resta indeciso**: nessun modello lo rivede. Esce dalla
+pipeline automatica e diventa materiale per te.
+
+Fra il regex e il remoto c'era già stato un giudice, un modello su Ollama, **rimosso il 10
+settembre 2026**: decideva 0 ruoli su 4.918 e non toglieva lavoro al remoto (`DESIGN.md` §3).
+System One occupa quel posto per un motivo diverso — non il costo, il formato della risposta.
 
 La cascata è la regola: **vince il primo giudice che sa decidere**, l'altro non lo rivede.
-Un titolo già accettato dal regex non si paga mai.
+Un titolo già accettato dal regex non si paga mai, e dopo System One non c'è nessun altro
+giudice automatico.
 
 ---
 
@@ -131,15 +146,14 @@ flowchart TD
     P1 --> RW
     P2 --> RW
     P3 --> RW
-    RW["l'evidenza entra nella chiamata remota<br/>una richiesta per azienda<br/>→ <b>enrichments</b> remote:company-summary"]
+    RW["l'evidenza entra nella richiesta Jev<br/>insieme al ruolo quando possibile<br/>→ <b>enrichments</b> jev:category"]
 
     RW --> CAT{{"CATEGORIA"}}
     CAT --> C1["regole a parole chiave su settore e descrizione<br/><i>company_axis.categorize</i> · method=rules"]
-    C1 -->|"nessuna corrispondenza"| C3["Qwen remoto, nella stessa chiamata<br/>method=remote"]
+    C1 -->|"nessuna corrispondenza"| C3["Jev, nella richiesta combinata<br/>method=jev"]
     CAT -.->|"sempre vincente"| C4["decisione tua da chat<br/>method=chat"]
 
     C1 --> V
-    C2 --> V
     C3 --> V
     C4 --> V
     V{{"VERDETTO D'ASSE<br/><i>tier.company_verdict</i><br/>la categoria è fra le preferite?"}}
@@ -151,7 +165,7 @@ classificare», il verdetto è `evidenza_mancante` — che è una coda di lavoro
 rifiuto.
 
 **Chi ha scritto la categoria conta.** Il campo `categories.method` dice se è arrivata
-dalle regole, dal modello remoto o da te in chat (`local_llm` resta sulle righe scritte dal
+dalle regole, da Jev, dal modello remoto storico o da te in chat (`local_llm` resta sulle righe scritte dal
 giudice locale prima della sua rimozione). Le regole non riscrivono mai il giudizio di un
 modello, e niente riscrive mai una tua decisione da chat.
 

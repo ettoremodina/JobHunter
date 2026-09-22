@@ -1,4 +1,13 @@
-# LLM via API: selezione e sintesi
+# LLM via API: le schede
+
+**Dal 20 settembre 2026 il passaggio della pipeline non giudica più.** Scrive soltanto: le schede
+degli annunci sopravvissuti di Tier A e B e la scheda dell'azienda. Il verdetto sui ruoli e la
+categoria dell'azienda li decide il [giudice System One](system-one.md), prima di qui, e la scheda
+aziendale non porta più un campo `category`.
+
+Il task `selection` di questo modulo **resta disponibile dalla CLI** (`python main.py llm selection`),
+fuori dalla pipeline: serve a confrontare un campione con il giudizio di System One, non a giudicare
+l'archivio. I suoi esiti salvati continuano a valere nella catena come `llm_remoto`.
 
 Per avviare il passaggio dalla web app, inclusi pilot su 100 aziende e sequenze automatiche, leggere [Pipeline dalla UI](pipeline-ui.md). I comandi qui sotto restano disponibili per i singoli task.
 

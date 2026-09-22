@@ -188,12 +188,6 @@ def validate(task, answer, source, field_labels=None, annotations=None):
             raise ValueError('Decision requires evidence')
     else:
         expected = {'summary', 'facts', 'missing_information'} | ({'fields'} if field_labels is not None else set())
-        if source.get('category_options'):
-            expected.add('category')
-            if answer.get('category') not in source['category_options']:
-                raise ValueError('Unknown company category')
-            if answer['category'] != 'Da classificare' and not answer.get('facts'):
-                raise ValueError('Company category requires evidence')
         if set(answer) != expected or not isinstance(answer['summary'], str):
             raise ValueError('Unexpected summary fields')
         facts = answer['facts']
@@ -237,8 +231,6 @@ def inputs(archive, task, record_id, config, job=None, cache=None):
         source = {k: job.get(k) for k in ('title', 'locations', 'salary', 'employment_type', 'source_url')}
         source['description'] = '\n'.join(lines(job.get('description', '')))
     payload = {'source': source}
-    if task == 'company-summary' and config.get('company_categories_path'):
-        source['category_options'] = [*json.loads((ROOT/config['company_categories_path']).read_text(encoding='utf-8')), 'Da classificare']
     if task in config.get('evidence_reference_tasks', []):
         texts = source['facts'] if task.startswith('company-') else [source['title'], source['description']]
         excerpts = [line.strip() for text in texts if text for line in text.splitlines() if line.strip()]
@@ -265,8 +257,6 @@ def inputs(archive, task, record_id, config, job=None, cache=None):
             schema['properties']['evidence']['items'] = reference
         else:
             schema['properties']['facts']['items']['properties']['quote'] = reference
-            if source.get('category_options'):
-                schema['properties']['category'] = {'type': 'string', 'enum': source['category_options']}
         payload['response_schema'] = schema
     return payload
 
@@ -391,9 +381,6 @@ def run(archive, task, limit=None, execute=False, config_path=None, record_id=No
             with archive.db:
                 archive.db.execute('INSERT OR REPLACE INTO enrichments VALUES(?,?,?,?,?,?,?)',
                                    (task_key, oid, digest(payload), fingerprint, json.dumps(stored, ensure_ascii=False), config['model'], now()))
-                if task == 'company-summary' and 'category' in result:
-                    archive.db.execute("INSERT INTO categories VALUES(?,?,?,?,?) ON CONFLICT(company_id) DO UPDATE SET category=excluded.category,method=excluded.method,reason=excluded.reason,updated_at=excluded.updated_at WHERE categories.method!='chat'",
-                                       (oid, result['category'], 'remote', result['summary'] or 'Dati aziendali insufficienti', now()))
             report['processed'] += 1
         except (ValueError, TypeError, OSError) as exc:
             validation_error = received and isinstance(exc, (ValueError, TypeError))

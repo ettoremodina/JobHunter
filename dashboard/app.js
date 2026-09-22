@@ -443,6 +443,7 @@ async function show(id, context = {}) {
   panel.append(heading);
   panel.append(axisSummary(company));
   const origin = company.category_method === "chat" ? "Assegnata dalla chat"
+    : company.category_method === "jev" ? "Assegnata dal giudice System One"
     : company.category_method === "remote" ? "Assegnata dal modello remoto"
     : company.category_method === "rules" ? "Suggerita da regole" : "";
   panel.append(factList([
@@ -1399,7 +1400,8 @@ const pipelineAbout = {
   normalization: ['Annunci → aziende', 'Automatico a ogni importazione: uniforma i campi e raggruppa gli annunci sotto la loro azienda. Non classifica e non scarta.'],
   descriptions: ['Aziende, tramite i loro annunci', 'Scarica il testo completo degli annunci, a partire da uno per ogni azienda ancora senza evidenza. Non giudica: prepara il materiale per i giudici.'],
   filters: ['Annunci', 'Regole locali su titolo e descrizione, gratis. Classifica ogni annuncio: compatibile, escluso o «non so». Marca, non elimina: gli esclusi restano in archivio.'],
-  remote: ['Aziende e annunci', 'Una chiamata al modello remoto per azienda, a pagamento. Decide i «non so» del regex, riassume i ruoli rimasti e scrive la scheda dell’azienda (categoria e descrizione). Classifica: i suoi esiti sono proposte, non esclusioni definitive.'],
+  jev: ['Annunci e aziende', 'Una richiesta può decidere il ruolo e assegnare il settore dell’azienda. Jev risponde a domande indipendenti; il codice applica le soglie e salva i risultati separatamente. Non sovrascrive una categoria scelta in chat.'],
+  remote: ['Aziende e annunci', 'Una chiamata al modello remoto per azienda, a pagamento. È l’unico passaggio che scrive, e l’unico che non giudica: riassume gli annunci sopravvissuti di Tier A e B e compone la scheda dell’azienda. Verdetti e categorie arrivano già decisi dai passaggi precedenti.'],
   queue: ['Aziende', 'Incrocia asse ruolo e asse azienda nel Tier e mette in coda le aziende di Tier A e B. Non scarta: ordina e propone.'],
   feedback: ['Aziende e annunci', 'Le tue decisioni, su un’azienda intera o su un singolo ruolo. È l’unico passaggio che decide in modo definitivo.']};
 
@@ -1507,7 +1509,8 @@ function renderPipelineHandoff(handoff) {
   const counts = handoff.counts || {};
   const facts = el('dl', undefined, 'pipeline-handoff-facts');
   for (const [label, value, note] of [
-    ['Candidati alla preparazione', counts.ready, 'Il comando applicherà ancora limiti e vincoli del payload.'],
+    ['Candidati al giudice System One', counts.jev_ready, 'Il comando applicherà ancora limiti e vincoli del payload.'],
+    ['Indecisi anche per System One', counts.jev_review, 'Nessun giudice automatico viene dopo: restano a te.'],
     ['Bloccati dai dati', counts.blocked, 'Serve una descrizione utilizzabile prima del giudizio semantico.'],
     ['Già valutati, ancora indecisi', counts.remote_review, 'La risposta review corrente viene riusata.'],
     ['Da aggiornare o verificare', counts.stale, 'Testo, regole, profilo o configurazione non coincidono più.']]) {
@@ -1732,15 +1735,20 @@ function pipelineProgress(detail, startedAt) {
   } else {
     rows = [
       ['Aziende attraversate', `${n(detail.completed_companies)} / ${n(detail.total_companies)}`, 'comprese quelle saltate senza chiamata'],
-      ['Annunci valutati', modern ? `${n(c.evaluated_jobs)} / ${n(c.submitted_jobs)}` : b ? `${n(b.validated_jobs)} / ${n(b.submitted_jobs)}` : '—',
-        modern || b ? 'risposte validate su annunci inviati' : 'non registrato dalla vecchia versione'],
-      ['Nuovi esiti', modern ? `${n(c.kept_jobs)} · ${n(c.review_jobs)} · ${n(c.remote_excluded)}` : b ? `${n(b.keep)} · ${n(b.review)} · ${n(b.exclude)}` : n(c.remote_excluded),
-        'da tenere · da verificare · esclusioni proposte'],
-      ['Riusati dalla cache', modern ? n(c.cached_jobs) : n(c.cached), 'annunci già giudicati: nessuna nuova chiamata'],
-      ['Saltati dai filtri locali', n(c.local_excluded), 'mai inviati, quindi mai pagati'],
+      ['Schede dei ruoli', modern ? `${n(c.saved_summaries)} / ${n(c.summary_requests)}` : b ? `${n(b.validated_jobs)} / ${n(b.submitted_jobs)}` : '—',
+        modern || b ? 'schede salvate su ruoli inviati' : 'non registrato dalla vecchia versione'],
+      ['Schede aziendali', modern ? `${n(c.saved_company_cards)} / ${n(c.company_requests)}` : '—',
+        'una per azienda di Tier A o B, indipendente dai ruoli'],
+      ['Riusate dalla cache', modern ? n(c.cached_summaries) : n(c.cached), 'schede già valide: nessuna nuova chiamata'],
       ['Chiamate API', modern ? `${n(c.api_calls)} per ${n(c.api_companies)} aziende` : b ? n(b.calls) : '—',
         modern && c.rejected_companies ? `${n(c.rejected_companies)} con errore o risposta rifiutata` : 'una per azienda'],
       ['Token consumati', n(u.total_tokens), `${n(u.prompt_tokens)} input + ${n(u.completion_tokens)} output`]];
+    // Le esecuzioni salvate prima del 20 settembre 2026 portano ancora i verdetti: vanno mostrate
+    // come sono state, non riscritte con i conteggi di oggi.
+    if (c.evaluated_jobs !== undefined) rows.splice(1, 0,
+      ['Annunci valutati', `${n(c.evaluated_jobs)} / ${n(c.submitted_jobs)}`, 'quando questo passaggio giudicava ancora'],
+      ['Esiti di allora', `${n(c.kept_jobs)} · ${n(c.review_jobs)} · ${n(c.remote_excluded)}`, 'da tenere · da verificare · esclusioni proposte']);
+    if (c.unreadable_jobs) rows.push(['Senza mansioni leggibili', n(c.unreadable_jobs), 'niente da riassumere: mai inviati']);
     if (c.rejected_jobs) rows.push(['Annunci scartati dalla risposta', n(c.rejected_jobs), 'il resto della chiamata è stato salvato']);
     if (c.deferred_companies) rows.push(['Aziende oltre i limiti', n(c.deferred_companies), 'nessuna chiamata: da riprendere']);
   }
@@ -1753,12 +1761,13 @@ function pipelineProgress(detail, startedAt) {
       ['seg-in', 'Elaborati', progress.done], ['seg-pending', 'Rimanenti', Math.max(0, progress.total - progress.done)]]));
     rows = rows.filter(([label]) => label !== progress.label);
   }
-  if (modern || b) {
-    const outcomes = [['seg-keep', 'Da tenere', modern ? c.kept_jobs : b.keep],
-      ['seg-review', 'Da verificare', modern ? c.review_jobs : b.review],
-      ['seg-exclude', 'Esclusioni proposte', modern ? c.remote_excluded : b.exclude]];
-    panel.append(pipelineShares('Nuovi esiti · annunci', outcomes.reduce((sum, part) => sum + (part[2] || 0), 0), outcomes));
-    rows = rows.filter(([label]) => label !== 'Nuovi esiti');
+  // La barra dei verdetti resta solo per le esecuzioni che i verdetti li producevano davvero.
+  if (b || c.evaluated_jobs !== undefined) {
+    const outcomes = [['seg-keep', 'Da tenere', b ? b.keep : c.kept_jobs],
+      ['seg-review', 'Da verificare', b ? b.review : c.review_jobs],
+      ['seg-exclude', 'Esclusioni proposte', b ? b.exclude : c.remote_excluded]];
+    panel.append(pipelineShares('Esiti di allora · annunci', outcomes.reduce((sum, part) => sum + (part[2] || 0), 0), outcomes));
+    rows = rows.filter(([label]) => label !== 'Esiti di allora');
   }
   const list = el('dl', undefined, 'run-facts');
   if (detail.company_name) panel.append(el('p', detail.company_name));
@@ -1811,7 +1820,7 @@ function pipelineResult(run) {
   if (detail.message) container.append(el('p', detail.message));
   if (detail.total_companies !== undefined) container.append(el('p', `${detail.completed_companies} / ${detail.total_companies} aziende attraversate, incluse quelle saltate`));
   if (detail.task === 'company-batch') {
-    if (detail.mode === 'preview') container.append(el('p', `Anteprima: ${detail.counts?.planned_api_calls || 0} chiamate aziendali previste per ${detail.counts?.planned_jobs || 0} annunci. Nessuna chiamata API effettuata, nessun costo.`));
+    if (detail.mode === 'preview') container.append(el('p', `Anteprima: ${detail.counts?.planned_api_calls || 0} chiamate aziendali previste per ${detail.counts?.planned_summaries || 0} schede di ruolo e ${detail.counts?.planned_company_cards || 0} schede aziendali. Nessuna chiamata API effettuata, nessun costo.`));
     else container.append(pipelineProgress(detail));
   } else if (detail.request_breakdown) { container.append(pipelineProgress(detail));
   } else if (detail.counts) container.append(el('p', `Richieste previste: ${detail.counts.selected || 0} · Risultati salvati: ${detail.counts.processed || 0} · Già in cache: ${detail.counts.cached || 0}`));
@@ -1825,7 +1834,7 @@ function pipelineResult(run) {
 /** Build native controls from server-provided limits, with an explicit paid mode. */
 function pipelineField(key, scope, step) {
   const data = pipelineData.controls;
-  const labels = {source: 'Fonte', limit: 'Numero massimo di annunci', workers: step === 'remote' ? 'Chiamate API contemporanee' : 'Recuperi contemporanei', all: 'Tutte le descrizioni recuperabili', refresh_stale: 'Aggiorna anche descrizioni scadute', force: 'Riprova gli errori, rispettando i blocchi della fonte', company_limit: 'Numero di aziende del campione', all_companies: "Tutte le aziende dell'archivio", mode: 'Modalità LLM remoto'};
+  const labels = {source: 'Fonte', limit: step === 'jev' ? 'Numero massimo di richieste Jev' : 'Numero massimo di annunci', workers: step === 'remote' ? 'Chiamate API contemporanee' : 'Recuperi contemporanei', all: step === 'jev' ? 'Tutti i ruoli e le aziende eleggibili' : 'Tutte le descrizioni recuperabili', refresh_stale: 'Aggiorna anche descrizioni scadute', force: 'Riprova gli errori, rispettando i blocchi della fonte', revisit: 'Rivedi anche le aziende già classificate', company_limit: 'Numero di aziende del campione', all_companies: "Tutte le aziende dell'archivio", mode: step === 'jev' ? 'Modalità Jev' : 'Modalità LLM remoto'};
   const label = el('label', labels[key]);
   let input;
   if (key === 'source' || key === 'mode') {
@@ -1834,7 +1843,7 @@ function pipelineField(key, scope, step) {
     for (const [value, text] of choices) { const option = el('option', text); option.value = value; input.append(option); }
   } else {
     input = el('input');
-    input.type = ['all', 'refresh_stale', 'force', 'all_companies', 'continue_after'].includes(key) ? 'checkbox' : 'number';
+    input.type = ['all', 'refresh_stale', 'force', 'all_companies', 'revisit', 'continue_after'].includes(key) ? 'checkbox' : 'number';
     if (input.type === 'number') {
       const scale = key === 'workers' ? (step === 'remote' ? 'remote_workers' : 'workers') : key === 'company_limit' ? 'remote' : step;
       input.min = '1'; input.max = String(data.limits[scale]);
@@ -1866,7 +1875,7 @@ function openPipeline(id, savedRun = null) {
       label.append(checkbox); $('pipeline-fields').append(label);
       const chain = el('div'); chain.hidden = true;
       chain.append(el('p', sequence.slice(sequence.indexOf(id)).map(k => pipelineData.controls.actions[k].label).join(' → ')));
-      chain.append(el('p', 'I passaggi facoltativi vengono saltati. La sequenza si ferma su errore o risultato parziale. Il recupero successivo considera tutte le descrizioni eleggibili.'));
+      chain.append(el('p', 'I passaggi facoltativi vengono saltati. La sequenza si ferma su errore o risultato parziale. Il recupero successivo considera tutte le descrizioni eleggibili, e i passaggi a pagamento della sequenza usano la modalità scelta qui sotto.'));
       if (id !== 'remote' && sequence.indexOf(id) < sequence.indexOf('remote')) {
         chain.append(el('h3', 'Passaggio LLM remoto della sequenza'));
         for (const key of ['company_limit', 'all_companies', 'mode']) chain.append(pipelineField(key, 'remote', 'remote'));
@@ -1886,7 +1895,8 @@ function updatePipelineButton() {
   const form = $('pipeline-form');
   const sequence = form.elements.namedItem('continue_after')?.checked;
   const paid = [...form.querySelectorAll('select[name="mode"]')].some(input => input.value === 'execute' && (input.dataset.scope === 'step' || sequence));
-  $('pipeline-start').textContent = paid ? sequence ? 'Avvia sequenza con API a pagamento' : 'Avvia API a pagamento' : sequence ? 'Avvia sequenza' : pipelineStep === 'remote' ? 'Prepara anteprima' : 'Avvia passaggio';
+  const gated = form.querySelector('select[name="mode"][data-scope="step"]');
+  $('pipeline-start').textContent = paid ? sequence ? 'Avvia sequenza con API a pagamento' : 'Avvia API a pagamento' : sequence ? 'Avvia sequenza' : gated ? 'Prepara anteprima' : 'Avvia passaggio';
   for (const [toggle, number] of [['all', 'limit'], ['all_companies', 'company_limit']]) {
     for (const input of form.querySelectorAll(`input[name="${toggle}"]`)) {
       const field = form.querySelector(`input[name="${number}"][data-scope="${input.dataset.scope}"]`);

@@ -75,8 +75,12 @@ class RemoteTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Invalid fact field'):
             remote_llm.validate('job-summary', answer, source, source['field_sections'])
 
-    def test_company_category_and_summary_share_call_and_preserve_chat(self):
-        """Save a grounded category with the summary without overwriting a user's category."""
+    def test_the_company_card_is_prose_only_and_never_touches_the_category(self):
+        """La scheda azienda non assegna piu' il settore: quello lo scrive il giudice System One.
+
+        Prima la categoria arrivava dentro la stessa risposta, e una passata poteva sovrascrivere
+        un'assegnazione fatta altrove. Ora il contratto non ha proprio il campo.
+        """
         cfg = json.loads((ROOT/'config/remote_llm.json').read_text())
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -88,18 +92,22 @@ class RemoteTests(unittest.TestCase):
             cid = archive.db.execute('SELECT id FROM companies').fetchone()[0]
             archive.db.execute('UPDATE companies SET description=?', ('We produce solar panels.',))
             archive.db.commit()
+            archive.categorize(cid, 'Industria e materiali', 'Scelta precedente')
             payload = remote_llm.inputs(archive, 'company-summary', cid, cfg)
-            ref = next(k for k,v in payload['source']['evidence_catalog'].items() if 'solar panels' in v)
-            answer = {'summary': 'Produce pannelli solari.', 'category': 'Energia', 'facts': [{'section': 'business', 'text': 'Pannelli solari', 'quote': ref}], 'missing_information': []}
-            with patch('jobhunter.evaluation.remote_llm.api_key', return_value='dummy'), patch('jobhunter.evaluation.remote_llm.request', return_value=(answer, {}, [])) as request:
+            # Il vocabolario dei settori non viaggia piu' nel payload, quindi non c'e' enum da rispettare.
+            self.assertNotIn('category_options', payload['source'])
+            self.assertNotIn('category', payload['response_schema']['properties'])
+            ref = next(k for k, v in payload['source']['evidence_catalog'].items() if 'solar panels' in v)
+            answer = {'summary': 'Produce pannelli solari.',
+                      'facts': [{'section': 'business', 'text': 'Pannelli solari', 'quote': ref}],
+                      'missing_information': []}
+            with patch('jobhunter.evaluation.remote_llm.api_key', return_value='dummy'),                     patch('jobhunter.evaluation.remote_llm.request', return_value=(answer, {}, [])) as request:
                 self.assertEqual(remote_llm.run(archive, 'company-summary', execute=True, config_path=path)['processed'], 1)
                 request.assert_called_once()
-                self.assertEqual(archive.category(cid)['category'], 'Energia')
-                archive.categorize(cid, 'Industria e materiali', 'User correction')
-                cfg['model'] = 'changed-model'
-                path.write_text(json.dumps(cfg))
-                self.assertEqual(remote_llm.run(archive, 'company-summary', execute=True, config_path=path)['processed'], 1)
-                self.assertEqual(archive.category(cid)['category'], 'Industria e materiali')
+            self.assertEqual(archive.category(cid)['category'], 'Industria e materiali')
+            # Una risposta che la porta lo stesso viene rifiutata: il contratto non la prevede.
+            with self.assertRaises(ValueError):
+                remote_llm.validate('company-summary', {**answer, 'category': 'Energia'}, payload['source'])
             archive.close()
 
     def test_wire_schema_constrains_evidence_and_omits_duplicate_source(self):

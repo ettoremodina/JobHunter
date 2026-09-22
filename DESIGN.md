@@ -74,15 +74,30 @@ Ogni giudice lavora **solo su ciò che il precedente non ha saputo decidere**.
 | # | giudice | mestiere | esiti | costo misurato |
 |---|---------|----------|-------|----------------|
 | 1 | **Regex** | solo esclusioni **certe**: senior, manager, HR, mansioni fuori perimetro | escluso · passa | nullo |
-| 2 | **LLM remoto** (API) | **i «non so»** di entrambi gli assi: giudica i ruoli, categorizza l'azienda, scrive le schede | tieni · scarta + scheda | ~5.800 token per chiamata; **una passata sull'archivio ≈ 0,64 €** |
-| 3 | **L'utente**, in chat | risponde alle domande dell'agente; scelta finale per azienda | preferenza · decisione | tempo umano |
+| 2 | **System One** (Jev) | **i «non so»** di entrambi gli assi, senza generare testo: decide il ruolo e assegna il settore | tieni · scarta · non so | 0,042 $/MTok in ingresso, uscita gratuita; **una passata sull'archivio ≈ 1,20 $** |
+| 3 | **L'utente**, in chat | i «non so» che restano; risponde alle domande dell'agente; scelta finale per azienda | preferenza · decisione | tempo umano |
+
+Scelta del ruolo e categoria aziendale sono domande indipendenti ma condividono la stessa
+richiesta Jev quando entrambe sono pendenti. Il codice salva i due risultati con impronte separate.
 
 **Il regex marca, non elimina.** È la condizione perché i passi successivi possano
 ignorarlo quando serve (vedi §4).
 
-Il livello 2 va speso **dove il primo ha fallito**, mai prima. La sintesi e
-l'impaginazione si fanno **dopo** l'assegnazione del tier e **solo su Tier A e B**:
-riscrivere la scheda di un'azienda che poi si scarta è lavoro pagato e buttato.
+**Il modello remoto non è più un giudice.** Dal 20 settembre 2026 Qwen fa una cosa sola:
+scrivere le schede dei ruoli sopravvissuti e la scheda dell'azienda. Non decide se un
+annuncio si tiene e non assegna categorie. Il confine non è il prezzo, è il mestiere: **chi
+decide non scrive, chi scrive non decide.** Un System One model non genera stringhe, quindi
+un giudizio mancante o una citazione inventata non sono possibili — erano i due modi in cui
+il batch remoto buttava via le risposte — ma un riassunto nemmeno. Dettagli, soglie e limiti
+in [docs/system-one.md](docs/system-one.md).
+
+Conseguenza da tenere presente: **quello che System One lascia indeciso resta indeciso.**
+Nessun modello lo rivede; è materiale per te, in chat o nella dashboard. È una scelta, non
+una dimenticanza: pagare un secondo giudizio su un caso già ambiguo non lo rende meno ambiguo.
+
+Il livello 2 va speso **dove il primo ha fallito**, mai prima. La sintesi e l'impaginazione
+si fanno **dopo** l'assegnazione del tier e **solo su Tier A e B**: riscrivere la scheda di
+un'azienda che poi si scarta è lavoro pagato e buttato.
 
 ### Il giudice locale è stato rimosso il 10 settembre 2026
 
@@ -114,10 +129,11 @@ flowchart LR
     G --> D["3 · Descrizioni<br/>mirate sulla copertura aziendale"]
     D --> E["4 · Dati aziendali<br/>scheda, sito, annuncio"]
     E --> R["5 · Regole a parole chiave<br/>gratis, solo certezze"]
-    R --> Q["6 · LLM remoto<br/>i non so, le categorie, le schede"]
-    Q --> T["7 · Tier<br/>calcolato, mai salvato"]
-    T --> H["8 · Agente in chat<br/>domande, preferenze"]
-    H --> U["9 · Scelta manuale<br/>non genera regole"]
+    R --> J["6 · System One<br/>i non so, le categorie"]
+    J --> T["7 · Tier<br/>calcolato, mai salvato"]
+    T --> Q["8 · LLM remoto<br/>solo le schede, su Tier A e B"]
+    Q --> H["9 · Agente in chat<br/>domande, preferenze"]
+    H --> U["10 · Scelta manuale<br/>non genera regole"]
 ```
 
 **Il passo 3 non risponde mai ai filtri sui ruoli: risponde alla copertura

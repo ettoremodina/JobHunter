@@ -6,7 +6,7 @@ from collections import Counter
 
 from jobhunter.workspace import ROOT, now, search_rules_hash
 from jobhunter.evaluation.selection import filters, judgeable, verdicts
-from jobhunter.evaluation.tier import TIERS, KEEP, DROP, UNKNOWN
+from jobhunter.evaluation.tier import TIERS, KEEP, DROP, UNKNOWN, NO_EVIDENCE
 from jobhunter.operations.progress import snapshot
 from jobhunter.evaluation import remote_llm
 
@@ -68,7 +68,7 @@ def summary(archive, cfg, root=ROOT):
     company_axis = Counter(state['azienda']['verdetto'] for state in assessment.values())
     axis, judges = Counter(), Counter()
     # L'esito finale non dice cosa ha deciso ogni giudice: la catena sì, ed e' gia' in memoria.
-    regex_axis, journey = Counter(), Counter()
+    regex_axis, jev_axis = Counter(), Counter()
     role_states = {}
     for state in assessment.values():
         for oid, verdict in state['ruoli'].items():
@@ -77,13 +77,14 @@ def summary(archive, cfg, root=ROOT):
             judges[verdict['giudice'] or 'nessuno'] += 1
             chain = {j['giudice']: j['verdetto'] for j in verdict['catena']}
             regex_axis[chain['regex']] += 1
+            # Il giudice System One ha una riga solo dove ha risposto: contarlo dalla catena e' esatto
+            # e non costa nulla, mentre rivalidare la sua cache costerebbe un `lines()` per annuncio.
+            if 'jev' in chain:
+                jev_axis[chain['jev']] += 1
             # Senza descrizione il regex gira lo stesso, ma vede solo il titolo: un'esclusione dal
             # titolo resta definitiva, tenere o non sapere no. Quella parzialità va detta.
             if oid not in usable and chain['regex'] != DROP:
                 regex_axis['solo_titolo'] += 1
-            if chain['regex'] == UNKNOWN:
-                journey['remote_decisi' if chain.get('llm_remoto') in (KEEP, DROP)
-                        else 'attesa_descrizione' if oid not in described else 'aperti'] += 1
     # Partizione operativa al confine fra regex e remoto. La validita' viene prima del verdetto:
     # un risultato vecchio non puo' essere presentato come compatibile o scartato oggi. Inoltre
     # una risposta remota `review` corrente e' gia' stata valutata e company_batch la riusa.
@@ -94,7 +95,8 @@ def summary(archive, cfg, root=ROOT):
     handoff = Counter()
     current_remote = {}
     for oid, job in jobs.items():
-        regex_verdict = role_states[oid]['catena'][0]['verdetto']
+        judged_by = {j['giudice']: j['verdetto'] for j in role_states[oid]['catena']}
+        regex_verdict = judged_by['regex']
         if oid in filters_outdated:
             handoff['stale'] += 1
         elif regex_verdict == KEEP:
@@ -103,10 +105,16 @@ def summary(archive, cfg, root=ROOT):
             handoff['regex_discarded'] += 1
         elif not judgeable(job.get('description', '')):
             handoff['blocked'] += 1
+        elif judged_by.get('jev') in (KEEP, DROP):
+            # Deciso dal giudice System One: non arriva al remoto, quindi non si paga.
+            handoff['jev_compatible' if judged_by['jev'] == KEEP else 'jev_discarded'] += 1
+        elif oid not in saved_remote and 'jev' not in judged_by:
+            # Non l'ha ancora visto nessuno dei due giudici semantici: la coda parte da qui.
+            handoff['jev_ready'] += 1
         elif oid not in saved_remote:
-            # La grande maggioranza dei «non so» non ha ancora una cache remota: evitare di
-            # ricostruire payload, profilo e contesto aziendale quando basta questa assenza.
-            handoff['ready'] += 1
+            # Indeciso anche per System One, e nessun giudice automatico viene dopo: resta un
+            # «non so» che solo tu puoi sciogliere.
+            handoff['jev_review'] += 1
         else:
             current = remote_llm.current_result(
                 archive, 'selection', oid, remote_cfg, job=job, cache=input_cache)
@@ -119,16 +127,18 @@ def summary(archive, cfg, root=ROOT):
     handoff_order = (
         ('seg-keep', 'Compatibili secondo il regex', 'regex_compatible'),
         ('seg-gone', 'Scartati dal regex', 'regex_discarded'),
+        ('seg-keep', 'Compatibili secondo System One', 'jev_compatible'),
+        ('seg-gone', 'Scartati da System One', 'jev_discarded'),
         ('seg-keep', 'Compatibili secondo il remoto', 'remote_compatible'),
         ('seg-gone', 'Scartati dal remoto', 'remote_discarded'),
         ('seg-review', 'Valutati dal remoto, ancora indecisi', 'remote_review'),
-        ('seg-in', 'Candidati alla preparazione del remoto', 'ready'),
+        ('seg-review', 'Indecisi anche per System One', 'jev_review'),
+        ('seg-in', 'Candidati al giudice System One', 'jev_ready'),
         ('seg-pending', 'Bloccati: dati non utilizzabili', 'blocked'),
         ('seg-stale', 'Da aggiornare o verificare', 'stale'),
     )
     handoff_parts = [[color, label, handoff[key]] for color, label, key in handoff_order]
     remote_evaluated = handoff['remote_compatible'] + handoff['remote_discarded'] + handoff['remote_review']
-    giudicabili = remote_evaluated + handoff['ready']
     remote_stale = sum(1 for oid in filters_outdated
                        if role_states[oid]['catena'][0]['verdetto'] == UNKNOWN)
     remote_stale += sum(1 for oid in saved_remote - filters_outdated
@@ -136,12 +146,13 @@ def summary(archive, cfg, root=ROOT):
                         and oid not in current_remote and judgeable(jobs[oid].get('description', '')))
     # Le distribuzioni correnti non riusano i verdetti salvati senza averne verificato la cache.
     axis = Counter({
-        KEEP: handoff['regex_compatible'] + handoff['remote_compatible'],
-        DROP: handoff['regex_discarded'] + handoff['remote_discarded'],
-        UNKNOWN: handoff['remote_review'] + handoff['ready'] + handoff['blocked'] + handoff['stale'],
+        KEEP: handoff['regex_compatible'] + handoff['jev_compatible'] + handoff['remote_compatible'],
+        DROP: handoff['regex_discarded'] + handoff['jev_discarded'] + handoff['remote_discarded'],
+        UNKNOWN: handoff['remote_review'] + handoff['jev_review'] + handoff['jev_ready'] + handoff['blocked'] + handoff['stale'],
     })
     judges = Counter({
         'regex': handoff['regex_compatible'] + handoff['regex_discarded'],
+        'jev': handoff['jev_compatible'] + handoff['jev_discarded'],
         'llm_remoto': handoff['remote_compatible'] + handoff['remote_discarded'],
         'nessuno': axis[UNKNOWN],
     })
@@ -159,11 +170,13 @@ def summary(archive, cfg, root=ROOT):
                         'salvati dei due assi; gli annunci “da aggiornare o verificare” possono quindi cambiarlo alla '
                         'prossima elaborazione. Gli esiti automatici sono proposte, non decisioni definitive.'),
               'handoff': {
-                  'title': 'Dal regex al giudice remoto', 'unit': 'annunci', 'base': count,
+                  'title': 'Dal regex ai due giudici semantici', 'unit': 'annunci', 'base': count,
                   'parts': handoff_parts,
-                  'note': ('È una partizione dell’archivio letta adesso. “Candidati” indica annunci che la preparazione '
-                           'può ancora selezionare; limiti, payload e parametri decidono quali partiranno. Una risposta '
-                           '“review” corrente è già stata valutata e non implica una nuova chiamata.'),
+                  'note': ('È una partizione dell’archivio letta adesso. I tre giudici lavorano in cascata: ognuno vede '
+                           'solo ciò che il precedente non ha deciso, quindi le quote non si sovrappongono. “Candidati” '
+                           'indica annunci che la preparazione può ancora selezionare; limiti, payload e parametri '
+                           'decidono quali partiranno. Una risposta “review” corrente è già stata valutata e non '
+                           'implica una nuova chiamata.'),
                   'counts': {key: handoff[key] for _, _, key in handoff_order}},
               # Il percorso di un annuncio, passaggio per passaggio, sempre sullo stesso denominatore:
               # ogni tappa riparte dall'archivio intero e mostra quanti ne sono gia' usciti, cosi' una
@@ -184,10 +197,12 @@ def summary(archive, cfg, root=ROOT):
                              ['seg-pending', 'senza esito locale salvato', senza_esito]],
                    'note': f"Di questi, {it(regex_axis['solo_titolo'])} giudicati sul solo titolo perché la descrizione manca: "
                            'il verdetto può cambiare quando il testo arriva. Le esclusioni dal titolo restano valide.'},
-                  {'title': '4 · Giudice 2 · Qwen', 'unit': 'annunci', 'base': count,
+                  {'title': '4 · Giudici 2 e 3 · System One e Qwen', 'unit': 'annunci', 'base': count,
                    'parts': handoff_parts,
-                   'note': ('La barra distingue risultati correnti, review già valutate, candidati a una futura '
-                            'preparazione, blocchi sui dati e risultati da aggiornare. Non prevede le chiamate che partiranno.')},
+                   'note': ('I «non so» del regex passano prima al giudice System One, che decide senza generare testo, '
+                            f"e solo i suoi {it(jev_axis[UNKNOWN])} «non so» arrivano a Qwen, che li paga. La barra "
+                            'distingue risultati correnti, review già valutate, candidati a una futura preparazione, '
+                            'blocchi sui dati e risultati da aggiornare. Non prevede le chiamate che partiranno.')},
                   {'title': '5 · Aziende risultanti', 'unit': 'aziende in archivio', 'base': company_count,
                    'unit_change': True,
                    'parts': [['seg-gone', 'usciti: scarto', tiers['scarto']],
@@ -250,7 +265,9 @@ def summary(archive, cfg, root=ROOT):
                count - role_counts['with_description']]]}])
     stage('filters', 'Giudice 1 · regex su titolo e descrizione', role_counts['filtered'], count, dates.get('filters'),
           f"Legge solo gli annunci: il titolo con i pattern, la descrizione per anni richiesti, gestione di "
-          f"persone e lingue. La descrizione dell'azienda non la guarda: quella decide la categoria, al passaggio 5. "
+          f"persone e lingue. Anni, lingue e gestione di persone restano qui anche adesso: sono conteggi e "
+          f"confronti, e a un modello System One non si chiedono. La descrizione dell'azienda non la guarda: "
+          f"quella decide la categoria, nel passaggio dedicato all'asse azienda. "
           f"Il regex marca, non elimina: {it(regex_axis[KEEP])} ruoli compatibili, {it(regex_axis[DROP])} esclusi, "
           f"{it(regex_axis[UNKNOWN])} lasciati ai giudici successivi.",
           'annunci analizzati con le regole attuali', 'da rianalizzare: regole o testo sono cambiati',
@@ -267,22 +284,65 @@ def summary(archive, cfg, root=ROOT):
                   ['seg-pending', 'solo il titolo: verdetto provvisorio', regex_axis['solo_titolo']],
                   ['seg-out', 'solo il titolo, ma già escluso dal titolo stesso',
                    count - role_counts['with_description'] - regex_axis['solo_titolo']]]}])
-    stage('remote', 'Giudice 2 · Qwen sui «non so»', remote_evaluated, giudicabili, remote[0],
-          funnel['basis'], 'annunci con un risultato remoto corrente', 'candidati non ancora valutati',
-          'Le schede aziendali si producono dopo il tier, su Tier A e B.',
+    # I «non so» del regex, letti dallo stesso `handoff`: decisi da System One, ancora indecisi,
+    # non ancora interrogati, decisi in passato dal remoto, bloccati o scaduti. La somma è esatta.
+    jev_decided = handoff['jev_compatible'] + handoff['jev_discarded']
+    jev_date = db.execute("SELECT max(created_at) FROM enrichments WHERE task IN ('jev:selection','jev:category')").fetchone()[0]
+    methods = Counter({r['method']: r['n'] for r in db.execute(
+        "SELECT method,count(*) n FROM categories WHERE category!='Da classificare' GROUP BY method")})
+    stage('jev', 'Giudice 2 · Jev sceglie il ruolo e il settore', jev_decided + handoff['jev_review'],
+          regex_axis[UNKNOWN] - handoff['blocked'] - remote_evaluated - remote_stale, jev_date,
+          'È l’ultimo giudice automatico: quello che lascia indeciso resta indeciso finché non lo guardi tu. '
+          'Nella stessa richiesta valuta il ruolo e, quando serve, il settore dell’azienda. Le domande sono '
+          'indipendenti; il codice applica soglie e cancelli e salva i due risultati separatamente.',
+          'annunci con una risposta corrente', 'candidati non ancora interrogati',
+          f"Esito: {it(handoff['jev_review'])} restano «non so» e aspettano una tua lettura.",
           measure='«Non so» arrivati dal regex', base=regex_axis[UNKNOWN],
           inflow=f"Riceve i {it(regex_axis[UNKNOWN])} «non so» del regex. {it(handoff['blocked'])} sono bloccati da dati "
-                 f"non utilizzabili e {it(remote_stale)} hanno risultati da aggiornare o verificare. La copertura "
-                 f"corrente si misura sui {it(giudicabili)} annunci valutabili con cache valida.",
-          parts=[['seg-keep', 'compatibili secondo il remoto', handoff['remote_compatible']],
-                 ['seg-exclude', 'scartati dal remoto', handoff['remote_discarded']],
-                 ['seg-review', 'valutati, ancora indecisi', handoff['remote_review']],
-                 ['seg-in', 'candidati alla preparazione', handoff['ready']],
+                 f"non utilizzabili e {it(remote_evaluated)} li aveva già decisi il modello remoto quando ancora "
+                 f"giudicava, quindi la copertura si misura sui "
+                 f"{it(regex_axis[UNKNOWN] - handoff['blocked'] - remote_evaluated - remote_stale)} restanti.",
+          parts=[['seg-keep', 'compatibili', handoff['jev_compatible']],
+                 ['seg-exclude', 'scartati', handoff['jev_discarded']],
+                 ['seg-review', 'indecisi: nessun altro giudice automatico li rivede', handoff['jev_review']],
+                 ['seg-in', 'candidati, non ancora interrogati', handoff['jev_ready']],
+                 ['seg-out', 'decisi in passato dal modello remoto', remote_evaluated],
                  ['seg-pending', 'bloccati: manca la descrizione o non è utilizzabile', handoff['blocked']],
-                 ['seg-stale', 'da aggiornare o verificare', remote_stale]])
+                 ['seg-stale', 'da aggiornare o verificare', remote_stale]],
+          extra=[{'title': 'Asse azienda · settori', 'total': company_count, 'parts': [
+              ['seg-keep', 'assegnate da Jev', methods['jev']],
+              ['seg-in', 'assegnate dal modello remoto', methods['remote']],
+              ['seg-in', 'assegnate dalle regole o a mano',
+               sum(v for k, v in methods.items() if k not in ('jev', 'remote'))],
+              ['seg-pending', '«Da classificare»: nessuna prova sufficiente', company_axis[NO_EVIDENCE]]]}])
+    # L'ultimo passaggio non giudica: si misura su quante schede mancano, non su quanti verdetti.
+    # Come per i verdetti, qui si conta la presenza di una riga e non la validità della sua cache:
+    # rivalidarla vorrebbe dire ricostruire il payload di ogni ruolo a ogni lettura della pagina.
+    written_cards = {row[0] for row in db.execute("SELECT record_id FROM enrichments WHERE task='remote:job-summary'")}
+    written_company_cards = {row[0] for row in db.execute("SELECT record_id FROM enrichments WHERE task='remote:company-summary'")}
+    wanted_cards, wanted_company_cards = set(), set()
+    for cid, state in assessment.items():
+        if state['tier'] in ('A', 'B-attesa', 'B-esperienza'):
+            wanted_company_cards.add(cid)
+        if state['tier'] in ('A', 'B-esperienza'):
+            wanted_cards |= {oid for oid, verdict in state['ruoli'].items()
+                             if verdict['verdetto'] == KEEP and oid in usable}
+    stage('remote', 'Schede · Qwen sugli annunci sopravvissuti',
+          len(wanted_cards & written_cards), len(wanted_cards), remote[0],
+          'Non giudica e non assegna categorie: quelle arrivano dai giudici precedenti. Scrive, ed è l’unico '
+          'passaggio che lo fa. Una scheda si produce dopo l’assegnazione del tier e solo su Tier A e B: '
+          'riscrivere la scheda di un’azienda che poi si scarta è lavoro pagato e buttato (DESIGN §4).',
+          'ruoli sopravvissuti con una scheda', 'ancora senza scheda',
+          'La scheda aziendale non aspetta che un ruolo sopravviva: segue il tier, non i ruoli.',
+          measure='Ruoli compatibili di Tier A e B, con mansioni leggibili',
+          inflow=f'Riceve i {it(len(wanted_cards))} ruoli compatibili che vivono in un’azienda di Tier A o B. '
+                 'Quello che i giudici hanno scartato o lasciato indeciso non arriva qui, quindi non si paga.',
+          extra=[{'title': 'Schede aziendali · aziende di Tier A e B', 'total': len(wanted_company_cards), 'parts': [
+              ['seg-keep', 'con la loro scheda', len(wanted_company_cards & written_company_cards)],
+              ['seg-in', 'ancora senza scheda', len(wanted_company_cards - written_company_cards)]]}])
     runs = [dict(r) for r in db.execute('''SELECT source,status,created_at,
         json_extract(detail,'$.task') task FROM runs ORDER BY id DESC LIMIT 12''')]
-    order = ['collection', 'normalization', 'descriptions', 'filters', 'remote']
+    order = ['collection', 'normalization', 'descriptions', 'filters', 'jev', 'remote']
     steps.sort(key=lambda step: order.index(step['id']))
     workflow = snapshot(root, cfg) if archive.path.resolve() == (root / cfg['database']).resolve() else {
         'status': 'not_found', 'message': 'Nessun report collegato a questo archivio.'}

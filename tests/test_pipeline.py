@@ -83,15 +83,23 @@ class PipelineTests(unittest.TestCase):
             # La barra del giudice 2 sta sui «non so» del regex, non su una popolazione derivata in silenzio.
             regex = next(bar for bar in steps['filters']['extra'] if bar['title'] == 'Esito del regex')
             non_so = next(value for _, label, value in regex['parts'] if 'giudici successivi' in label)
-            remote = steps['remote']
-            self.assertEqual(remote['base'], non_so)
-            self.assertEqual(sum(value for _, _, value in remote['parts']), non_so)
+            jev = steps['jev']
+            self.assertEqual(jev['base'], non_so)
+            self.assertEqual(sum(value for _, _, value in jev['parts']), non_so)
             # La copertura resta sulle chiamate possibili: una quota ferma non blocca lo stato per sempre.
-            fermi = next(value for _, label, value in remote['parts'] if 'manca la descrizione' in label)
-            self.assertEqual(remote['total'], non_so - fermi)
+            fermi = next(value for _, label, value in jev['parts'] if 'manca la descrizione' in label)
+            self.assertEqual(jev['total'], non_so - fermi)
             # I numeri della frase hanno la stessa forma di quelli della barra, o non si agganciano a occhio.
-            self.assertIn(it(non_so), remote['inflow'])
+            self.assertIn(it(non_so), jev['inflow'])
+            self.assertIn(it(jev['total']), jev['inflow'])
+            # L'ultimo passaggio non giudica: si misura sulle schede mancanti, non sui verdetti, e
+            # la sua unita' non e' piu' la stessa della card precedente.
+            remote = steps['remote']
+            self.assertIsNone(remote['parts'])
+            self.assertEqual(remote['base'], remote['total'])
             self.assertIn(it(remote['total']), remote['inflow'])
+            aziendali = next(bar for bar in remote['extra'] if 'Schede aziendali' in bar['title'])
+            self.assertEqual(sum(value for _, _, value in aziendali['parts']), aziendali['total'])
             self.assertEqual((it(23049), it(5908)), ('23.049', '5908'))
             # Dove cambia l'unita' di misura la card lo dichiara invece di lasciare il salto al lettore.
             self.assertIn('Cambia unità di misura', steps['descriptions']['inflow'])
@@ -105,6 +113,7 @@ class PipelineTests(unittest.TestCase):
             ('Growth Hacker Drop', 'Plan growth experiments and analyse product metrics'),
             ('Growth Hacker Review', 'Plan growth experiments and analyse product metrics'),
             ('Growth Hacker Ready', 'Plan growth experiments and analyse product metrics'),
+            ('Growth Hacker Jev', 'Plan growth experiments and analyse product metrics'),
             ('Growth Hacker Blocked', ''),
             ('Growth Hacker Stale', 'Plan growth experiments and analyse product metrics'),
         ]
@@ -121,12 +130,20 @@ class PipelineTests(unittest.TestCase):
             archive.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
                                ('remote:selection', ids['Growth Hacker Stale'], 'source', 'old-key',
                                 json.dumps({'result': {'decision': 'keep'}}), 'test', '2025-01-01'))
+            # Deciso dal giudice System One: non deve comparire fra i candidati del remoto, o la
+            # card di Qwen prometterebbe chiamate su annunci che non gli arriveranno mai.
+            archive.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
+                               ('jev:selection', ids['Growth Hacker Jev'], 'source', 'key',
+                                json.dumps({'result': {'decision': 'exclude', 'rationale': 'Test',
+                                                       'evidence': ['Plan growth experiments and analyse product metrics']}}),
+                                'jev-1.13.0', '2026-09-20'))
             handoff = summary(archive, settings(), Path(directory))['funnel']['handoff']
             self.assertEqual(sum(value for _, _, value in handoff['parts']), len(rows))
             self.assertEqual(handoff['counts'], {
                 'regex_compatible': 1, 'regex_discarded': 1,
+                'jev_compatible': 0, 'jev_discarded': 1,
                 'remote_compatible': 1, 'remote_discarded': 1, 'remote_review': 1,
-                'ready': 1, 'blocked': 1, 'stale': 1,
+                'jev_review': 0, 'jev_ready': 1, 'blocked': 1, 'stale': 1,
             })
 
     def test_description_card_counts_company_coverage(self):
