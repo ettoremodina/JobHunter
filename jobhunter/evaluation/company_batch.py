@@ -59,13 +59,16 @@ def namespaced(catalog, tag):
 
 
 def first_reference(value):
-    """Keep the first key of a comma-joined list such as ``"J0-S22,J0-S23"``.
+    """Keep the first key of a joined list such as ``"J0-S22,J0-S23"`` or ``"J0-S22; J0-S23"``.
 
     Il prompt vieta di concatenare chiavi, ma `qwen3.8-flash` lo fa comunque su 155 citazioni del
-    primo giro completo (22 settembre 2026). La prima chiave e' testo vero della fonte: la frase
-    resta ancorata, solo a una prova invece che a piu'. Una chiave inesistente la rifiuta validate().
+    primo giro completo (22 settembre 2026), con la virgola e a volte col punto e virgola. La prima
+    chiave e' testo vero della fonte: la frase resta ancorata, solo a una prova invece che a piu'.
+    Una chiave inesistente la rifiuta validate().
     """
-    return value.split(',')[0].strip() if isinstance(value, str) and ',' in value else value
+    if not isinstance(value, str):
+        return value
+    return value.replace(';', ',').split(',')[0].strip()
 
 
 def resolve_namespace(answer, tag):

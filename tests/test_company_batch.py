@@ -324,7 +324,7 @@ class BatchTests(unittest.TestCase):
                 """Repeat the role, join two keys, and cite the role from the company card."""
                 oid = next(iter(payload['jobs']))
                 joined = {'summary': 'Modelli di rete.', 'missing_information': [],
-                          'facts': [{'field': 'responsibilities', 'text': 'Modelli e Python.', 'quote': 'J0-S0,J0-S1'}]}
+                          'facts': [{'field': 'responsibilities', 'text': 'Modelli e Python.', 'quote': 'J0-S0; J0-S1'}]}
                 broken = {**joined, 'facts': [{'field': 'responsibilities', 'text': 'x', 'quote': 'J0-S9'}]}
                 company = {'summary': 'Rete elettrica.', 'missing_information': [],
                            'facts': [{'section': 'business', 'text': 'Rete', 'quote': 'S0'},
