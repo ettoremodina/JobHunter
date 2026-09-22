@@ -1,77 +1,50 @@
 # JobHunter
 
-JobHunter raccoglie annunci, raggruppa le opportunità per azienda e conserva giudizi automatici e decisioni personali senza confonderli. SQLite e gli snapshot locali sono la fonte dei dati. La dashboard, la CLI e la skill Codex leggono lo stesso archivio.
+*[Leggi in italiano](README.it.md)*
 
-## Avvio
+JobHunter collects job ads from several boards, groups them by company, and runs them past a series of judges, from the cheapest to the most careful, until a short list remains. Everything runs on your computer: SQLite and local snapshots hold the data, and a local dashboard, a CLI and a chat agent all read the same archive.
 
-Su Windows, apri `Avvia JobHunter.pyw`. Il launcher avvia il server locale, apre la pagina Pipeline e permette di fermarlo in sicurezza.
+To see how it works, open the illustrated overview at [docs/jobhunter-overview.html](docs/jobhunter-overview.html).
 
-Da PowerShell:
+## Getting started
 
-```powershell
-.\.venv\Scripts\python.exe main.py serve
+The guide [docs/getting-started.md](docs/getting-started.md) takes you from a fresh clone to your first judged job ads. In short:
+
+```bash
+python -m venv .venv
+pip install -r requirements.txt
+playwright install chromium
+python main.py init
+python main.py serve
 ```
 
-La dashboard risponde su <http://127.0.0.1:8000>. Se l'ambiente non esiste ancora:
+`init` creates the database and your personal files (profile, filters, searches) from the examples in `examples/`. For a guided setup, ask your coding agent to follow [skills/jobhunter-setup/SKILL.md](skills/jobhunter-setup/SKILL.md).
 
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m playwright install chromium
-.\.venv\Scripts\python.exe main.py init
+The dashboard runs at <http://127.0.0.1:8000>. On Windows you can also open `Avvia JobHunter.pyw`. The dashboard, the CLI messages and most of the in-depth documentation in `docs/` are in Italian.
+
+## How it works
+
+1. Collects and normalizes job ads.
+2. Discards, with free rules, the roles that are clearly out of scope.
+3. Fetches missing descriptions and company data.
+4. Uses Jev for the cases that need a judgement on the duties.
+5. Computes Tiers from two axes: company and role.
+6. Has Qwen write summary cards for the companies already admitted.
+7. Leaves the uncertain cases and the final choice to the user.
+
+Rules, Jev, summaries and personal decisions stay separate. The Tier is computed on read and never stored.
+
+## Tests
+
+After `python main.py init`:
+
+```bash
+python -B -m unittest discover -s tests -v
+python -B tests/browser_check.py
 ```
 
-## Flusso attivo
+Tests use temporary databases.
 
-La pipeline esegue questi passaggi:
+## Your data stays local
 
-1. raccoglie e normalizza gli annunci;
-2. applica le esclusioni deterministiche ai ruoli;
-3. recupera le descrizioni mancanti e i dati aziendali;
-4. usa Jev per i casi che richiedono un giudizio semantico;
-5. calcola i Tier dai due assi, azienda e ruolo;
-6. genera con Qwen le schede delle aziende e dei ruoli già ammessi;
-7. lascia all'utente la revisione degli indecisi e la scelta finale.
-
-Regex, Jev, schede Qwen e decisioni personali restano dati distinti. Il Tier viene calcolato in lettura e non viene salvato.
-
-## Comandi utili
-
-```powershell
-.\.venv\Scripts\python.exe main.py --help
-.\.venv\Scripts\python.exe main.py search --query energy --limit 20
-.\.venv\Scripts\python.exe main.py show AZIENDA_ID
-.\.venv\Scripts\python.exe main.py saved
-.\.venv\Scripts\python.exe main.py codex-session start --mode indecisi
-.\.venv\Scripts\python.exe main.py codex-session start --mode selezione --tier A
-```
-
-La tab Pipeline avvia le operazioni lunghe e ne conserva lo stato. La tab Metriche spiega popolazioni, passaggi e qualità dei dati. La tab Salvate contiene soltanto aziende e ruoli messi da parte a mano.
-
-## Documentazione
-
-L'indice aggiornato è in [docs/README.md](docs/README.md). I riferimenti principali sono:
-
-- [architettura e mappa del codice](docs/mappa-codice-dati.md);
-- [pipeline completa](docs/pipeline-completa.md);
-- [uso e manutenzione](docs/jobhunter-v2.md);
-- [modello dati](docs/data-model.md);
-- [configurazione](docs/configuration.md);
-- [revisione ed esplorazione con Codex](docs/conversazioni-codex.md).
-
-## Test
-
-```powershell
-.\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe -B tests\browser_check.py
-```
-
-I test browser usano un database temporaneo. Per misurare la ricerca su dati sintetici:
-
-```powershell
-.\.venv\Scripts\python.exe -B tests\benchmark_search.py --companies 1000 --repeat 3
-```
-
-## Dati personali
-
-Questa copia di lavoro contiene configurazioni e contesto personali. Non pubblicarla come distribuzione pulita. Conserva `.env`, `data/`, `user_context/`, backup SQLite e snapshot delle fonti. La cronologia Git contiene le vecchie guide e i report eliminati dalla documentazione corrente.
+Your profile, filters, searches, API keys (`.env.local`) and archive (`data/`) stay on your computer: they are listed in `.gitignore`. Before pushing a fork, check `git status`.

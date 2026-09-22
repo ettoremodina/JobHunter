@@ -14,7 +14,7 @@ def maintained_markdown_files():
     """Yield public project documentation, excluding generated and private data."""
     yield from ROOT.glob("*.md")
     yield from (ROOT / "docs").rglob("*.md")
-    yield from (ROOT / "skills" / "jobhunter").rglob("*.md")
+    yield from (ROOT / "skills").rglob("*.md")
 
 
 def local_link_target(document, raw_target):

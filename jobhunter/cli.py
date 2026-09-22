@@ -7,7 +7,7 @@ import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from jobhunter.workspace import Archive, ROOT, STATUSES, settings, categories
+from jobhunter.workspace import Archive, ROOT, STATUSES, settings, categories, install_examples
 
 logger = logging.getLogger(__name__)
 
@@ -297,8 +297,11 @@ def main():
             from jobhunter.operations.progress import monitor
             monitor(ROOT, cfg, args.run, args.watch, args.interval, args.json)
             return 0
+        created = install_examples() if args.command == "init" else None
         archive = Archive(args.db or ROOT / cfg["database"])
         result = execute(args, archive, cfg)
+        if created is not None:
+            result = {**result, "created_from_examples": created}
         if result is not None:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         return 2 if isinstance(result, dict) and (result.get("status") in ("failed", "partial", "access_required", "blocked") or result.get("failed")) else 0

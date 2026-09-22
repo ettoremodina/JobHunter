@@ -37,6 +37,26 @@ def settings(path=None):
     return json.loads(Path(path or ROOT / "config/app.json").read_text(encoding="utf-8"))
 
 
+def install_examples(root=ROOT):
+    """Create each personal file that is still missing from its copy in `examples/`.
+
+    Profilo, filtri, ricerche e domande di Jev appartengono a chi usa il tool e non sono
+    versionati: `examples/` ne contiene una versione di esempio con gli stessi percorsi.
+    Un file esistente non viene mai sovrascritto. Restituisce i percorsi creati.
+    """
+    root = Path(root)
+    created = []
+    for source in sorted((root / "examples").rglob("*")):
+        target = root / source.relative_to(root / "examples")
+        if source.is_file() and not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+            created.append(target.relative_to(root).as_posix())
+    if created:
+        logger.info("Created %d personal files from examples/", len(created))
+    return created
+
+
 def search_rules_hash(rules):
     """Invalidate decisions only for changed rules or actual extraction functions."""
     selected = {

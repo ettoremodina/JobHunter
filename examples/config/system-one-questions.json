@@ -1,0 +1,86 @@
+{
+  "note": "Domande tipizzate per il giudice System One. Jev non ha un messaggio di sistema e legge le istruzioni alla lettera: la regola di decisione sta qui, scritta per esteso, non nel profilo. Ogni domanda e' indipendente dalle altre e vede lo stesso `state`. Le soglie che trasformano queste probabilita' in un verdetto stanno in config/system_one.json.",
+  "selection": {
+    "mansioni_descritte": {
+      "type": "noul",
+      "instructions": "Il campo `mansioni`, insieme al titolo, identifica che cosa farà la persona in questo specifico ruolo. Basta anche una descrizione breve quando il mestiere e l'attività sono inequivocabili. Non basta presentare l'azienda, la sua missione, una talent pool o un invito generico a candidarsi.",
+      "criteria": {
+        "true": "Sono presenti responsabilità, compiti o risultati attesi specifici, oppure titolo e testo identificano senza ambiguità un lavoro concreto come installatore, manutentore, magazziniere o addetto all'assistenza.",
+        "false": "Il testo presenta soltanto l'azienda, una candidatura spontanea, una talent pool o informazioni generiche senza mansioni del ruolo."
+      }
+    },
+    "mansioni_compatibili": {
+      "type": "noul",
+      "instructions": "Il lavoro descritto in `mansioni` consiste principalmente in analisi quantitativa, modellazione o sviluppo software su dati e modelli. Giudica le attività svolte, non il settore in cui vengono applicate: analytics per manutenzione, energia, finanza o processi industriali resta lavoro quantitativo.",
+      "criteria": {
+        "true": "Data science, analisi dati, statistica, machine learning, deep learning, ricerca operativa, ottimizzazione, simulazione, modellazione numerica, calcolo scientifico, AI generativa, LLM, RAG, agenti, valutazione e benchmark di modelli, MLOps e infrastruttura per l'AI, data engineering, analytics, GIS e visualizzazione di dati, oppure ingegneria del software generalista. Vale anche quando il ruolo mescola queste mansioni con altro, purche' il lavoro effettivo sia questo.",
+        "false": "Il lavoro effettivo e' di altra natura: amministrativo, commerciale, manuale, di coordinamento, di laboratorio sperimentale, oppure il testo non descrive affatto le mansioni. Reporting e dashboard limitati a contabilità, controllo di gestione, budget, margini, campagne marketing, CRM, vendite o KPI commerciali non bastano. Diventano compatibili solo se il lavoro principale sviluppa modelli statistici o predittivi, software, una piattaforma dati generale o metodi quantitativi riutilizzabili."
+      }
+    },
+    "famiglia_esclusa": {
+      "type": "choice",
+      "instructions": "A quale di queste famiglie appartiene l'attività principale del lavoro descritto in `mansioni`. Il settore applicativo non determina la famiglia. Scegli `nessuna` quando la persona costruisce software, analisi, algoritmi o modelli, anche se questi strumenti servono vendite, manutenzione, finanza o processi industriali. Scegli una famiglia esclusa solo quando le sue attività costituiscono il lavoro principale.",
+      "criteria": {
+        "nessuna": "Il lavoro non appartiene a nessuna delle famiglie elencate qui sotto.",
+        "amministrazione_hr_legale": "Mansioni principalmente amministrative, di risorse umane, contabili, di controllo di gestione o legali. Include BI, dashboard e reporting destinati soprattutto a contabilità, finance, budget, forecast, margini o controllo di gestione, anche quando usa Power BI o SQL. Non scegliere questa famiglia quando il lavoro principale sviluppa modelli statistici o predittivi, software o una piattaforma dati generale.",
+        "commerciale_marketing": "Vendite, sviluppo commerciale, account, marketing o comunicazione come attività principale. Include reporting e insight operativi su campagne, CRM, messaggi, vendite o KPI commerciali. Non scegliere questa famiglia se la persona svolge soprattutto simulazioni, modellazione scientifica o analisi tecnica di sistemi fisici per supportare clienti o offerte.",
+        "supporto_clienti": "Assistenza clienti, helpdesk, supporto di primo o secondo livello.",
+        "annotazione_manuale": "Annotazione, etichettatura o valutazione prevalentemente manuale di dati o risposte per l'AI. Non vale se il lavoro e' costruire il sistema di valutazione invece di eseguirla a mano.",
+        "sviluppo_web_mobile": "Puro sviluppo di siti, interfacce front-end o applicazioni mobili. La dicitura web, backend o full stack da sola non basta. Software engineering generalista, sistemi backend, piattaforme dati e software di ottimizzazione appartengono a `nessuna`.",
+        "coordinamento_processi": "Puro coordinamento, project management, raccolta requisiti, gestione di processi o di fornitori interni. Se la persona analizza dati o sviluppa direttamente algoritmi, modelli, prototipi o soluzioni, scegli `nessuna`.",
+        "produzione_manutenzione": "Lavoro manuale di produzione, montaggio, magazzino, logistica di reparto, installazione, manutenzione o assistenza tecnica sul campo. Analizzare dati di produzione o manutenzione e sviluppare modelli, analytics o AI appartiene a `nessuna`.",
+        "laboratorio_sperimentale": "Ricerca principalmente sperimentale di chimica o biologia, condotta in laboratorio. L'analisi computazionale di dati biologici o chimici non appartiene a questa famiglia.",
+        "qualita_sicurezza_industriale": "Qualita' di produzione, controllo fornitori, certificazioni ISO, sicurezza dei processi industriali, HAZOP, process safety. La sicurezza funzionale o algoritmica di un software non appartiene a questa famiglia.",
+        "officina_ricambi": "Gestione di riparazioni, ricambi, garanzie o indicatori di officine e centri di assistenza."
+      }
+    },
+    "posto_per_studenti": {
+      "type": "noul",
+      "instructions": "La posizione e' uno stage, un tirocinio, una tesi, un apprendistato scolastico o e' riservata a studenti iscritti o a laureandi.",
+      "criteria": {
+        "true": "Il testo dice esplicitamente stage, internship, tirocinio, tesi, praticantato, working student, o richiede l'iscrizione in corso a un percorso di studi.",
+        "false": "E' un impiego ordinario. Un posto per *iniziare* un dottorato o un percorso di ricerca finanziato non e' uno stage."
+      }
+    },
+    "seniority_fuori_profilo": {
+      "type": "noul",
+      "instructions": "Il ruolo richiede seniority o management espliciti, oppure più di due anni di esperienza obbligatoria. Leggi titolo e mansioni anche quando il requisito è scritto in una lingua diversa dall'italiano o dall'inglese. Un requisito preferenziale non conta.",
+      "criteria": {
+        "true": "Il ruolo è esplicitamente senior, lead, principal, staff, head, director o manager; include responsabilità di gestione persone; oppure richiede obbligatoriamente almeno tre anni di esperienza.",
+        "false": "Il ruolo è junior o graduate, richiede al massimo due anni, indica più esperienza solo come preferenza, oppure non dichiara alcun requisito di seniority o esperienza. Iniziare un PhD non implica seniority."
+      }
+    },
+    "prova": {
+      "type": "choice",
+      "options_from": "evidence_catalog",
+      "instructions": "Quale di queste frasi, prese dall'annuncio, dice piu' direttamente in che cosa consiste il lavoro."
+    }
+  },
+  "category": {
+    "settori": {
+      "type": "noul",
+      "expand_from": "categories",
+      "instructions": "L'azienda indicata in `azienda` opera nel settore `{category}`. Giudica l'attivita' del datore di lavoro dai testi, non il mestiere della persona cercata o il settore di un cliente.",
+      "criteria": {
+        "true": "Prodotti, servizi o mercato del datore di lavoro appartengono a `{category}`: {description}.",
+        "false": "Il testo non collega l'attivita' del datore di lavoro a questo settore."
+      }
+    },
+    "descrive_il_datore": {
+      "type": "noul",
+      "instructions": "I testi in `testi` dicono che cosa fa l'azienda indicata in `azienda`, non soltanto che cosa fara' la persona assunta o che cosa fa un cliente o un progetto nominato nel testo.",
+      "criteria": {
+        "true": "Almeno una frase descrive l'attivita', il prodotto o il mercato del datore di lavoro.",
+        "false": "Il testo parla solo delle mansioni offerte, oppure descrive un cliente, un committente o un progetto e non si capisce quale delle due aziende sia quella che assume."
+      }
+    },
+    "agenzia": {
+      "type": "noul",
+      "instructions": "L'azienda indicata in `azienda` opera essa stessa come agenzia per il lavoro, societa' di somministrazione, recruiting, staffing o consulenza che colloca personale presso terzi.",
+      "criteria": {
+        "true": "Il testo la presenta come agenzia, societa' di somministrazione, head hunter, staffing o body rental che assume per conto di aziende clienti.",
+        "false": "Assume per se' stessa, per la propria attivita'."
+      }
+    }
+  }
+}

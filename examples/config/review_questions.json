@@ -1,0 +1,12 @@
+{
+  "default_limit": 3,
+  "examples_per_group": 5,
+  "groups": [
+    {"id": "manual_technical", "title": "Tecnici e attività operative", "pattern": "\\b(technician|installer|electrician|mechanic|warehouse|delivery driver|assembly operator|production operator)\\b", "question": "Vuoi escludere tecnici di installazione/manutenzione, magazzino e attività manuali?"},
+    {"id": "business_analysis", "title": "Analisi operativa e pianificazione", "pattern": "\\b(business analyst|supply.chain analyst|demand planner|supply planner|operations analyst)\\b", "question": "Ti interessano analisi business/supply chain e pianificazione della domanda, oltre a data science?"},
+    {"id": "systems_integration", "title": "Sistemi, integrazione e soluzioni", "pattern": "\\b(systems? engineer|integration engineer|forward deployed engineer|solutions? engineer|application engineer)\\b", "question": "Come valuti ruoli generici di sistemi e integrazione? Sono interessanti solo quando riguardano software e dati?"},
+    {"id": "test_quality", "title": "Test e qualità", "pattern": "\\b(test engineer|quality engineer|quality assurance engineer|verification engineer)\\b", "question": "Ti interessano ruoli di test e qualità? Vuoi limitarli a software, dati e modelli?"},
+    {"id": "process_engineering", "title": "Ingegneria di processo", "pattern": "\\b(process engineer|project engineer|product engineer)\\b", "question": "Per processo/prodotto/progetto, vuoi considerare solo attività di analisi, ottimizzazione e simulazione?"},
+    {"id": "data_adjacent", "title": "AI, analytics e architetture dati", "pattern": "\\b(artificial intelligence engineer|analytics engineer|data architect|ai architect)\\b", "question": "Vuoi considerare questi ruoli AI/dati, mantenendo comunque i limiti di seniority ed esperienza?"}
+  ]
+}

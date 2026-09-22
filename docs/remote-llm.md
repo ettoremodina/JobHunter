@@ -50,7 +50,7 @@ quindi richiedere nuove chiamate anche per record già elaborati.
 
 Le prove usano risposte simulate e SQLite temporaneo. Non erano disponibili report
 reali nella worktree e non sono state fatte chiamate API. Endpoint e modello restano
-quelli scelti nella memoria `remote-llm-pivot`; disponibilità sull'account, qualità
+quelli configurati in `config/remote_llm.json`; disponibilità sull'account, qualità
 semantica e causa del malfunzionamento osservato dall'utente restano da verificare
 su un campione reale. La correzione del prompt non dimostra un miglioramento della
 qualità del modello. Nessuna modifica alle preferenze o alla selezione della pipeline.

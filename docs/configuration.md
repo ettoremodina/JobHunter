@@ -2,6 +2,8 @@
 
 Il codice legge configurazioni esplicite dalla cartella `config/`. Le preferenze personali e le prove del profilo restano in `user_context/`. Le credenziali arrivano dall'ambiente o dal file di segreti configurato e non devono entrare nella documentazione.
 
+I file personali non sono versionati: `user_context/`, `config/role_filters.json`, `config/jobspy.yaml`, `config/system-one-questions.json` e `config/review_questions.json`. `python main.py init` li crea dalla copia di esempio con lo stesso percorso in `examples/`, solo se mancano. Una modifica al formato di uno di questi file va riportata anche nel suo esempio. La guida per compilarli è [getting-started.it.md](getting-started.it.md).
+
 ## File attivi
 
 | Ambito | File | Contenuto |

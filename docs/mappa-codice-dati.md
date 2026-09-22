@@ -49,7 +49,7 @@ Il frontend non contiene un secondo motore di selezione. Legge i risultati dai m
 | Decisioni personali | `feedback`, `feedback_detail` | Eventi reversibili, separati dai verdetti automatici |
 | Lavori della dashboard | `pipeline_jobs`, `pipeline_cancellations` | Stato, parametri, avanzamento e richiesta di stop |
 | Sessioni Codex | `data/codex-sessions/` | Popolazione congelata, note e avanzamento |
-| Memoria confermata | `.agents/memory/local/` | Preferenze e decisioni che devono sopravvivere alle sessioni |
+| Memoria di selezione | `user_context/selection/` | Preferenze, note e regole confermate in chat; restano locali |
 
 I dettagli delle tabelle sono in [data-model.md](data-model.md).
 

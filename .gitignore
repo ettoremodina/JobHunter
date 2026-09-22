@@ -16,3 +16,19 @@ __pycache__/
 # Machine-local .agents -> .claude junctions. Recreated by scripts/sync-provider-bridges.ps1.
 .claude/memory/
 # agent-workflow:provider-bridges:end
+
+# File personali: restano sul tuo disco. `python main.py init` li crea da examples/.
+/user_context/
+/config/role_filters.json
+/config/jobspy.yaml
+/config/system-one-questions.json
+/config/review_questions.json
+
+# Ambiente personale degli agenti e appunti di lavoro: privati.
+/.agents/
+/.claude/
+/AGENTS.md
+/CLAUDE.md
+/TO-DO.md
+/.tmp/
+/.vscode/

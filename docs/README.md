@@ -1,6 +1,6 @@
 # Documentazione
 
-Questo indice è l'ingresso unico alla documentazione corrente. I report di esperimenti, le proposte superate e la vecchia guida HTML sono stati rimossi. Restano disponibili nella cronologia Git.
+Questo indice è l'ingresso unico alla documentazione corrente. Per installare e configurare JobHunter da zero parti da [Primi passi](getting-started.it.md) ([English](getting-started.md)).
 
 ## Capire il sistema
 
@@ -24,7 +24,7 @@ Questo indice è l'ingresso unico alla documentazione corrente. I report di espe
 - [Fonti dello scraper](scraper-sources.md) spiega i tipi di fonte e come aggiungerne una.
 - [Jev](system-one.md) documenta il secondo giudice automatico.
 - [Schede via API](remote-llm.md) documenta Qwen, validazione, costi e cache.
-- [Onboarding](jobhunter-onboarding.md) descrive come preparare una copia per un'altra persona.
+- [Primi passi](getting-started.it.md) prepara profilo, filtri, ricerche e chiavi per un nuovo utente; la skill `skills/jobhunter-setup/` guida la stessa procedura in chat.
 
 ## Regola di manutenzione
 

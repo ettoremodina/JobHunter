@@ -1,0 +1,87 @@
+{
+  "version": 2,
+  "profile_evidence": "user_context/portfolio-evidence.md",
+  "exclude_title_patterns": {
+    "seniority": "\\b(senior|sr\\.?|principal|staff|lead|head|director|chief|vice president|vp)\\b",
+    "management": "\\b(\\w*manager\\w*|responsabile|direttore)\\b",
+    "marketing_sales": "\\b(marketing|sales|account executive|business develop(?:er|ment)|growth marketer|copywriter|social media)\\b",
+    "mechanical_design": "\\b(mechanical|mechatronic|meccanico|meccanica|mechanisch\\w*|machinebouw|cad design|mcad)\\b",
+    "electrical_hardware": "\\b(electrical|electronics?|hardware|pcb|fpga|asic|mixed.signal|ic design|magnet engineer|optical engineer)\\b",
+    "physical_manufacturing": "\\b(manufacturing|industrial engineer|production engineer)\\b|\\bprocess engineer\\b.*\\b(pyrometallurgy|fuel recycling|battery pack|drive unit)\\b",
+    "civil_materials": "\\b(civil|structural|materials|chemical|survey) engineer\\b",
+    "field_installation": "\\b(field service|installation|maintenance|commissioning) engineer\\b",
+    "coordination": "\\b(supervisor\\w*|coordinator\\w*|coordinat(?:ore|rice|eur|eurs)|coordinador\\w*|co[öo]rdinator|coordination|coordinamento|koordinat\\w*|responsable\\w*|jefe|jefa|hoofd\\w*|teamleider|chef|cheffe|chefs|directeur|directrice|direktor\\w*|direktør)\\b|\\b\\w*leiter\\b|\\b\\w*leitung\\b",
+    "student_entry": "\\b(intern|interns|internship\\w*|stage|stages|stagiaire\\w*|stagist[ai]|tirocini\\w*|praktikum|praktika|praktikant\\w*|werkstudent\\w*|working student|student assistant|placement|student worker|student trainee|student intern\\w*|studentenjob|studentische\\w*|thesis|master.?arbeit|bachelor.?arbeit|abschlussarbeit|diplomarbeit|tesi|apprentice\\w*|apprenti|apprentis|alternan\\w*|becari\\w*|pr[aá]cticas)\\b"
+  },
+  "preferred_title_pattern": "\\b(data scien(?:ce|tist)|data analy(?:st|tics)|data engineer(?:ing)?|data (?:platform|pipeline) engineer|machine learning|ml engineer|(?:ai|ia) engineer|(?:ai|ia)\\b.{0,35}\\bengineer|engineer\\b.{0,25}\\b(?:ai|ia)|applied scientist|research scientist|research engineer|operations research|optimization|optimisation|simulation|model(?:l)?ing|digital twin|scientific computing|computational|numerical|cfd|fea|aeroelasticity|sw engineer|statistician|quantitative|forecasting|software engineer(?:ing)?|developer|devops engineer|mlops engineer|cloud engineer|platform engineer|site reliability engineer|test automation engineer|knowledge graph engineer|prompt engineering|mathematical engineer(?:ing)?|math, physics & engineering graduates)\\b",
+  "notes": [
+    "Example profile: junior data scientist. Replace these notes with your own reasoning; the code does not read them.",
+    "Exclude by title only what is certainly out of scope. Anything that needs judgement belongs to Jev's questions.",
+    "Mandatory experience above max_required_years excludes only with explicit evidence; preferred experience never excludes."
+  ],
+  "max_required_years": 2,
+  "queue_size": 10,
+  "proposal_min_companies": 3,
+  "preferred_categories": [
+    "Energia",
+    "Ambiente e clima"
+  ],
+  "fresh_days": 30,
+  "priority_weights": {
+    "role": 40,
+    "experience": 15,
+    "fresh": 10,
+    "unknown_penalty": 5,
+    "primary_career": 100
+  },
+  "exclude_title_exceptions": {
+    "mechanical_design": "\\b(software|sw|firmware|embedded|developer|data|analytics|machine learning|digital twin|computational|numerical|scientific computing|simulation|modelling|modeling|optimization|optimisation|cfd|fea|aeroelasticity|calcolista|thermal)\\b",
+    "electrical_hardware": "\\b(software|sw|firmware|embedded|developer|data|analytics|machine learning|digital twin|computational|numerical|scientific computing|simulation|modelling|modeling|optimization|optimisation|cfd|fea|aeroelasticity|calcolista|thermal)\\b",
+    "physical_manufacturing": "\\b(software|sw|firmware|embedded|developer|data|analytics|machine learning|digital twin|computational|numerical|scientific computing|simulation|modelling|modeling|optimization|optimisation|cfd|fea|aeroelasticity|calcolista|thermal)\\b",
+    "civil_materials": "\\b(software|sw|firmware|embedded|developer|data|analytics|machine learning|digital twin|computational|numerical|scientific computing|simulation|modelling|modeling|optimization|optimisation|cfd|fea|aeroelasticity|calcolista|thermal)\\b",
+    "field_installation": "\\b(software|sw|firmware|embedded|developer|data|analytics|machine learning|digital twin|computational|numerical|scientific computing|simulation|modelling|modeling|optimization|optimisation|cfd|fea|aeroelasticity|calcolista|thermal)\\b",
+    "student_entry": "\\b(early|late|multi|two|three|final|full)[ .-]?stage\\b|\\bstage \\d"
+  },
+  "user_title_rules": [
+    {
+      "id": "manual_technical",
+      "pattern": "^(?!.*\\b(?:software|developer|data|analytics|machine learning|simulation|modelling|modeling)\\b).*\\b(technician|installer|electrician|mechanic|warehouse|delivery driver|assembly operator|production operator)\\b",
+      "action": "exclude",
+      "note": "Example of an exclude rule: manual and on-site technical work, unless the title mentions software or data."
+    },
+    {
+      "id": "systems_integration",
+      "pattern": "\\b(systems? engineer|integration engineer|forward deployed engineer|solutions? engineer|applications? engineer)\\b",
+      "action": "include",
+      "note": "Example of an include rule: generic systems titles pass only when the description shows software, data or modelling work.",
+      "evidence_pattern": "\\b(software|firmware|embedded software|data engineering|data science|data analytics|machine learning|computational|numerical|simulation|modelling|modeling|modellazione)\\b"
+    }
+  ],
+  "primary_title_pattern": "\\b(data scien(?:ce|tist)|machine learning|ml engineer|applied scientist|operations research|optimization|optimisation|model(?:l)?ing|simulation|digital twin|scientific computing|computational|numerical|forecasting|quantitative|statistician|cfd|fea|aeroelasticity)\\b",
+  "allowed_languages": [
+    "English",
+    "German"
+  ],
+  "language_patterns": {
+    "English": "\\b(?:english|inglese|ingles|englisch|anglais)\\b",
+    "Italian": "\\b(?:italian|italiano|italienisch|italien)\\b",
+    "German": "\\b(?:german|deutsch|tedesco|allemand)\\b",
+    "French": "\\b(?:french|français|francais|francese|französisch)\\b",
+    "Dutch": "\\b(?:dutch|nederlands|olandese)\\b",
+    "Spanish": "\\b(?:spanish|español|spagnolo)\\b",
+    "Portuguese": "\\b(?:portuguese|português|portoghese)\\b",
+    "Polish": "\\b(?:polish|polski|polacco)\\b",
+    "Czech": "\\b(?:czech|čeština|ceco)\\b",
+    "Swedish": "\\b(?:swedish|svenska|svedese)\\b",
+    "Danish": "\\b(?:danish|dansk|danese)\\b",
+    "Norwegian": "\\b(?:norwegian|norsk|norvegese)\\b",
+    "Finnish": "\\b(?:finnish|suomi|finlandese)\\b",
+    "Greek": "\\b(?:greek|greco)\\b",
+    "Romanian": "\\b(?:romanian|română|rumeno)\\b",
+    "Hungarian": "\\b(?:hungarian|magyar|ungherese)\\b",
+    "Russian": "\\b(?:russian|russo)\\b",
+    "Chinese": "\\b(?:chinese|mandarin|cinese)\\b",
+    "Japanese": "\\b(?:japanese|giapponese)\\b",
+    "Korean": "\\b(?:korean|coreano)\\b"
+  }
+}

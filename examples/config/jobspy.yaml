@@ -1,0 +1,11 @@
+results_wanted: 20
+locations:
+- Germany
+- Netherlands
+search_queries:
+- Data Scientist
+- Machine Learning Engineer
+site_names:
+- linkedin
+- indeed
+hours_old: 168
