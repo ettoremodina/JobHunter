@@ -14,10 +14,23 @@ from jobhunter.workspace import Archive
 from jobhunter.evaluation.company_batch import run, response_schema
 from jobhunter.evaluation.remote_llm import digest, inputs, request as request_remote, validate
 
-# «Data Scientist» supera il regex ed e' un titolo primario: l'azienda finisce in Tier B-esperienza
-# e i suoi ruoli compatibili meritano una scheda. E' la condizione minima perche' si paghi qualcosa.
+# «Data Scientist» ha priorita' primaria, ma diventa compatibile solo dopo un keep di Jev.
+# I test salvano esplicitamente quel verdetto: e' la condizione minima perche' si paghi qualcosa.
 SURVIVOR = 'Data Scientist'
 EMPTY = {'summary': '', 'facts': [], 'missing_information': ['Dati insufficienti']}
+
+
+def approve_survivors(archive):
+    """Mark the fixture's intended survivors as Jev-compatible."""
+    archive.evaluations()
+    with archive.db:
+        for row in archive.db.execute('SELECT id,data FROM opportunities').fetchall():
+            if json.loads(row['data']).get('title') == SURVIVOR:
+                payload = {'result': {'decision': 'keep', 'rationale': 'Fixture Jev',
+                                      'evidence': ['Build models.'], 'missing_information': []}}
+                archive.db.execute('INSERT OR REPLACE INTO enrichments VALUES(?,?,?,?,?,?,?)',
+                                   ('jev:selection', row['id'], 'source', 'fixture',
+                                    json.dumps(payload), 'fixture', '2026-09-22'))
 
 
 def workspace(folder, titles, description='Build models.', company=''):
@@ -25,6 +38,7 @@ def workspace(folder, titles, description='Build models.', company=''):
     archive = Archive(Path(folder)/'db.sqlite3')
     archive.ingest([{'company_name': 'Example', 'title': title, 'description': description,
                      'source_url': f'https://example.org/{index}'} for index, title in enumerate(titles)], 'test')
+    approve_survivors(archive)
     if company:
         with archive.db:
             archive.db.execute('UPDATE companies SET description=?', (company,))
@@ -53,6 +67,30 @@ def card(payload, oid):
 
 class BatchTests(unittest.TestCase):
     """Verify single-call accounting, resume, and atomic rejection."""
+
+    def test_all_companies_counts_only_tier_a_and_b_queue(self):
+        """The progress denominator is the payable A/B queue, not every archived company."""
+        with tempfile.TemporaryDirectory() as folder:
+            arc = Archive(Path(folder) / 'db.sqlite3')
+            try:
+                arc.ingest([
+                    {'company_name': 'Wanted', 'title': 'Senior Engineer', 'description': 'Lead.',
+                     'source_url': 'https://example.org/wanted'},
+                    {'company_name': 'Outside', 'title': 'Senior Engineer', 'description': 'Lead.',
+                     'source_url': 'https://example.org/outside'},
+                ], 'test')
+                ids = {row['name']: row['id'] for row in arc.db.execute('SELECT id,name FROM companies')}
+                with arc.db:
+                    for name, category in [('Wanted', 'Energia'), ('Outside', 'Industria e materiali')]:
+                        arc.db.execute('''INSERT INTO categories
+                            (company_id,category,rank,confidence,method,reason,updated_at)
+                            VALUES(?,?,?,?,?,?,?)''',
+                                       (ids[name], category, 1, 1, 'chat', 'Fixture', '2026-09-22'))
+                report = run(arc, {'all_companies': True, 'mode': 'preview'}, lambda detail: None)
+                self.assertEqual(report['total_companies'], 1)
+                self.assertEqual(report['completed_companies'], 1)
+            finally:
+                arc.close()
 
     def test_schema_is_identical_across_calls(self):
         """Un prefisso stabile e' la condizione perche' la cache del provider possa agganciare."""
@@ -119,6 +157,7 @@ class BatchTests(unittest.TestCase):
                     run(arc, values, lambda d: None)
                     self.assertEqual(request.call_count, 1, 'una scheda gia\' valida non si ripaga')
                     arc.db.execute('DELETE FROM enrichments'); arc.db.commit()
+                    approve_survivors(arc)
                     request.side_effect = None
                     request.return_value = ({'company': None, 'jobs': []}, {'total_tokens': 99}, [])
                     failed = run(arc, values, lambda d: None)
@@ -129,7 +168,8 @@ class BatchTests(unittest.TestCase):
                     self.assertEqual(failed['counts']['rejected_companies'], 1)
                     saved = original(Path(failed['report_path']).read_text(encoding='utf-8'))
                     self.assertEqual(saved['items'][0]['rejected_answer'], {'company': None, 'jobs': []})
-                    self.assertEqual(arc.db.execute('SELECT count(*) FROM enrichments').fetchone()[0], 0)
+                    self.assertEqual(arc.db.execute(
+                        "SELECT count(*) FROM enrichments WHERE task LIKE 'remote:%'").fetchone()[0], 0)
                     # Senza mansioni da leggere non c'e' niente da riassumere: nessuna chiamata.
                     for row in arc.db.execute('SELECT id,data FROM opportunities').fetchall():
                         data = json.loads(row['data']); data['description'] = ''
@@ -238,6 +278,7 @@ class BatchTests(unittest.TestCase):
             try:
                 arc.ingest([{'company_name': 'Example', 'title': SURVIVOR, 'description': 'Alpha only.', 'source_url': 'https://example.org/a'},
                             {'company_name': 'Example', 'title': SURVIVOR, 'description': 'Beta only.', 'source_url': 'https://example.org/b'}], 'test')
+                approve_survivors(arc)
                 cfg = json.loads(Path('config/remote_llm.json').read_text())
                 cfg['output_directory'] = folder
                 original, config_read = redirect(cfg)
@@ -259,6 +300,48 @@ class BatchTests(unittest.TestCase):
                 # Solo il proprietario di quel namespace puo' citarlo: l'altro viene rifiutato.
                 self.assertEqual(result['counts']['saved_summaries'], 1)
                 self.assertEqual(result['counts']['rejected_jobs'], 1)
+            finally:
+                arc.close()
+
+    def test_known_format_slips_are_repaired_not_thrown_away(self):
+        """Tre slittamenti di formato visti nel primo giro completo (22/09/2026) salvano la scheda.
+
+        Stesso annuncio ripetuto, chiavi unite da virgola, scheda azienda che cita l'annuncio: in
+        tutti e tre la citazione punta a testo davvero inviato, quindi si risolve. Una chiave
+        inesistente resta rifiutata.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            arc, cfg = workspace(folder, [SURVIVOR], description='Costruisce modelli di rete.\nUsa Python.',
+                                 company='Opera nella rete elettrica.')
+            cid = arc.db.execute('SELECT id FROM companies').fetchone()[0]
+            with arc.db:
+                arc.db.execute('''INSERT INTO categories
+                    (company_id,category,rank,confidence,method,reason,updated_at) VALUES(?,?,?,?,?,?,?)''',
+                               (cid, 'Energia', 1, 0.9, 'jev', 'Fixture', '2026-09-22'))
+            original, config_read = redirect(cfg)
+
+            def sloppy(config, prompt, payload, key):
+                """Repeat the role, join two keys, and cite the role from the company card."""
+                oid = next(iter(payload['jobs']))
+                joined = {'summary': 'Modelli di rete.', 'missing_information': [],
+                          'facts': [{'field': 'responsibilities', 'text': 'Modelli e Python.', 'quote': 'J0-S0,J0-S1'}]}
+                broken = {**joined, 'facts': [{'field': 'responsibilities', 'text': 'x', 'quote': 'J0-S9'}]}
+                company = {'summary': 'Rete elettrica.', 'missing_information': [],
+                           'facts': [{'section': 'business', 'text': 'Rete', 'quote': 'S0'},
+                                     {'section': 'business', 'text': 'Modelli', 'quote': 'J0-S1'}]}
+                return {'company': company, 'jobs': [{'id': oid, 'summary': broken},
+                                                     {'id': oid, 'summary': joined}]}, {'total_tokens': 10}, []
+            try:
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'), \
+                        patch('jobhunter.evaluation.remote_llm.request', side_effect=sloppy), \
+                        patch('jobhunter.evaluation.company_batch.time.sleep'):
+                    result = run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
+                self.assertEqual((result['counts']['saved_summaries'], result['counts']['saved_company_cards']), (1, 1))
+                self.assertEqual(result['counts']['rejected_jobs'], 0)
+                stored = json.loads(arc.db.execute(
+                    "SELECT data FROM enrichments WHERE task='remote:company-summary'").fetchone()[0])
+                self.assertEqual([f['quote'] for f in stored['result']['facts']],
+                                 ['Opera nella rete elettrica.', 'Costruisce modelli di rete.'])
             finally:
                 arc.close()
 
@@ -373,6 +456,7 @@ class BatchTests(unittest.TestCase):
             try:
                 arc.ingest([{'company_name': 'Company '+str(i), 'title': SURVIVOR, 'description': 'Build models.',
                              'source_url': 'https://example.org/'+str(i)} for i in range(5)], 'test')
+                approve_survivors(arc)
                 cfg = json.loads(Path('config/remote_llm.json').read_text())
                 cfg['output_directory'] = folder
                 original, config_read = redirect(cfg)
@@ -455,6 +539,7 @@ class BatchTests(unittest.TestCase):
             try:
                 arc.ingest([{'company_name': 'Company '+str(i), 'title': SURVIVOR, 'description': 'Build models.',
                              'source_url': 'https://example.org/'+str(i)} for i in range(4)], 'test')
+                approve_survivors(arc)
                 cfg = json.loads(Path('config/remote_llm.json').read_text())
                 cfg['output_directory'] = folder
                 original, config_read = redirect(cfg)

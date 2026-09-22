@@ -145,15 +145,15 @@ Resta da sviluppare la proposta di raggruppare i motivi dei `review` per formula
 
 ## Errori nel pilot aziendale
 
-Le risposte JSON ricevute ma respinte dalla validazione vengono conservate solo nei report come `rejected_answer`, insieme ai token consumati. Non entrano nelle sintesi visibili. Il pilot prosegue sugli altri record e termina con stato `partial` se esistono scarti. I soli rifiuti espliciti del provider vengono ritentati; errori di trasporto o risposte incomplete fermano nuovi invii. `completed_companies` indica aziende attraversate, non aziende con tutti gli output validi.
+Le risposte JSON ricevute ma respinte dalla validazione vengono conservate solo nei report come `rejected_answer`, insieme ai token consumati. Non entrano nelle sintesi visibili. Il pilot prosegue sugli altri record e termina con stato `partial` se esistono scarti. I soli rifiuti espliciti del provider vengono ritentati; errori di trasporto o risposte incomplete fermano nuovi invii. La coda contiene soltanto aziende Tier A, Tier B attesa e Tier B esperienza. `completed_companies` indica quante aziende della coda sono state completate, comprese quelle già coperte dalla cache; non indica quante abbiano prodotto tutti gli output richiesti.
 
 ## Formato vincolato e prove dalla fonte
 
-Per Alibaba, selection, job-summary e company-summary usano schemi JSON esterni in config/remote-*-schema.json, inviati con strict=true. Gli ID ammessi per le prove sono generati dalle righe della fonte, comprese le informazioni strutturate di località, salario e contratto. Il modello restituisce gli ID; il validatore recupera gli estratti originali e respinge ID sconosciuti. Le descrizioni non vengono duplicate nel messaggio API.
+Le schede `job-summary` e `company-summary` usano schemi JSON esterni in `config/`, inviati con `strict=true`. Gli ID ammessi per le citazioni sono generati dalle righe della fonte, comprese le informazioni strutturate di località, salario e contratto. Il modello restituisce gli ID; il validatore recupera gli estratti originali e respinge ID sconosciuti. Le descrizioni non vengono duplicate nel messaggio API.
 
 La sintesi dei ruoli restituisce ogni fatto con field, text e quote. Il codice costruisce sections e indici dei campi per la dashboard, con la mappatura esterna config/job_field_sections.json. Nessun indice è più affidato al modello. Gli array vuoti dei campi nel vecchio formato sono normalizzati a null. Il formato salvato per la dashboard resta compatibile. La cache dipende anche da schema e catalogo effettivi; cambiare il protocollo invalida i risultati precedenti, che restano nei report.
 
-Il controllo strutturale non dimostra che una frase italiana interpreti correttamente la fonte: restano necessari controlli semantici su requisiti, preferenze e negazioni. Un riferimento esistente può essere pertinente solo in parte. Nessuna selezione LLM viene applicata automaticamente alla shortlist durante il pilot.
+Il controllo strutturale non dimostra che una frase italiana interpreti correttamente la fonte. Un riferimento esistente può essere pertinente solo in parte. Le schede non cambiano mai il verdetto Jev o il tier.
 
 ## Arricchimento dopo la selezione
 
@@ -168,7 +168,7 @@ Aziende oltre `max_jobs` o `max_input_chars` sono differite esplicitamente senza
 
 ### Input compatto e conteggio richieste
 Il batch usa `$defs` e `$ref` per inviare una sola definizione dello schema di ruolo. Gli ID delle prove vengono verificati per annuncio dal validatore locale, anche se nello schema condiviso sono stringhe. La descrizione e i metadati del ruolo vengono inviati nel solo catalogo delle prove; le categorie duplicate del contesto aziendale sono omesse. Il payload JSON del messaggio usa separatori compatti. Le preferenze personali non vengono modificate.
-`submitted_jobs` conta gli annunci inclusi nelle richieste tentate; `evaluated_jobs` solo quelli con risposta validata e salvata. `api_calls` e `api_companies` contano le richieste tentate e le relative aziende; `rejected_companies` include errori e risposte rifiutate. `cached_jobs` conta annunci distinti riutilizzati in questa run. I risultati salvati restano riutilizzabili e non vengono eliminati per misurare il risparmio.
+`summary_requests` conta le schede annuncio richieste e `saved_summaries` quelle salvate. `company_requests` e `saved_company_cards` fanno lo stesso per le schede azienda. `api_calls` e `api_companies` contano le richieste tentate e le relative aziende; `rejected_companies` include errori e risposte rifiutate. `cached_summaries` conta le schede annuncio già presenti e riutilizzate nella run. I risultati salvati restano riutilizzabili.
 
 
 ### Fonti mancanti
@@ -178,3 +178,12 @@ Gli errori HTTP conservano il messaggio JSON del provider, limitato in lunghezza
 
 ### Risposte superflue e validazione locale
 Una scheda aziendale non richiesta viene ignorata senza invalidare le schede degli annunci, che restano validate prima del salvataggio. La scheda ignorata non viene mostrata o salvata. Una parte non valida viene registrata come errore, mentre le parti valide della stessa risposta restano salvate. La run termina parziale se resta almeno un errore.
+
+### Slittamenti di formato che si riparano
+Tre errori ricorrenti di `qwen3.8-flash` (primo giro completo, 22 settembre 2026) non buttano più la scheda, perché la citazione punta comunque a testo inviato nella stessa richiesta:
+
+- lo **stesso annuncio restituito 2-3 volte**: le copie restano candidate e vince la prima valida;
+- **chiavi unite da virgola** (`"J0-S22,J0-S23"`): si tiene la prima chiave;
+- la **scheda azienda che cita l'annuncio** (`J0-S3`): si risolve sul catalogo di quell'annuncio, che non collide con le chiavi `Sn` dell'azienda.
+
+Una chiave inesistente resta rifiutata. Il prompt non è stato toccato: cambiarlo invaliderebbe tutte le schede salvate. Resta aperto un quarto errore: la scheda azienda con `facts: []` e frammenti della richiesta in `missing_information`. Non dipende da quanta evidenza ha l'azienda, perché le schede salvate ne hanno altrettanta, quindi una soglia sull'evidenza non lo toglierebbe.

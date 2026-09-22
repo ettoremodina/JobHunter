@@ -108,7 +108,7 @@ def wire_questions(spec, catalog, options):
 def signature(cfg, task):
     """Cache identity: model, endpoint, thresholds and the question set that produced the answer."""
     threshold_names = ({'keep_above', 'exclude_below', 'conflict_review_above',
-                        'flag_above', 'choice_confidence'}
+                        'flag_above', 'choice_confidence', 'seniority_review_above'}
                        if task == 'selection' else
                        {'flag_above', 'choice_confidence', 'max_categories', 'category_min_score',
                         'category_single_accept', 'category_pair_min_sum'})
@@ -236,24 +236,24 @@ def request_interval(cfg):
     return 0.0 if rate == 0 else 60.0 / rate
 
 
-def judgement(cfg, spec, answers, catalog):
+def verdict(limits, scores, quote):
     """Dalle probabilita' al verdetto: la regola sta qui, in codice, non nel modello.
 
     Il modello risponde a domande indipendenti; a combinarle e' questa funzione, perche' una
     soglia e' aritmetica e l'aritmetica non si chiede a un System One model. `review` non e' un
     fallimento: e' la banda in cui nessuna soglia e' stata raggiunta e serve una revisione umana.
+
+    E' pura di proposito: `rekey()` la riapplica alle probabilita' gia' salvate quando cambia solo
+    la regola, senza pagare una nuova chiamata. `quote` e' la prova gia' scelta dal modello.
     """
-    limits = cfg['thresholds']
-    evidence = next(name for name, q in spec.items() if q.get('options_from') == 'evidence_catalog')
-    quote, _ = selected(answers, evidence, catalog)
-    described = probability(answers, 'mansioni_descritte')
-    compatible = probability(answers, 'mansioni_compatibili')
-    student = probability(answers, 'posto_per_studenti')
-    too_senior = probability(answers, 'seniority_fuori_profilo')
-    family, family_confidence = selected(answers, 'famiglia_esclusa', set(spec['famiglia_esclusa']['criteria']))
-    excluded = family != 'nessuna' and family_confidence >= limits['choice_confidence']
+    described = scores['mansioni_descritte']
+    compatible = scores['mansioni_compatibili']
+    too_senior = scores['seniority_fuori_profilo']
+    family = scores['famiglia_esclusa']
+    excluded = family != 'nessuna' and scores['famiglia_confidenza'] >= limits['choice_confidence']
     conflict = excluded and compatible >= limits['conflict_review_above']
-    if student >= limits['flag_above']:
+    unknown = []
+    if scores['posto_per_studenti'] >= limits['flag_above']:
         decision, motive = 'exclude', 'Posto riservato a studenti o di tirocinio'
     elif too_senior >= limits['flag_above']:
         decision, motive = 'exclude', 'Seniority, management o esperienza obbligatoria fuori profilo'
@@ -261,6 +261,7 @@ def judgement(cfg, spec, answers, catalog):
         decision, motive = 'review', (
             'Segnali in conflitto: mansioni compatibili e famiglia esclusa «%s»'
             % family.replace('_', ' '))
+        unknown = ['Conflitto tra compatibilita\' e famiglia esclusa']
     elif (excluded and compatible <= limits['exclude_below']
           and family in BRIEF_EXCLUDABLE_FAMILIES):
         # Un titolo e una frase breve bastano per lavori manuali inequivocabili. Non serve pagare
@@ -268,27 +269,41 @@ def judgement(cfg, spec, answers, catalog):
         decision, motive = 'exclude', 'Mansioni della famiglia esclusa «%s»' % family.replace('_', ' ')
     elif described < limits['choice_confidence']:
         decision, motive = 'review', 'Il testo non descrive mansioni specifiche del ruolo'
+        unknown = ['Mansioni non descritte']
     elif excluded:
         decision, motive = 'exclude', 'Mansioni della famiglia esclusa «%s»' % family.replace('_', ' ')
+    elif compatible >= limits['keep_above'] and too_senior >= limits.get('seniority_review_above', limits['flag_above']):
+        # Fra questa soglia e `flag_above` il modello non sa se il ruolo e' troppo senior: nel
+        # primo giro completo erano 91 keep su 1.114. Un ruolo adatto per mansioni non si scarta
+        # su un dubbio, ma non si tiene nemmeno: lo decidi tu (scelta dell'utente, 22/09/2026).
+        decision, motive = 'review', 'Mansioni compatibili ma seniority incerta (%.0f%%)' % (too_senior * 100)
+        unknown = [f'Seniority incerta: {too_senior:.0%}']
     elif compatible >= limits['keep_above']:
         decision, motive = 'keep', 'Mansioni quantitative o di sviluppo su dati e modelli'
     elif compatible <= limits['exclude_below']:
         decision, motive = 'exclude', 'Le mansioni non sono quantitative ne\' di sviluppo su dati e modelli'
     else:
         decision, motive = 'review', 'Le mansioni non bastano a decidere'
-    unknown = [] if decision != 'review' else [
-        ('Conflitto tra compatibilita\' e famiglia esclusa'
-         if conflict else
-         'Mansioni non descritte' if described < limits['choice_confidence']
-         else 'Mansioni ambigue: compatibilita' + f' {compatible:.0%}')]
-    result = {'decision': decision, 'evidence': [quote], 'missing_information': unknown,
-              'rationale': f'{motive} (compatibilita\' {compatible:.0%}).'}
+        unknown = ['Mansioni ambigue: compatibilita' + f' {compatible:.0%}']
+    return {'decision': decision, 'evidence': [quote], 'missing_information': unknown,
+            'rationale': f'{motive} (compatibilita\' {compatible:.0%}).'}
+
+
+def judgement(cfg, spec, answers, catalog):
+    """Read the provider's typed answers and apply `verdict()` to them."""
+    limits = cfg['thresholds']
+    evidence = next(name for name, q in spec.items() if q.get('options_from') == 'evidence_catalog')
+    quote, _ = selected(answers, evidence, catalog)
+    family, family_confidence = selected(answers, 'famiglia_esclusa', set(spec['famiglia_esclusa']['criteria']))
+    scores = {'mansioni_descritte': probability(answers, 'mansioni_descritte'),
+              'mansioni_compatibili': probability(answers, 'mansioni_compatibili'),
+              'posto_per_studenti': probability(answers, 'posto_per_studenti'),
+              'seniority_fuori_profilo': probability(answers, 'seniority_fuori_profilo'),
+              'famiglia_esclusa': family, 'famiglia_confidenza': family_confidence}
     # Stesso contratto del giudizio remoto, stesso validatore: la citazione viene risolta qui e
     # una chiave fuori catalogo fermerebbe *questo* record, non la passata.
-    return llm.validate('selection', result, {'title': '', 'description': '', 'evidence_catalog': catalog}), \
-        {'mansioni_descritte': described, 'mansioni_compatibili': compatible, 'posto_per_studenti': student,
-         'seniority_fuori_profilo': too_senior,
-         'famiglia_esclusa': family, 'famiglia_confidenza': family_confidence}
+    return llm.validate('selection', verdict(limits, scores, quote),
+                        {'title': '', 'description': '', 'evidence_catalog': catalog}), scores
 
 
 def classification(cfg, spec, answers, options):
@@ -343,6 +358,60 @@ def current_result(archive, task, record_id, cfg, fingerprint=None):
     return json.loads(row['data'])['result'] if row['cache_key'] == fingerprint else None
 
 
+def rekey(archive, cfg):
+    """Carry saved Jev answers over a rule-only change, with no call and no spend.
+
+    Una soglia, la versione della regola o il nome del modello cambiano l'impronta di ogni
+    risultato, e senza questo passaggio tutto l'archivio tornerebbe in coda a pagamento per
+    ricevere le stesse probabilita'. Una riga si riusa solo se:
+
+    - lo stato che il modello ha letto e' identico a quello di oggi (la vecchia impronta torna);
+    - domande, schema e vocabolario delle categorie sono gli stessi;
+    - il modello e' lo stesso, oppure quello configurato e' proprio la versione che l'ha servita
+      (per esempio da `jev-latest` a `jev-1.13.0`).
+
+    La scelta del ruolo si ricalcola con `verdict()` dalle probabilita' salvate. Per la categoria
+    si riusa il risultato solo se soglie e regola non sono cambiate: la sua combinazione non e'
+    ricostruibile qui. Tutto il resto resta obsoleto e torna nella coda normale.
+    """
+    counts = Counter()
+    for task in TASKS:
+        current = signature(cfg, task)
+        rows = archive.db.execute('SELECT record_id,cache_key,data,model FROM enrichments WHERE task=?',
+                                  ('jev:'+task,)).fetchall()
+        for row in rows:
+            stored = json.loads(row['data'])
+            old = stored.get('settings') or {}
+            try:
+                state = (job_state(archive, row['record_id'], cfg)[0] if task == 'selection'
+                         else company_state(archive, row['record_id'], cfg))
+            except (TypeError, KeyError):
+                counts[task + '_stale'] += 1
+                continue
+            fingerprint = llm.digest({'state': state, 'settings': current})
+            if row['cache_key'] == fingerprint:
+                continue
+            fixed = {'model', 'thresholds', 'decision_version'} if task == 'selection' else {'model'}
+            if (row['cache_key'] != llm.digest({'state': state, 'settings': old})
+                    or any(old.get(k) != current.get(k) for k in set(current) | set(old) if k not in fixed)
+                    or old.get('model') != current['model'] and row['model'] != current['model']):
+                counts[task + '_stale'] += 1
+                continue
+            if task == 'selection':
+                result = verdict(cfg['thresholds'], stored['answers'], stored['result']['evidence'][0])
+                if result['decision'] != stored['result']['decision']:
+                    counts['selection_%s_to_%s' % (stored['result']['decision'], result['decision'])] += 1
+                stored['result'] = result
+            stored['settings'] = current
+            with archive.db:
+                archive.db.execute('UPDATE enrichments SET cache_key=?, data=? WHERE task=? AND record_id=?',
+                                   (fingerprint, json.dumps(stored, ensure_ascii=False), 'jev:'+task, row['record_id']))
+            counts[task + '_rekeyed'] += 1
+    if counts:
+        logger.info('Jev rekey without calls: %s', dict(counts))
+    return counts
+
+
 def pending(archive, cfg, limit, everything, revisit=False):
     """Build requests that combine role and company questions whenever both are pending.
 
@@ -380,8 +449,10 @@ def pending(archive, cfg, limit, everything, revisit=False):
     # Start from the regex axis, not the current final verdict. A stale Jev result must return to
     # the queue when questions, thresholds or model change.
     local = archive.evaluations()
+    # Le regole locali possono solo escludere. Un titolo nella famiglia preferita conserva la sua
+    # priorita', ma Jev deve comunque leggere le mansioni prima che il ruolo diventi compatibile.
     undecided = {oid for oid, decision in local.items()
-                 if decision['status'] == 'review'}
+                 if decision['status'] != 'excluded'}
     job_rows = [row for row in archive.db.execute('SELECT id,company_id,data FROM opportunities')
                 if row['id'] in undecided and judgeable(json.loads(row['data']).get('description') or '')]
     records = []
@@ -439,11 +510,15 @@ def run(archive, values, progress=None, config_path=None):
     limit = min(max(int(values.get('limit') or cfg['default_limit']), 1), cfg['max_limit'])
     workers = min(max(int(values.get('workers') or cfg['workers']), 1), cfg['max_workers'])
     settings = {task: signature(cfg, task) for task in TASKS}
+    # Prima della coda: un cambio di sola regola non deve rimettere in coda a pagamento risposte
+    # gia' ricevute. Non spende nulla, quindi vale anche per l'anteprima e ne rende onesto il conteggio.
+    carried = rekey(archive, cfg)
     records, skipped = pending(archive, cfg, limit, values.get('all', False), values.get('revisit', False))
     counts = Counter({key: 0 for key in ('calls', 'decided', 'selection_decided', 'category_decided',
                                          'rejected', 'throttled_retries', 'combined', 'selection_only', 'category_only',
                                          'keep', 'exclude', 'review', 'classified', 'unclassified')})
     counts.update(skipped)
+    counts.update(carried)
     for record in records:
         kinds = tuple(task for task in TASKS if task in record)
         counts['combined' if len(kinds) == 2 else kinds[0] + '_only'] += 1

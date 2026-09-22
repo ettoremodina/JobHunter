@@ -58,9 +58,20 @@ def namespaced(catalog, tag):
     return {f'{tag}-{key}': value for key, value in catalog.items()}
 
 
+def first_reference(value):
+    """Keep the first key of a comma-joined list such as ``"J0-S22,J0-S23"``.
+
+    Il prompt vieta di concatenare chiavi, ma `qwen3.8-flash` lo fa comunque su 155 citazioni del
+    primo giro completo (22 settembre 2026). La prima chiave e' testo vero della fonte: la frase
+    resta ancorata, solo a una prova invece che a piu'. Una chiave inesistente la rifiuta validate().
+    """
+    return value.split(',')[0].strip() if isinstance(value, str) and ',' in value else value
+
+
 def resolve_namespace(answer, tag):
     """Strip this role's tag from returned references; anything else is left for validate() to reject."""
     def clean(value):
+        value = first_reference(value)
         return value[len(tag)+1:] if isinstance(value, str) and value.startswith(tag+'-') else value
     answer = copy.deepcopy(answer)
     if isinstance(answer.get('facts'), list):
@@ -129,30 +140,51 @@ def apply(archive, cfg, prompt, job, answer, counts, report_path=''):
     if not isinstance(answer, dict) or set(answer) != {'company', 'jobs'} or not isinstance(answer['jobs'], list):
         raise ValueError('Missing, duplicate or unexpected job IDs')
     # Lo schema non elenca gli ID: l'insieme esatto si verifica qui, dove si verificava gia'.
+    # Un ID ripetuto non e' un ID inventato: sulle chiamate a ruolo singolo il modello rimanda la
+    # stessa scheda 2-3 volte (21 aziende perse per intero il 22 settembre 2026). Le copie restano
+    # candidate e vince la prima che passa la validazione.
     returned = {}
     for entry in answer['jobs']:
-        if not isinstance(entry, dict) or set(entry) != {'id', 'summary'} or entry['id'] in returned:
+        if not isinstance(entry, dict) or set(entry) != {'id', 'summary'}:
             raise ValueError('Missing, duplicate or unexpected job IDs')
-        returned[entry['id']] = entry
+        returned.setdefault(entry['id'], []).append(entry)
     if set(returned) != set(pending):
         raise ValueError('Missing, duplicate or unexpected job IDs')
     results, rejected = [], []
     for oid in pending:
-        try:
-            if returned[oid]['summary'] is None:
-                # Una scheda chiesta e non data e' inutilizzabile per *questo* ruolo, non un motivo
-                # per buttare via gli altri della stessa chiamata.
-                raise ValueError('Job summary requested but not returned')
-            jp = payloads[oid]['job-summary']
-            results.append(('job-summary', oid, jp, llm.validate(
-                'job-summary', resolve_namespace(returned[oid]['summary'], job['tags'][oid]), jp['source'], jp['field_labels'])))
-        except (AttributeError, ValueError, TypeError, KeyError) as exc:
-            rejected.append({'id': oid, 'error': str(exc)})
+        jp = payloads[oid]['job-summary']
+        error = None
+        for entry in returned[oid]:
+            try:
+                if entry['summary'] is None:
+                    # Una scheda chiesta e non data e' inutilizzabile per *questo* ruolo, non un motivo
+                    # per buttare via gli altri della stessa chiamata.
+                    raise ValueError('Job summary requested but not returned')
+                results.append(('job-summary', oid, jp, llm.validate(
+                    'job-summary', resolve_namespace(entry['summary'], job['tags'][oid]), jp['source'], jp['field_labels'])))
+                break
+            except (AttributeError, ValueError, TypeError, KeyError) as exc:
+                error = exc
+        else:
+            rejected.append({'id': oid, 'error': str(error)})
     if job['company_needed']:
         try:
             if answer['company'] is None:
                 raise ValueError('Company summary requested but not returned')
-            results.append(('company-summary', job['id'], job['company'], llm.validate('company-summary', answer['company'], job['company']['source'])))
+            # La scheda azienda cita spesso frasi degli annunci (`J0-S3`): 213 citazioni rifiutate
+            # nel primo giro completo, benche' il prompt lo vieti. Le chiavi `Jn-Sm` non collidono
+            # con le `Sm` dell'azienda e puntano a testo che il modello ha davvero ricevuto nella
+            # stessa richiesta, quindi si risolvono invece di buttare la scheda. Il prompt resta
+            # com'e': cambiarlo invaliderebbe tutte le schede gia' salvate (`signature`).
+            source = copy.deepcopy(job['company']['source'])
+            source['evidence_catalog'] = {**source.get('evidence_catalog', {}),
+                                          **{k: v for wire in job['payload']['jobs'].values()
+                                             for k, v in wire['evidence_catalog'].items()}}
+            card = copy.deepcopy(answer['company'])
+            for fact in card.get('facts') or []:
+                if isinstance(fact, dict) and 'quote' in fact:
+                    fact['quote'] = first_reference(fact['quote'])
+            results.append(('company-summary', job['id'], job['company'], llm.validate('company-summary', card, source)))
         except (AttributeError, ValueError, TypeError, KeyError) as exc:
             # The company card is retried next run; the role cards above are grounded independently.
             rejected.append({'id': job['id'], 'task': 'company-summary', 'error': str(exc)})
@@ -193,16 +225,18 @@ def run(archive, values, progress):
     limits = cfg['company_batch']
     workers = min(max(int(values.get('workers') or limits.get('workers', 1)), 1), limits.get('max_workers', 8))
     prompt = (ROOT/limits['prompt_path']).read_text(encoding='utf-8')
-    ids = sorted((r[0] for r in archive.db.execute('SELECT id FROM companies')), key=llm.digest)
+    assessment = verdicts(archive)
+    ids = sorted((cid for cid, state in assessment.items()
+                  if state['tier'] in ('A', 'B-attesa', 'B-esperienza')), key=llm.digest)
     if not values['all_companies']:
         ids = ids[:values['company_limit']]
-    assessment = verdicts(archive)
     counts = Counter({key: 0 for key in ('api_calls', 'api_companies', 'summary_requests', 'company_requests',
                      'saved_summaries', 'saved_company_cards', 'cached_summaries', 'unreadable_jobs',
                      'rejected_companies', 'rejected_jobs', 'throttled_retries')})
     usage = Counter()
     execute = values['mode'] == 'execute'
     report = {'status': 'success', 'mode': values['mode'], 'total_companies': len(ids), 'started_at': now(),
+              'queue_scope': 'tier-a-b',
               'workers': workers if execute else 1,
               'completed_companies': 0, 'counts': counts, 'usage': usage, 'items': [], 'model': cfg['model'], 'task': 'company-batch'}
     output = ROOT/cfg['output_directory']/('company-batch-'+now().replace(':', '').replace('+', '_'))/'report.json'

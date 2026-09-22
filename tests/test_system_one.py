@@ -65,6 +65,16 @@ class ThresholdTests(unittest.TestCase):
         self.assertEqual(self.judge(0.94, too_senior=0.95)['decision'], 'exclude')
         self.assertEqual(self.judge(0.05, described=0.05)['decision'], 'review')
 
+    def test_uncertain_seniority_sends_a_compatible_role_to_review(self):
+        """Fra `seniority_review_above` e `flag_above` il dubbio sulla seniority lo scioglie l'utente."""
+        self.assertEqual(self.judge(0.94, too_senior=0.49)['decision'], 'keep')
+        uncertain = self.judge(0.94, too_senior=0.6)
+        self.assertEqual(uncertain['decision'], 'review')
+        self.assertEqual(uncertain['missing_information'], ['Seniority incerta: 60%'])
+        self.assertEqual(self.judge(0.94, too_senior=0.8)['decision'], 'exclude')
+        # Un ruolo non compatibile resta escluso: il dubbio sulla seniority non lo riapre.
+        self.assertEqual(self.judge(0.05, too_senior=0.6)['decision'], 'exclude')
+
     def test_conflicting_positive_and_excluded_signals_go_to_review(self):
         """Quantitative work in an excluded domain must not become a false negative."""
         result = self.judge(0.92, family=('produzione_manutenzione', 0.88))
@@ -227,13 +237,54 @@ class CombinedPassTests(unittest.TestCase):
             finally:
                 archive.close()
 
-    def test_preview_never_reads_a_credential_and_never_calls(self):
-        """Lo stesso cancello del passaggio remoto: nessuna spesa senza averla chiesta a parole."""
+    def test_a_rule_only_change_reuses_saved_answers_without_calling(self):
+        """Soglie e nome del modello cambiano l'impronta, non le probabilita': niente da ripagare."""
         with tempfile.TemporaryDirectory() as folder:
-            archive, path = workspace(folder)
+            old = system_one.config()
+            old.update(model='jev-latest')
+            old['thresholds'].pop('seniority_review_above')
+            old['decision_versions']['selection'] = '4'
+            archive, path = workspace(folder, **{k: old[k] for k in ('model', 'thresholds', 'decision_versions')})
             try:
                 archive.ingest([{'company_name': 'Example', 'title': 'Specialist', 'source_url': 'https://example.org/1',
                                  'description': 'Costruiamo modelli di previsione della domanda.\nSede a Milano.'}], 'test')
+                answers = {**self.answers(), 'seniority_fuori_profilo': noul(0.6)}
+                with patch('jobhunter.evaluation.system_one.llm.api_key', return_value='test'), \
+                        patch('jobhunter.evaluation.system_one.ask',
+                              return_value=(answers, {'input_tokens': 900}, 'jev-1.13.0')):
+                    first = system_one.run(archive, {'all': True, 'mode': 'execute'}, config_path=path)
+                self.assertEqual(first['counts']['keep'], 1)
+                current = system_one.config()
+                current['output_directory'] = folder
+                path.write_text(json.dumps(current), encoding='utf-8')
+                with patch('jobhunter.evaluation.system_one.ask') as again:
+                    rerun = system_one.run(archive, {'all': True}, config_path=path)
+                again.assert_not_called()
+                self.assertEqual(rerun['total'], 0)
+                self.assertEqual(rerun['counts']['selection_keep_to_review'], 1)
+                self.assertEqual((rerun['counts']['selection_rekeyed'], rerun['counts']['category_rekeyed']), (1, 1))
+                oid = next(iter(archive.evaluations()))
+                self.assertEqual(system_one.current_result(archive, 'selection', oid, current)['decision'], 'review')
+                # Una domanda cambiata cambia il significato della risposta: quella si ripaga.
+                spec = json.loads((system_one.ROOT/current['questions_path']).read_text(encoding='utf-8'))
+                spec['selection']['mansioni_compatibili']['instructions'] += ' Nuova regola.'
+                questions = Path(folder)/'questions.json'
+                questions.write_text(json.dumps(spec), encoding='utf-8')
+                current['questions_path'] = str(questions)
+                path.write_text(json.dumps(current), encoding='utf-8')
+                changed = system_one.run(archive, {'all': True}, config_path=path)
+                self.assertEqual((changed['total'], changed['counts']['selection_stale']), (1, 1))
+            finally:
+                archive.close()
+
+    def test_preview_never_reads_a_credential_and_never_calls(self):
+        """Anche un titolo preferito arriva a Jev, ma l'anteprima non spende né legge segreti."""
+        with tempfile.TemporaryDirectory() as folder:
+            archive, path = workspace(folder)
+            try:
+                archive.ingest([{'company_name': 'Example', 'title': 'Data Scientist', 'source_url': 'https://example.org/1',
+                                  'description': 'Costruiamo modelli di previsione della domanda.\nSede a Milano.'}], 'test')
+                self.assertEqual(next(iter(archive.evaluations().values()))['status'], 'potential')
                 with patch('jobhunter.evaluation.system_one.ask') as ask, \
                         patch('jobhunter.evaluation.system_one.llm.api_key') as key:
                     report = system_one.run(archive, {'all': True}, config_path=path)

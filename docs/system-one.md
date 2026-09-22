@@ -34,6 +34,14 @@ invalida un giudizio sul ruolo già corrente.
 Ogni asse ha anche una `decision_version`. Va incrementata quando cambia il codice che combina le
 risposte, così una nuova regola non riusa un verdetto calcolato con la logica precedente.
 
+Un cambio di **sola regola** non si ripaga. All'inizio di ogni passata, anteprima compresa,
+`rekey()` riprende le risposte salvate quando lo stato letto dal modello, le domande, lo schema e
+il vocabolario sono identici, e il modello è lo stesso oppure quello configurato è proprio la
+versione che le aveva servite. Per il ruolo ricalcola il verdetto con `verdict()` dalle
+probabilità salvate. Per la categoria riusa il risultato solo se soglie e regola sono invariate.
+Il report conta `selection_rekeyed`, `category_rekeyed`, i passaggi di verdetto
+(`selection_keep_to_review`, …) e le righe che restano obsolete (`*_stale`) e tornano in coda.
+
 Se lo stato combinato supera `max_state_chars`, JobHunter divide il lavoro e lo segnala come
 `split_oversized`. Non tronca testo in silenzio.
 
@@ -45,8 +53,9 @@ Se lo stato combinato supera `max_state_chars`, JobHunter divide il lavoro e lo 
 https://api.typesafe.ai/v1/systemone
 ```
 
-Il modello configurato è `jev-latest`. La risposta salva anche l'identificatore versionato che ha
-servito la richiesta, utile quando si calibrano le soglie.
+Il modello configurato è `jev-1.13.0`, fissato il 22 settembre 2026 al posto di `jev-latest`:
+un aggiornamento silenzioso del fornitore non avrebbe cambiato l'impronta dei giudizi salvati.
+La risposta salva anche l'identificatore versionato che ha servito la richiesta.
 
 ### Parallelismo e rate limit
 
@@ -133,7 +142,10 @@ una compatibilità almeno pari a 0,60 producono `review` per segnali in conflitt
 inequivocabili, limitati a produzione, installazione, manutenzione, officina e ricambi, possono
 invece essere esclusi anche da una descrizione breve quando la compatibilità non supera 0,20. La
 domanda sulla seniority copre titoli senior o manageriali ed esperienza obbligatoria oltre due
-anni, anche in annunci non inglesi.
+anni, anche in annunci non inglesi. Da `flag_above` (0,75) il ruolo è escluso. Fra
+`seniority_review_above` (0,50) e 0,75 un ruolo che sarebbe tenuto va invece in `review` con
+«Seniority incerta»: nel primo giro completo erano 91 keep su 1.114. Un ruolo non compatibile
+resta escluso anche in quella fascia.
 
 Un datore che opera come
 agenzia, staffing o recruiting viene classificato in `Consulenza e servizi`; non eredita il settore
