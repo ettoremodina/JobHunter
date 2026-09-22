@@ -4,7 +4,7 @@ DESIGN §2: l'asse azienda vale quanto l'evidenza che ha. Finora la descrizione 
 entrava da un'unica porta, l'importazione: se la fonte non l'allegava, restava vuota per
 sempre. Qui l'archivio va a cercarsela.
 
-Due strade, in ordine di resa misurata (docs/asse-azienda-piano.md §09):
+Due strade, in ordine di resa misurata (vedi DESIGN.md):
 
 1. La scheda di un aggregatore, quando è lei l'indirizzo che abbiamo salvato. Espone
    settore, sito vero e descrizione in una tabella prevedibile: 93/83/80% su 30 provate.
@@ -318,7 +318,7 @@ def one(archive, company, timeout, force=False, follow_about=True):
                  detail='%s: %s' % (type(exc).__name__, str(exc)[:160]))
 
     # Ultima strada, senza rete: il testo dell'annuncio. Per chi arriva solo da LinkedIn e'
-    # l'unica che esista (docs/dati-aziendali-per-fonte.md).
+    # l'unica che esista; il contratto dei dati è in docs/data-model.md.
     candidate = ad_text(archive, company['id'])
     if candidate is None:
         note('annuncio', 'non_applicabile', detail='nessun annuncio con descrizione in archivio')

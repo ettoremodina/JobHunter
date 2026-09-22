@@ -1,66 +1,77 @@
 # JobHunter
 
-[Apri la guida HTML navigabile](docs/guide/index.html): workflow e feedback, fonti, mappa del codice e note operative. Funziona anche offline; rigenerazione con `python docs/build_guide.py`.
+JobHunter raccoglie annunci, raggruppa le opportunità per azienda e conserva giudizi automatici e decisioni personali senza confonderli. SQLite e gli snapshot locali sono la fonte dei dati. La dashboard, la CLI e la skill Codex leggono lo stesso archivio.
 
-Archivio locale di aziende e opportunità, utilizzabile da Codex, CLI e dashboard. Una scheda per azienda, con ruoli, sedi, salari e link associati. La selezione avviene nella chat. Ollama è opzionale per impaginazione e categorie; nessuna chiave API richiesta.
+## Avvio
 
-## Avvio rapido
+Su Windows, apri `Avvia JobHunter.pyw`. Il launcher avvia il server locale, apre la pagina Pipeline e permette di fermarlo in sicurezza.
 
-Per usare la web app senza terminale su Windows, aprire [Avvia JobHunter.pyw](Avvia%20JobHunter.pyw) con doppio clic. La pagina **Pipeline** permette di avviare i passaggi dalle card, impostare i parametri, seguire i risultati e scegliere **Continua da qui**. Il pulsante **Ferma e chiudi** della finestra di avvio termina sempre il server: se un passaggio è in corso chiede conferma e lo interrompe, i risultati già salvati restano. [Guida del pannello operativo](docs/pipeline-ui.md).
-
-Per una nuova persona seguire [Inizializzazione guidata e configurazioni](docs/jobhunter-onboarding.md), richiamata dalla skill `$jobhunter`. Questa copia di lavoro contiene anche dati e preferenze personali versionati: un clone ordinario non è una distribuzione senza dati. La guida distingue il percorso nuovo utente dall'importazione dell'archivio storico mostrata sotto.
-
-Python 3.11+. La CLI e la dashboard usano solo la standard library.
+Da PowerShell:
 
 ```powershell
-python main.py import-legacy
-python main.py serve
+.\.venv\Scripts\python.exe main.py serve
 ```
 
-Apri [la dashboard locale](http://127.0.0.1:8000). Gli snapshot storici e le note restano invariati. Il database nuovo è `data/jobhunter.sqlite3`.
-
-## Raccolta
-
-Per installare le dipendenze delle fonti in un ambiente esistente:
+La dashboard risponde su <http://127.0.0.1:8000>. Se l'ambiente non esiste ancora:
 
 ```powershell
-.venv/Scripts/python.exe -m pip install -r requirements.txt
-.venv/Scripts/python.exe -m playwright install chromium
-.venv/Scripts/python.exe main.py collect climatebase.org --limit 10
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
+.\.venv\Scripts\python.exe main.py init
 ```
 
-Se manca `.venv`, crearla con `python -m venv .venv`. Configurazione in `config/app.json` e YAML per fonte. inClimate è sospesa per paywall. Ogni acquisizione registra limiti, esiti e grezzi; un campione non è una raccolta completa.
+## Flusso attivo
 
-## Uso con Codex
+La pipeline esegue questi passaggi:
 
-La skill [jobhunter](skills/jobhunter/SKILL.md) permette ricerca, approfondimento online, valutazioni e feedback persistente. Invocala con `$jobhunter`. È installata anche nella directory personale delle skill di questa macchina.
+1. raccoglie e normalizza gli annunci;
+2. applica le esclusioni deterministiche ai ruoli;
+3. recupera le descrizioni mancanti e i dati aziendali;
+4. usa Jev per i casi che richiedono un giudizio semantico;
+5. calcola i Tier dai due assi, azienda e ruolo;
+6. genera con Qwen le schede delle aziende e dei ruoli già ammessi;
+7. lascia all'utente la revisione degli indecisi e la scelta finale.
+
+Regex, Jev, schede Qwen e decisioni personali restano dati distinti. Il Tier viene calcolato in lettura e non viene salvato.
+
+## Comandi utili
 
 ```powershell
-python main.py search --query energy --limit 20
-python main.py show ID
-python main.py feedback ID saved --note "Da approfondire"
-python main.py undo EVENT_ID
-python main.py export data/aziende.csv --status saved
-python main.py --help
+.\.venv\Scripts\python.exe main.py --help
+.\.venv\Scripts\python.exe main.py search --query energy --limit 20
+.\.venv\Scripts\python.exe main.py show AZIENDA_ID
+.\.venv\Scripts\python.exe main.py saved
+.\.venv\Scripts\python.exe main.py codex-session start --mode indecisi
+.\.venv\Scripts\python.exe main.py codex-session start --mode selezione --tier A
 ```
 
-## Documentazione e test
+La tab Pipeline avvia le operazioni lunghe e ne conserva lo stato. La tab Metriche spiega popolazioni, passaggi e qualità dei dati. La tab Salvate contiene soltanto aziende e ruoli messi da parte a mano.
 
-[Profilo, prompt e filtri usati dai modelli](docs/llm-review.html): pagina di conferma generata dai file di configurazione attivi con `python docs/build_llm_review.py`.
+## Documentazione
 
-[Jev tramite TypeSafe: configurazione, richieste combinate e pilot](docs/system-one.md). Il comando `python main.py system-one` prepara un'anteprima; `--execute` avvia esplicitamente le richieste. Qwen resta separato e scrive soltanto le schede dei risultati sopravvissuti.
+L'indice aggiornato è in [docs/README.md](docs/README.md). I riferimenti principali sono:
 
-[Guida operativa, schema e manutenzione](docs/jobhunter-v2.md)
+- [architettura e mappa del codice](docs/mappa-codice-dati.md);
+- [pipeline completa](docs/pipeline-completa.md);
+- [uso e manutenzione](docs/jobhunter-v2.md);
+- [modello dati](docs/data-model.md);
+- [configurazione](docs/configuration.md);
+- [revisione ed esplorazione con Codex](docs/conversazioni-codex.md).
 
-[Filtri automatici, domande in chat e recupero descrizioni](docs/review-chat-and-descriptions.md)
-
-[Metriche e qualità dei dati](docs/metrics.md)
+## Test
 
 ```powershell
-python -B -m unittest discover -s tests -v
-.venv/Scripts/python.exe -B tests/browser_check.py
+.\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -B tests\browser_check.py
 ```
 
-Il percorso attivo è `cli.py`, `workspace.py`, `collection.py`, `dashboard.py` e `dashboard/`. Il codice legacy è stato rimosso. Snapshot, note personali e database restano in `data/` e `user_context/`.
+I test browser usano un database temporaneo. Per misurare la ricerca su dati sintetici:
 
-`.env` era già versionato: aggiungerlo a `.gitignore` non lo rimuove dalla cronologia. Questo intervento non ha modificato segreti o riscritto la storia Git.
+```powershell
+.\.venv\Scripts\python.exe -B tests\benchmark_search.py --companies 1000 --repeat 3
+```
+
+## Dati personali
+
+Questa copia di lavoro contiene configurazioni e contesto personali. Non pubblicarla come distribuzione pulita. Conserva `.env`, `data/`, `user_context/`, backup SQLite e snapshot delle fonti. La cronologia Git contiene le vecchie guide e i report eliminati dalla documentazione corrente.

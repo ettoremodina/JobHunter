@@ -84,7 +84,7 @@ def categorize(archive, cid=None, label=None, reason="", company_ids=None):
             method = "rules" if len(matches) == 1 else "unknown"
             # Il giudizio di un modello batte una parola chiave: le regole riscrivono solo quello
             # che hanno scritto loro, o una casella ancora vuota. Senza questa condizione una
-            # passata a regole cancellava una categoria pagata al modello remoto (docs/asse-azienda-piano.md).
+            # passata a regole cancellava una categoria pagata al modello remoto (vedi DESIGN.md).
             from jobhunter.evaluation.company_categories import replace
             replace(archive, company["id"], [] if name == UNCLASSIFIED else [name], method, reason)
             count += name != UNCLASSIFIED

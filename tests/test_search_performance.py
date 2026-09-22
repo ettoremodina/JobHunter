@@ -7,12 +7,24 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
-from jobhunter.evaluation.selection import verdicts
+from jobhunter.evaluation.selection import evaluate, verdicts
 from jobhunter.workspace import Archive
 
 
 class SearchPerformanceTests(unittest.TestCase):
     """Check work performed rather than unstable wall-clock thresholds."""
+
+    def test_first_page_refreshes_only_visible_companies(self):
+        """A normal page load must not evaluate every stale role in the archive."""
+        with tempfile.TemporaryDirectory() as directory, closing(Archive(Path(directory) / 'a.db')) as archive:
+            archive.ingest([{'company_name': f'Company {n}', 'title': 'Data Scientist',
+                             'source_url': f'https://example.org/{n}'} for n in range(40)], 'test')
+            with patch('jobhunter.evaluation.selection.evaluate', wraps=evaluate) as check:
+                page = archive.search(limit=1)
+                self.assertEqual(len(page['items']), 1)
+                self.assertEqual(check.call_count, 1, 'The first page should refresh only its company')
+                archive.evaluations()
+                self.assertEqual(check.call_count, 40, 'Global consumers must still refresh the complete archive')
 
     def test_page_decodes_only_its_saved_jev_results(self):
         """Pagination must not deserialize Jev reasoning for off-page companies."""

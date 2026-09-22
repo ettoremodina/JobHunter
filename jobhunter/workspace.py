@@ -281,16 +281,28 @@ class Archive:
         self.db.execute("INSERT INTO description_attempts VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(opportunity_id) DO UPDATE SET status=excluded.status,checked_at=excluded.checked_at,last_success_at=COALESCE(excluded.last_success_at,description_attempts.last_success_at),retry_after=excluded.retry_after,parser_version=excluded.parser_version,source_url=excluded.source_url,error=excluded.error",
                         (oid, status, stamp, stamp if status == "available" else None, retry_after, parser_version, source_url, error))
 
-    def refresh_search_eligibility(self):
-        """Cache role statuses in SQLite; invalidate on content, rules or evaluator changes."""
+    def refresh_search_eligibility(self, cid=None):
+        """Cache role statuses, optionally limiting validation to selected companies."""
         from jobhunter.evaluation.selection import evaluate, filters
         rules = filters()
         rules_hash = search_rules_hash(rules)
+        scope, arguments = "", [rules_hash]
+        if cid is not None:
+            if isinstance(cid, str):
+                scope = " AND o.company_id=?"
+                arguments.append(cid)
+            else:
+                company_ids = sorted(cid)
+                if not company_ids:
+                    return
+                scope = " AND o.company_id IN (SELECT value FROM json_each(?))"
+                arguments.append(json.dumps(company_ids))
         # Serialize cache rebuilds across dashboard requests; unchanged reads stay inexpensive.
         with _SEARCH_INDEX_LOCK:
             rows = self.db.execute("""SELECT o.id,o.content_hash FROM opportunities o
                 LEFT JOIN search_eligibility e ON e.opportunity_id=o.id
-                WHERE e.decision IS NULL OR e.content_hash!=o.content_hash OR e.rules_hash!=?""", (rules_hash,)).fetchall()
+                WHERE (e.decision IS NULL OR e.content_hash!=o.content_hash OR e.rules_hash!=?)"""
+                + scope, arguments).fetchall()
             updates = []
             for row in rows:
                 data = self.db.execute('SELECT data FROM opportunities WHERE id=? AND content_hash=?', (row['id'], row['content_hash'])).fetchone()
@@ -308,10 +320,10 @@ class Archive:
     def evaluations(self, cid=None):
         """Reuse full persisted decisions for queue, review, details and role snapshots.
 
-        `cid` accepts one company, a sequence of companies, or None for the whole archive: the
-        refresh below walks every opportunity, so one scoped call beats one call per company.
+        `cid` accepts one company, a sequence of companies, or None for the whole archive. The
+        refresh validates the same scope, so a page read does not walk unrelated opportunities.
         """
-        self.refresh_search_eligibility()
+        self.refresh_search_eligibility(cid)
         sql = 'SELECT e.opportunity_id,e.decision FROM search_eligibility e JOIN opportunities o ON o.id=e.opportunity_id'
         if cid is None:
             rows = self.db.execute(sql)

@@ -6,11 +6,21 @@ Su Windows aprire `Avvia JobHunter.pyw` con doppio clic. Il launcher usa il Pyth
 
 La mappa mostra la sequenza con card e frecce. Ogni card riporta copertura, data e stato. Cliccare per aprire parametri, risultato dell'ultima esecuzione e pulsante di avvio. Normalizzazione e raggruppamento sono automatici durante l'importazione; la card spiega il comportamento. Ogni card ha un riquadro «Cosa fa» che dice su cosa lavora il passaggio e se classifica o si limita a preparare. La valutazione manuale non è un passaggio della pipeline: avviene dopo, nella tab Salvate.
 
-Le operazioni disponibili sono raccolta per fonte, filtri locali, recupero descrizioni e passaggio LLM remoto. La rilettura degli HTML salvati e l'impaginazione con Ollama sono state tolte dalle card: la prima è una riparazione una tantum, la seconda non produce più nulla da quando le schede dei ruoli arrivano da Qwen. Restano disponibili dalla CLI con `reparse-descriptions` ed `enrich description`. L'avvio chiama direttamente le funzioni Python esistenti, senza accettare comandi shell o percorsi arbitrari dal browser.
+Le operazioni disponibili sono raccolta per fonte, filtri locali, recupero descrizioni,
+giudizio Jev e schede Qwen. La rilettura degli HTML salvati è una riparazione una tantum
+disponibile dalla CLI con `reparse-descriptions`; l'impaginazione locale con Ollama è
+stata rimossa. L'avvio chiama direttamente le funzioni Python esistenti, senza accettare
+comandi shell o percorsi arbitrari dal browser.
 
 “Continua da qui” avvia in sequenza i passaggi principali successivi. La finestra mostra l'elenco e permette di impostare il successivo passaggio LLM remoto, comprese le chiamate contemporanee. Se il recupero descrizioni è successivo al passaggio scelto, considera tutte le descrizioni eleggibili. Il recupero mantiene esclusioni, cooldown e limiti della fonte già previsti dalla pipeline.
 
-La sequenza si ferma al primo risultato parziale o errore. “Riprova” significa riaprire il passaggio, verificare i parametri e avviarlo di nuovo: i risultati validi già salvati vengono riutilizzati dove previsto dai rispettivi task. Non esistono retry automatici a pagamento. Il passaggio remoto ritenta da solo la sola richiesta che il provider ha **rifiutato** (HTTP 429 o 5xx): non ha generato niente, quindi non c'è spesa da duplicare. Un fallimento di trasporto, dove l'esito di fatturazione è ignoto, ferma la run come prima.
+La sequenza prosegue dopo un risultato parziale e si ferma su errore o interruzione.
+“Riprova” significa riaprire il passaggio, verificare i parametri e avviarlo di nuovo: i
+risultati validi già salvati vengono riutilizzati dove previsto dai rispettivi task. Non
+esistono retry automatici a pagamento. Il passaggio remoto ritenta da solo la richiesta
+che il provider ha **rifiutato** (HTTP 429 o 5xx): non ha generato niente, quindi non c'è
+spesa da duplicare. Un fallimento di trasporto, dove l'esito di fatturazione è ignoto,
+ferma la run come prima.
 
 ## Schede Qwen e ordine dei passaggi
 

@@ -65,7 +65,7 @@ def company_input(archive, cid, cache=None):
     Ordine: i campi della fonte, poi il testo grezzo che `company_profile` ha raccolto quando
     la descrizione manca ancora, poi le frasi estratte dagli annunci. `evidence_source` dice
     al modello con che tipo di testo ha a che fare: la pagina di un'azienda e un annuncio di
-    lavoro non si leggono allo stesso modo (docs/dati-aziendali-per-fonte.md).
+    lavoro non si leggono allo stesso modo (vedi docs/data-model.md).
 
     `cache` è il dizionario di **una sola preparazione**, non una cache di processo: `job_facts`
     ripulisce l'HTML di *tutti* gli annunci dell'azienda, e chi prepara una richiesta per azienda

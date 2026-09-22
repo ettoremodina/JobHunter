@@ -146,8 +146,8 @@ attuali sono valori iniziali. Vanno calibrate su un campione reale, soprattutto 
 italiano. Un output tipizzato impedisce valori fuori schema, non garantisce che il giudizio sia
 corretto.
 
-I risultati dei primi pilot e i casi ancora da calibrare sono in
-[Pilot Jev del 22 settembre 2026](jev-pilot-2026-09-22.md).
+Le soglie restano iniziali: vanno ricontrollate su campioni reali con
+`scripts/audit_jev_results.py`, senza nuove chiamate né consumo di token.
 
 Per ricontrollare un batch senza chiamare modelli né usare token, lo script seguente sceglie casi
 di soglia e un campione deterministico, poi verifica le invarianti del combinatore:

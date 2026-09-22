@@ -97,8 +97,9 @@ una dimenticanza: pagare un secondo giudizio su un caso già ambiguo non lo rend
 
 L'asse azienda è invece multi-etichetta: Jev usa probabilità indipendenti per settore e conserva al
 massimo due categorie affidabili. Gli indecisi
-sui ruoli e le aziende senza categorie affidabili alimentano la futura revisione guidata da Codex.
-Dettagli e soglie in [docs/categorie-multiple-e-review-codex.md](docs/categorie-multiple-e-review-codex.md).
+sui ruoli e le aziende senza categorie affidabili alimentano la revisione guidata da Codex.
+Dettagli e soglie in [docs/pipeline-completa.md](docs/pipeline-completa.md) e
+[docs/conversazioni-codex.md](docs/conversazioni-codex.md).
 
 Il livello 2 va speso **dove il primo ha fallito**, mai prima. La sintesi e l'impaginazione
 si fanno **dopo** l'assegnazione del tier e **solo su Tier A e B**: riscrivere la scheda di

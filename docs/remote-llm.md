@@ -92,9 +92,9 @@ python scripts\audit_company_batch.py
 python scripts\audit_company_batch.py --report data\remote-llm\company-batch-...\report.json
 ```
 
-La mappa interattiva del coordinatore parallelo è in
-[Flusso di company_batch.run](code-flow-company-batch/index.html); le annotazioni verificabili sono
-in [semantic.json](code-flow-company-batch/semantic.json).
+Il coordinatore parallelo è implementato in
+`jobhunter/evaluation/company_batch.py`; i test ne verificano riuso dei risultati,
+limiti e persistenza.
 
 ## Prompt e profilo
 

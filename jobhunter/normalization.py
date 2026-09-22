@@ -16,7 +16,7 @@ COMPANY_FIELDS = ("company_name", "company_description", "sectors", "website_url
 # I nomi senza prefisso sono invece i nostri, prodotti da `postings()` e dall'adattatore browser.
 # Verificato il 10 settembre 2026 su 399 file di raccolta: ogni alias qui sotto compare davvero
 # nei dati grezzi. `Organization Name`, `company_info` e `company_vertical` non comparivano mai
-# e sono stati tolti (docs/dati-aziendali-per-fonte.md).
+# e sono stati tolti; il contratto persistente è documentato in docs/data-model.md.
 
 
 def clean(value):

@@ -4,7 +4,7 @@ Scritto il 10 settembre 2026. Che cosa succede a un annuncio e a un'azienda dal 
 in cui entrano in archivio, chi decide cosa, e dove resta scritto.
 
 Complemento a [`DESIGN.md`](../DESIGN.md), [`data-model.md`](data-model.md) e
-[`dati-aziendali-per-fonte.md`](dati-aziendali-per-fonte.md).
+[`scraper-sources.md`](scraper-sources.md).
 
 ## Il principio: due assi che non si toccano
 
@@ -68,7 +68,7 @@ flowchart TD
 ### Cosa fa ogni passaggio
 
 **1 · Raccolta.** `normalize()` accetta più nomi per lo stesso campo perché ogni fonte usa
-i suoi (vedi [`dati-aziendali-per-fonte.md`](dati-aziendali-per-fonte.md)). L'annuncio
+i suoi. Le differenze operative sono raccolte in [`scraper-sources.md`](scraper-sources.md). L'annuncio
 finisce in `opportunities.data` come JSON, con un `content_hash` che è l'impronta del suo
 contenuto. I dati aziendali vanno sulla riga azienda, mai sull'annuncio.
 
