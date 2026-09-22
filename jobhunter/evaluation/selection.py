@@ -104,12 +104,18 @@ def verdicts(archive, cid=None):
         saved_args = (json.dumps(list(decisions)),)
     for row in archive.db.execute(saved_sql, saved_args):
         saved[row["record_id"]] = json.loads(row["data"]).get("result") or {}
+    from jobhunter.evaluation import review
+    scoped = None if cid is None else list(decisions)
+    users, agents = review.user_judgements(archive, scoped), review.agent_judgements(archive, scoped)
     roles = {}
     for oid, decision in decisions.items():
-        # La cascata ha un solo giudice semantico: un «non so» di Jev resta aperto all'utente.
+        # La cascata ha un solo giudice semantico: un «non so» di Jev resta aperto alla revisione.
         chain = [j for j in (regex_judgement(decision),
                              llm_judgement(saved.get(oid), "jev")) if j]
-        roles[oid] = {**tier.role_verdict(chain), "primary": chain[0]["primary"], "catena": chain}
+        # Sopra la cascata: tu, poi l'agente. Restano nella catena per mostrare cosa hanno cambiato.
+        overrides = [j for j in (users.get(oid), agents.get(oid)) if j]
+        roles[oid] = {**tier.role_verdict(chain, overrides), "primary": chain[0]["primary"],
+                      "catena": chain + overrides[::-1]}
     if cid is None:
         scope, own_scope, arguments = "", "", ()
     elif isinstance(cid, str):

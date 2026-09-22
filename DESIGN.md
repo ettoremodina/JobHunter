@@ -77,6 +77,25 @@ Ogni giudice lavora **solo su ciò che il precedente non ha saputo decidere**.
 | 2 | **System One** (Jev) | **i «non so»** di entrambi gli assi, senza generare testo: decide il ruolo e assegna il settore | tieni · scarta · non so | 0,042 $/MTok in ingresso, uscita gratuita; **una passata sull'archivio ≈ 1,20 $** |
 | 3 | **L'utente**, in chat | i «non so» che restano; risponde alle domande dell'agente; scelta finale per azienda | preferenza · decisione | tempo umano |
 
+### Il livello di revisione sopra la cascata (22 settembre 2026)
+
+La cascata automatica si ferma al primo giudice che decide. Sopra di lei, sul singolo ruolo,
+stanno due giudici che la **sovrascrivono** senza cancellarla. L'ordine, dal più forte, è
+**utente → agente → Jev → regex**.
+
+- **Utente:** l'ultima decisione non annullata sul ruolo in `feedback`. `saved` vale tieni,
+  `discarded` vale scarta, gli altri stati sono informativi. Non scade mai.
+- **Agente:** Codex o Claude in una sessione `regole` (`enrichments`, task `agent:selection`).
+  Lavora sugli indecisi di Jev e sui ruoli compatibili di Tier A/B, e ogni verdetto cita
+  almeno una regola che l'utente ha confermato in `user_context/selection/regole.md`. Conta
+  finché il testo dell'annuncio e quello delle regole citate restano identici.
+
+La catena conserva tutti i verdetti: cambia solo quale conta. Tier, schede Qwen e sessioni
+leggono il verdetto finale, quindi seguono da soli. Codice: `jobhunter/evaluation/review.py`,
+`tier.role_verdict(chain, overrides)`. Questo supera la regola dell'11 settembre per cui una
+scelta manuale restava accanto ai verdetti senza cambiarli: la tab «Salvate» resta separata e
+contiene solo quello che salvi tu.
+
 Scelta del ruolo e categoria aziendale sono domande indipendenti ma condividono la stessa
 richiesta Jev quando entrambe sono pendenti. Il codice salva i due risultati con impronte separate.
 

@@ -21,9 +21,13 @@ def company_verdict(categories, preferred):
     return INTERESTING if any(category in preferred for category in categories) else NOT_INTERESTING
 
 
-def role_verdict(judgements):
-    """Cascata: vince il primo giudice che ha saputo decidere; gli altri non lo rivedono (DESIGN §3)."""
-    for judgement in judgements:
+def role_verdict(judgements, overrides=()):
+    """Cascata: vince il primo giudice che ha saputo decidere; gli altri non lo rivedono (DESIGN §3).
+
+    `overrides` e' il livello di revisione (`review.py`), dal piu' forte: utente, poi agente.
+    Se uno di loro ha deciso vince su tutta la cascata; altrimenti la cascata resta com'era.
+    """
+    for judgement in (*overrides, *judgements):
         if judgement and judgement.get("verdetto") in (KEEP, DROP):
             return judgement
     return {"verdetto": UNKNOWN, "motivo": "Nessun giudice ha saputo decidere", "prove": [], "giudice": None}

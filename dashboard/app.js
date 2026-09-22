@@ -268,15 +268,22 @@ function axisSummary(company) {
 
 /** Show which judge decided a role and on what evidence, so a verdict is checkable months later. */
 function roleVerdict(verdict) {
-  const judges = {regex: "regex su titolo e descrizione", jev: "Jev"};
+  const judges = {regex: "dalla regex su titolo e descrizione", jev: "da Jev",
+                  agente: "dall’agente, con le regole confermate", utente: "da te"};
   const line = el("p", undefined, "muted");
   line.append(verdictBadge(verdict.verdetto));
-  line.append(el("span", verdict.giudice ? ` deciso dal ${judges[verdict.giudice] || verdict.giudice}` : " nessun giudice ha ancora deciso"));
+  line.append(el("span", verdict.giudice ? ` deciso ${judges[verdict.giudice] || verdict.giudice}` : " nessun giudice ha ancora deciso"));
   if (verdict.motivo) line.append(el("span", " · " + verdict.motivo));
+  // Il livello di revisione sovrascrive la cascata ma non la cancella: si vede che cosa ha cambiato.
+  const jev = (verdict.catena || []).find(judge => judge.giudice === "jev");
+  if (["agente", "utente"].includes(verdict.giudice) && jev && jev.verdetto !== verdict.verdetto) {
+    line.append(el("span", " · Jev diceva "), verdictBadge(jev.verdetto));
+  }
   if (verdict.primary) line.append(el("span", " · ruolo prioritario"));
   if (verdict.prove?.length) {
     const proof = el("details");
-    proof.append(el("summary", verdict.giudice === "jev" ? "Evidenza usata da Jev" : "Regole applicate dalla regex"));
+    proof.append(el("summary", {jev: "Evidenza usata da Jev", agente: "Regole citate dall’agente"}[verdict.giudice]
+                              || "Regole applicate dalla regex"));
     for (const quote of verdict.prove) proof.append(el("blockquote", String(quote)));
     line.append(proof);
   }

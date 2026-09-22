@@ -30,12 +30,19 @@ Codex prepara una proposta e ne simula l'impatto sul corpus congelato. Solo una 
 
 L'utente definisce uno scope con filtri come paese, città, categoria, Tier e ricerca testuale. Codex presenta piccoli batch, confronta aziende e ruoli, chiarisce differenze e può registrare salvataggi o scarti puntuali. Le considerazioni generali alimentano la memoria di selezione, ma non diventano automaticamente criteri di esclusione.
 
-## Un'unica skill, due modalità
+### Applicazione delle regole (dal 22 settembre 2026)
 
-La skill JobHunter rimane il punto d'ingresso e riconosce due intenti espliciti:
+Le regole generali che emergono da una conversazione, e che l'utente conferma esplicitamente, finiscono in `user_context/selection/regole.md` con un ID stabile (R1, R2…). In una sessione `regole` l'agente le applica agli indecisi di Jev e ai ruoli compatibili delle aziende di Tier A e B-esperienza, e registra un verdetto tieni o scarta che cita almeno una regola.
+
+Sul singolo ruolo vale la gerarchia **utente → agente → Jev → regex**: il giudice più in alto che ha deciso vince, e la catena mostra ancora gli altri. Una decisione dell'utente (`feedback` saved/discarded sul ruolo) vince su tutto e non scade. Un verdetto dell'agente smette di contare quando cambia il testo dell'annuncio o quello di una regola citata, e il ruolo torna nella coda della sessione `regole` successiva. Nessuna sessione ripropone ruoli già decisi da uno dei due. Dettagli in `DESIGN.md` §3.
+
+## Un'unica skill, tre modalità
+
+La skill JobHunter rimane il punto d'ingresso e riconosce tre intenti espliciti:
 
 - `rivedi gli indecisi`: apre o riprende una sessione di revisione degli indecisi;
-- `esplora la selezione`: apre o riprende una sessione sulle aziende Tier A e B entro lo scope richiesto.
+- `esplora la selezione`: apre o riprende una sessione sulle aziende Tier A e B entro lo scope richiesto;
+- `applica le regole`: apre una sessione `regole` in cui l'agente decide i ruoli citando le regole confermate.
 
 La skill non carica l'intero archivio in chat. La CLI crea un manifest con popolazione, impronte dei criteri e schede compatte congelate; i turni successivi portano nella conversazione soltanto il batch non ancora trattato.
 
@@ -44,12 +51,13 @@ Comandi principali:
 ```powershell
 python main.py codex-session start --mode indecisi --batch-size 5
 python main.py codex-session start --mode selezione --batch-size 5 --tier A --country Italia
+python main.py codex-session start --mode regole --batch-size 5
 python main.py codex-session show SESSION_ID
 python main.py codex-session expand SESSION_ID ITEM_ID
 python main.py codex-session record SESSION_ID EVENT.json
 ```
 
-`expand` accetta `--opportunity OPPORTUNITY_ID` quando `ITEM_ID` è un'azienda della selezione. `record` è idempotente tramite `event_id` e accetta ID revisionati, note di sessione e memorie esplicitamente confermate.
+`expand` accetta `--opportunity OPPORTUNITY_ID` quando `ITEM_ID` è un'azienda della selezione. `record` è idempotente tramite `event_id` e accetta ID revisionati, note di sessione, memorie e regole esplicitamente confermate e, solo nelle sessioni `regole`, i verdetti dell'agente. Valida l'intero evento prima di scrivere: un verdetto su un ruolo deciso dall'utente, o senza una regola attiva, fa rifiutare tutto l'evento.
 
 ## Strategia per contenere i token
 
@@ -66,6 +74,8 @@ Le responsabilità restano separate:
 
 - SQLite conserva feedback, salvataggi, scarti ed eventuali valutazioni puntuali;
 - `user_context/selection/preferences.md` contiene preferenze confermate e stabili, leggibili dall'utente;
+- `user_context/selection/regole.md` contiene le regole attive che l'agente applica; modificarle o cancellarle fa scadere i verdetti che le citano;
+- `enrichments` (task `agent:selection`) conserva i verdetti dell'agente con la regola citata e l'impronta del testo;
 - `user_context/selection/notes/` contiene considerazioni e confronti che vale la pena ricordare ma che non sono regole attive;
 - `data/codex-sessions/<session-id>/` contiene manifest, scope, hash, avanzamento, domande e artefatti tecnici riproducibili.
 

@@ -20,6 +20,6 @@ Espandi la descrizione aziendale con `python main.py codex-session expand SESSIO
 
 Quando l'utente sceglie, usa `feedback COMPANY_ID saved` o `feedback COMPANY_ID discarded`; aggiungi `--opportunity` se la scelta riguarda un solo ruolo. Non dedurre una scelta da un commento comparativo.
 
-Registra avanzamento, note e memorie con il contratto di `revisione-indecisi.md`. Una preferenza Markdown resta contesto per conversazioni future e non diventa automaticamente un filtro.
+Registra avanzamento, note e memorie con il contratto di `revisione-indecisi.md`. Una preferenza Markdown resta contesto per conversazioni future e non diventa automaticamente un filtro. Se l'utente vuole che un criterio venga applicato a tutti i ruoli, proponilo come regola: dopo la sua conferma esplicita registralo nel campo `rules` (vedi [applica-regole.md](applica-regole.md)) e offri una sessione `regole`.
 
 Concludi con un confronto breve, le scelte effettivamente registrate e una sola proposta: altro batch, cambio dei filtri o fine della sessione.

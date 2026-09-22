@@ -128,6 +128,12 @@ La cascata è la regola: il filtro regex ferma soltanto le esclusioni certe; Jev
 mansioni di tutti gli altri annunci leggibili. Dopo System One non c'è nessun altro giudice
 automatico.
 
+**Sopra la cascata c'è il livello di revisione** (dal 22 settembre 2026). Sul singolo ruolo
+decidono, in ordine di forza, **tu** (`feedback` salvato o scartato sul ruolo) e **l'agente** in
+chat, che applica le regole che hai confermato in `user_context/selection/regole.md`. Il più forte
+che ha deciso vince su Jev e sul regex; la catena mostra ancora i loro verdetti. Tier e schede Qwen
+seguono il verdetto finale. Procedura in [conversazioni-codex.md](conversazioni-codex.md).
+
 ---
 
 ## Il percorso di un'azienda

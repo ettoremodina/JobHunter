@@ -10,7 +10,7 @@ python main.py codex-session start --mode indecisi --batch-size 5
 
 Il risultato contiene l'ID della sessione e il primo batch compatto. Riprendi senza rileggere i casi già trattati con `python main.py codex-session show SESSION_ID`.
 
-La popolazione è congelata all'avvio e comprende solo risultati Jev correnti con decisione `review` e descrizione non vuota. Non reinserire gli annunci senza descrizione: sono un problema di acquisizione, non una preferenza da chiedere all'utente.
+La popolazione è congelata all'avvio e comprende solo risultati Jev correnti con decisione `review` e descrizione non vuota, meno i ruoli già decisi dall'utente o dall'agente con le regole in vigore. Non reinserire gli annunci senza descrizione: sono un problema di acquisizione, non una preferenza da chiedere all'utente.
 
 ## Analisi del batch
 
@@ -22,6 +22,7 @@ Classifica ogni risposta come:
 
 - scelta sul singolo annuncio: usa `feedback COMPANY_ID STATUS --opportunity OPPORTUNITY_ID --reason other --note "..."`;
 - preferenza generale confermata: salvala nell'evento della sessione;
+- criterio generale che l'utente vuole far applicare all'agente: proponilo come regola e, dopo la conferma esplicita, registralo nel campo `rules` dell'evento (formato in [applica-regole.md](applica-regole.md));
 - ipotesi o considerazione: salvala solo nelle note della sessione;
 - possibile regola regex: prepara un'anteprima con `review-rule`, misura transizioni ed esempi e applicala solo dopo conferma;
 - possibile modifica al prompt Jev: documenta esempi positivi e negativi e chiedi conferma prima di modificare configurazione o codice.

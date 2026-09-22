@@ -5,13 +5,15 @@ import logging
 import re
 from pathlib import Path
 
-from jobhunter.evaluation import tier
+from jobhunter.evaluation import review, tier
 from jobhunter.evaluation import system_one
 from jobhunter.evaluation.remote_llm import digest
 from jobhunter.evaluation.selection import verdicts
 from jobhunter.workspace import ROOT, now
 
-MODES = ("indecisi", "selezione")
+MODES = ("indecisi", "selezione", "regole")
+# Modalita' che lavorano sul singolo annuncio invece che sull'azienda.
+ROLE_MODES = ("indecisi", "regole")
 SELECTION_TIERS = ("A", "B-attesa", "B-esperienza")
 SESSION_ROOT = ROOT / "data/codex-sessions"
 MEMORY_ROOT = ROOT / "user_context/selection"
@@ -52,18 +54,53 @@ def _load(session_id, session_root=None):
     return directory, manifest
 
 
+def _reviewed(archive):
+    """Roles already decided above the cascade, by the user or by a current agent verdict."""
+    return set(review.user_judgements(archive)) | set(review.agent_judgements(archive))
+
+
 def _undecided(archive):
-    """Return current Jev review IDs with usable evidence, excluding data-blocked jobs."""
+    """Return current Jev review IDs with usable evidence, excluding data-blocked jobs.
+
+    Un annuncio che hai gia' deciso tu, o che l'agente ha deciso con le regole in vigore, non
+    rientra in una nuova sessione: prima del 22 settembre 2026 tornava a ogni avvio.
+    """
     cfg = system_one.config()
+    decided = _reviewed(archive)
     result = []
     for row in archive.db.execute("SELECT id,content_hash,data FROM opportunities ORDER BY id"):
         job = json.loads(row["data"])
-        if not job.get("description"):
+        if not job.get("description") or row["id"] in decided:
             continue
         saved = system_one.current_result(archive, "selection", row["id"], cfg)
         if saved and saved.get("decision") == "review":
             result.append({"id": row["id"], "hash": row["content_hash"]})
     return result
+
+
+def _to_apply(archive):
+    """Roles the agent may judge with the confirmed rules, not yet decided above the cascade.
+
+    Due gruppi, scelti dall'utente il 22 settembre 2026: gli indecisi di Jev con mansioni
+    leggibili, e i ruoli compatibili delle aziende di Tier A e B-esperienza. Il primo gruppo puo'
+    salire, il secondo puo' scendere; il tier si ricalcola da solo in lettura.
+    """
+    if not review.rules():
+        raise ValueError("Nessuna regola attiva in user_context/selection/regole.md: confermane "
+                         "almeno una in una sessione prima di applicarle")
+    decided = _reviewed(archive)
+    hashes = {row["id"]: row["content_hash"] for row in archive.db.execute("SELECT id,content_hash FROM opportunities")}
+    result = []
+    for state in verdicts(archive).values():
+        for oid, role in state["ruoli"].items():
+            if oid in decided:
+                continue
+            jev = next((j for j in role["catena"] if j["giudice"] == "jev"), None)
+            compatible = role["verdetto"] == tier.KEEP and state["tier"] in ("A", "B-esperienza")
+            undecided = role["verdetto"] == tier.UNKNOWN and jev is not None
+            if compatible or undecided:
+                result.append({"id": oid, "hash": hashes[oid]})
+    return sorted(result, key=lambda item: item["id"])
 
 
 def _selection(archive, scope):
@@ -97,15 +134,17 @@ def start(archive, mode, scope=None, batch_size=5, session_root=None):
     """Create a reproducible conversation session and return its first compact batch.
 
     `indecisi` freezes current Jev review results with descriptions. `selezione` freezes a filtered
-    Tier A/B company population. No feedback, model call or active pipeline rule is changed.
+    Tier A/B company population. `regole` freezes the roles the agent may judge with the confirmed
+    rules (`_to_apply`). No feedback, model call or active pipeline rule is changed.
     """
     if mode not in MODES:
         raise ValueError("Unknown Codex conversation mode")
     if type(batch_size) is not int or not 1 <= batch_size <= 20:
         raise ValueError("Batch size must be between 1 and 20")
     scope = dict(scope or {})
-    records = _undecided(archive) if mode == "indecisi" else _selection(archive, scope)
-    builder = _undecided_item if mode == "indecisi" else _selection_item
+    records = ({"indecisi": _undecided, "regole": _to_apply}[mode](archive) if mode in ROLE_MODES
+               else _selection(archive, scope))
+    builder = BUILDERS[mode]
     for record in records:
         record["snapshot"] = builder(archive, record["id"])
         record["source_snapshot"] = _source_snapshot(archive, mode, record["id"], record["snapshot"])
@@ -157,20 +196,33 @@ def _undecided_item(archive, oid):
     }
 
 
+def _rule_item(archive, oid):
+    """Undecided-role card plus the tier and current verdict the rules would change."""
+    card = _undecided_item(archive, oid)
+    if card.get("missing"):
+        return card
+    state = verdicts(archive, card["company_id"])[card["company_id"]]
+    card["tier"] = state["tier"]
+    card["verdetto"] = state["ruoli"][oid]["verdetto"]
+    return card
+
+
 def _criteria(mode):
     """Fingerprint the decision inputs needed to explain a frozen session later."""
     values = {
         "tier_code": digest(Path(tier.__file__).read_text(encoding="utf-8")),
         "role_filters": digest((ROOT / "config/role_filters.json").read_text(encoding="utf-8")),
     }
-    if mode == "indecisi":
+    if mode in ROLE_MODES:
         values["jev_selection"] = system_one.signature(system_one.config(), "selection")
+    if mode == "regole":
+        values["rules"] = {rule_id: rule["hash"] for rule_id, rule in review.rules().items()}
     return values
 
 
 def _source_snapshot(archive, mode, item_id, card):
     """Freeze original text locally without exposing it in the compact chat batch."""
-    if mode == "indecisi":
+    if mode in ROLE_MODES:
         row = archive.db.execute("SELECT company_id,data FROM opportunities WHERE id=?", (item_id,)).fetchone()
         job = json.loads(row["data"])
         return {"id": item_id, "company_id": row["company_id"], "title": job.get("title", ""),
@@ -217,6 +269,9 @@ def _selection_item(archive, cid):
     }
 
 
+BUILDERS = {"indecisi": _undecided_item, "regole": _rule_item, "selezione": _selection_item}
+
+
 def view(archive, session_id, session_root=None):
     """Return the current compact batch without advancing or rereading reviewed records."""
     _, manifest = _load(session_id, session_root)
@@ -224,7 +279,7 @@ def view(archive, session_id, session_root=None):
     remaining = [item["id"] for item in manifest["population"] if item["id"] not in reviewed]
     ids = remaining[:manifest["batch_size"]]
     records = {item["id"]: item for item in manifest["population"]}
-    builder = _undecided_item if manifest["mode"] == "indecisi" else _selection_item
+    builder = BUILDERS[manifest["mode"]]
     return {
         "id": session_id,
         "mode": manifest["mode"],
@@ -246,7 +301,7 @@ def expand(archive, session_id, item_id, opportunity_id=None, session_root=None)
     if item_id not in records:
         raise ValueError("Item is outside this Codex session")
     frozen = records[item_id].get("source_snapshot")
-    if manifest["mode"] == "indecisi":
+    if manifest["mode"] in ROLE_MODES:
         if frozen:
             return frozen
         row = archive.db.execute("SELECT company_id,data FROM opportunities WHERE id=?", (item_id,)).fetchone()
@@ -283,8 +338,15 @@ def _append_once(path, marker, text):
     path.write_text(current.rstrip() + "\n\n" + text.rstrip() + "\n", encoding="utf-8")
 
 
-def record(session_id, event, session_root=None, memory_root=None):
-    """Record progress and explicitly confirmed Markdown memories without changing pipeline rules."""
+def record(session_id, event, session_root=None, memory_root=None, archive=None):
+    """Record progress, confirmed memories, confirmed rules and agent verdicts.
+
+    Tutto viene validato prima di scrivere qualsiasi cosa, cosi' un evento sbagliato non lascia
+    meta' delle sue righe. `rules` sono regole che l'utente ha confermato a parole in chat: da
+    quel momento l'agente puo' citarle. `verdicts` sono i giudizi dell'agente e si accettano solo
+    in una sessione `regole`, solo su annunci della sessione che l'utente non ha gia' deciso, e
+    solo citando regole attive o confermate nello stesso evento.
+    """
     directory, manifest = _load(session_id, session_root)
     if not isinstance(event, dict) or not isinstance(event.get("event_id"), str) or not event["event_id"].strip():
         raise ValueError("Session event requires event_id")
@@ -304,6 +366,34 @@ def record(session_id, event, session_root=None, memory_root=None):
     for memory in memories:
         if not isinstance(memory, dict) or memory.get("kind") not in ("preference", "consideration") or not isinstance(memory.get("id"), str) or not isinstance(memory.get("text"), str) or not memory["id"].strip() or not memory["text"].strip():
             raise ValueError("Invalid confirmed memory")
+    rules_path = Path(memory_root or MEMORY_ROOT) / "regole.md"
+    new_rules = event.get("rules", [])
+    judged = event.get("verdicts", [])
+    if not isinstance(new_rules, list) or not isinstance(judged, list):
+        raise ValueError("rules and verdicts must be arrays")
+    active = review.rules(rules_path)
+    for rule in new_rules:
+        if (not isinstance(rule, dict) or not isinstance(rule.get("id"), str) or not review.RULE_ID.fullmatch(rule["id"])
+                or not isinstance(rule.get("text"), str) or not rule["text"].strip()):
+            raise ValueError("Invalid confirmed rule: id like R1 and non-empty text")
+        if rule["id"] in active and active[rule["id"]]["text"] != rule["text"].strip():
+            raise ValueError(f"Rule {rule['id']} already exists with a different text: use a new ID")
+    if judged:
+        if manifest["mode"] != "regole":
+            raise ValueError("Agent verdicts are recorded only in a regole session")
+        if archive is None:
+            raise ValueError("Recording agent verdicts needs the archive")
+        citable = set(active) | {rule["id"] for rule in new_rules}
+        decided = review.user_judgements(archive, [v.get("opportunity_id") for v in judged if isinstance(v, dict)])
+        for verdict in judged:
+            if (not isinstance(verdict, dict) or verdict.get("opportunity_id") not in population
+                    or verdict.get("decision") not in review.AGENT_DECISIONS
+                    or not isinstance(verdict.get("rule_ids"), list) or not verdict["rule_ids"]
+                    or set(verdict["rule_ids"]) - citable
+                    or not isinstance(verdict.get("rationale"), str) or not verdict["rationale"].strip()):
+                raise ValueError("Invalid agent verdict: session role, keep/exclude, active rule_ids, rationale")
+            if verdict["opportunity_id"] in decided:
+                raise ValueError(f"{verdict['opportunity_id']} was decided by the user; the agent cannot override it")
 
     events_path = directory / "events.jsonl"
     previous = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()] if events_path.exists() else []
@@ -321,6 +411,13 @@ def record(session_id, event, session_root=None, memory_root=None):
             block = f"{marker}\n## {title}\n\n{memory['text'].strip()}\n\nOrigine: sessione `{session_id}`."
             path = target / "preferences.md" if memory["kind"] == "preference" else target / "notes" / f"{session_id}.md"
             _append_once(path, marker, block)
+        for rule in new_rules:
+            review.add_rule(rule["id"], rule["text"], f"sessione `{session_id}`", rules_path)
+        active = review.rules(rules_path)
+        for verdict in judged:
+            review.save_agent_verdict(archive, verdict["opportunity_id"], verdict["decision"], verdict["rule_ids"],
+                                      verdict["rationale"], session_id, active)
+        reviewed = sorted(set(reviewed) | {verdict["opportunity_id"] for verdict in judged})
 
     manifest["reviewed_ids"] = sorted(set(manifest.get("reviewed_ids", [])) | set(reviewed))
     manifest["updated_at"] = now()
