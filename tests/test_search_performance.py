@@ -14,20 +14,20 @@ from jobhunter.workspace import Archive
 class SearchPerformanceTests(unittest.TestCase):
     """Check work performed rather than unstable wall-clock thresholds."""
 
-    def test_page_decodes_only_its_saved_remote_results(self):
-        """Pagination must not deserialize remote reasoning for off-page companies."""
+    def test_page_decodes_only_its_saved_jev_results(self):
+        """Pagination must not deserialize Jev reasoning for off-page companies."""
         with tempfile.TemporaryDirectory() as directory, closing(Archive(Path(directory) / 'a.db')) as archive:
             archive.ingest([{'company_name': f'Company {n}', 'title': 'Research fellow',
                              'source_url': f'https://example.org/{n}'} for n in range(40)], 'test')
-            payload = json.dumps({'result': {'decision': 'keep', 'rationale': 'REMOTE_SENTINEL'}})
-            archive.db.execute("""INSERT INTO enrichments SELECT 'remote:selection',id,content_hash,
+            payload = json.dumps({'result': {'decision': 'keep', 'rationale': 'JEV_SENTINEL'}})
+            archive.db.execute("""INSERT INTO enrichments SELECT 'jev:selection',id,content_hash,
                 'fixture',?,'fixture',first_seen FROM opportunities""", (payload,))
             archive.db.commit()
             archive.refresh_search_eligibility()
             with patch('jobhunter.evaluation.selection.json.loads', wraps=json.loads) as decode:
                 result = archive.search(limit=1)
-            decoded = [call for call in decode.call_args_list if 'REMOTE_SENTINEL' in str(call.args[0])]
-            self.assertEqual(len(decoded), 1, 'Off-page remote verdicts must stay in SQLite')
+            decoded = [call for call in decode.call_args_list if 'JEV_SENTINEL' in str(call.args[0])]
+            self.assertEqual(len(decoded), 1, 'Off-page Jev verdicts must stay in SQLite')
             cid = result['items'][0]['id']
             complete = verdicts(archive)
             self.assertEqual(verdicts(archive, cid), {cid: complete[cid]})

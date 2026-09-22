@@ -11,11 +11,14 @@ UNCLASSIFIED = "Da classificare"
 TIERS = ("A", "B-attesa", "B-esperienza", "evidenza-mancante", "scarto")
 
 
-def company_verdict(category, preferred):
-    """Asse azienda: categorizzare l'azienda *e'* valutare l'asse (DESIGN §2)."""
-    if not category or category == UNCLASSIFIED:
+def company_verdict(categories, preferred):
+    """Asse azienda: basta una categoria affidabile fra quelle preferite (DESIGN §2)."""
+    if isinstance(categories, str):
+        categories = [] if categories == UNCLASSIFIED else [categories]
+    categories = [category for category in categories or [] if category != UNCLASSIFIED]
+    if not categories:
         return NO_EVIDENCE
-    return INTERESTING if category in preferred else NOT_INTERESTING
+    return INTERESTING if any(category in preferred for category in categories) else NOT_INTERESTING
 
 
 def role_verdict(judgements):

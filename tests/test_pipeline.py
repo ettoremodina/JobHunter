@@ -9,23 +9,16 @@ from unittest.mock import patch
 
 from jobhunter.operations.pipeline import it, summary
 from jobhunter.workspace import Archive, identity, settings
-from jobhunter.evaluation import remote_llm
 
 
 class PipelineTests(unittest.TestCase):
     """Verify coverage on disposable data without triggering the monitored stages."""
 
-    def save_current_remote(self, archive, oid, result):
-        """Save one remote result with the same cache identity used by the production reader."""
-        cfg = json.loads((remote_llm.ROOT / 'config/remote_llm.json').read_text(encoding='utf-8'))
-        job = json.loads(archive.db.execute('SELECT data FROM opportunities WHERE id=?', (oid,)).fetchone()[0])
-        payload = remote_llm.inputs(archive, 'selection', oid, cfg, job=job, cache={})
-        prompt = (remote_llm.ROOT / cfg['prompts']['selection']).read_text(encoding='utf-8')
-        key = remote_llm.digest({'source': payload, 'prompt': prompt,
-                                 'settings': remote_llm.signature(cfg, 'selection')})
+    def save_jev(self, archive, oid, decision):
+        """Save one Jev verdict for pipeline partition tests."""
         archive.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
-                           ('remote:selection', oid, 'source', key,
-                            json.dumps({'result': result}), 'test', '2026-01-01'))
+                           ('jev:selection', oid, 'source', 'key',
+                            json.dumps({'result': {'decision': decision}}), 'jev-test', '2026-01-01'))
 
     def test_funnel_partitions_both_axes_and_composes_the_tier(self):
         """Ogni asse è una partizione completa; il tier ne discende e non è mai salvato."""
@@ -36,14 +29,6 @@ class PipelineTests(unittest.TestCase):
                            ('Mixed', 'HR Manager'), ('Excluded', 'HR Manager')])], 'test')
             a.evaluations()
             rows = a.db.execute('SELECT id,data FROM opportunities').fetchall()
-            with a.db:
-                for row in rows:
-                    title = json.loads(row['data'])['title']
-                    if title == 'ML Engineer':
-                        continue
-                    stored = json.dumps({'result': {'decision': 'keep'}})
-                    a.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
-                                 ('remote:selection', row['id'], 'hash', 'key', stored, 'test', '2026-01-01'))
             before = a.db.total_changes
             f = summary(a, settings(), Path(directory))['funnel']
             self.assertEqual(a.db.total_changes, before)
@@ -56,7 +41,7 @@ class PipelineTests(unittest.TestCase):
             # Nessuna azienda ha una categoria: l'asse azienda non è valutabile, ma i ruoli primari valgono da soli.
             self.assertEqual(f['azienda']['evidenza_mancante'], 2)
             self.assertEqual((f['tier']['B-esperienza'], f['tier']['evidenza-mancante']), (1, 1))
-            # Il regex ha già deciso ogni ruolo: nessun giudizio remoto entra nella cascata.
+            # Il regex ha già deciso ogni ruolo: Jev non entra nella cascata.
             self.assertEqual(f['giudici'], {'regex': 4})
             # Il denominatore non cambia mai fra le tappe: ogni quota si legge contro lo stesso totale.
             for stage in f['percorso']:
@@ -82,7 +67,7 @@ class PipelineTests(unittest.TestCase):
                 self.assertEqual(bool(step['inflow']), key != 'collection', key)
             # La barra del giudice 2 sta sui «non so» del regex, non su una popolazione derivata in silenzio.
             regex = next(bar for bar in steps['filters']['extra'] if bar['title'] == 'Esito del regex')
-            non_so = next(value for _, label, value in regex['parts'] if 'giudici successivi' in label)
+            non_so = next(value for _, label, value in regex['parts'] if 'Jev' in label)
             jev = steps['jev']
             self.assertEqual(jev['base'], non_so)
             self.assertEqual(sum(value for _, _, value in jev['parts']), non_so)
@@ -104,8 +89,8 @@ class PipelineTests(unittest.TestCase):
             # Dove cambia l'unita' di misura la card lo dichiara invece di lasciare il salto al lettore.
             self.assertIn('Cambia unità di misura', steps['descriptions']['inflow'])
 
-    def test_remote_handoff_is_an_exact_partition_and_separates_review_from_new_work(self):
-        """Review correnti, cache scadute e record mai valutati non finiscono nella stessa coda."""
+    def test_jev_handoff_is_an_exact_partition_and_separates_review_from_new_work(self):
+        """Verdetti Jev, review, nuovi candidati e blocchi formano una partizione esatta."""
         rows = [
             ('Data Scientist', 'Build models'),
             ('HR Manager', 'Manage recruitment'),
@@ -113,9 +98,7 @@ class PipelineTests(unittest.TestCase):
             ('Growth Hacker Drop', 'Plan growth experiments and analyse product metrics'),
             ('Growth Hacker Review', 'Plan growth experiments and analyse product metrics'),
             ('Growth Hacker Ready', 'Plan growth experiments and analyse product metrics'),
-            ('Growth Hacker Jev', 'Plan growth experiments and analyse product metrics'),
             ('Growth Hacker Blocked', ''),
-            ('Growth Hacker Stale', 'Plan growth experiments and analyse product metrics'),
         ]
         with tempfile.TemporaryDirectory() as directory, closing(Archive(Path(directory) / 'a.db')) as archive:
             archive.ingest([{'company_name': 'Example', 'title': title, 'description': description,
@@ -124,26 +107,15 @@ class PipelineTests(unittest.TestCase):
             archive.evaluations()
             ids = {json.loads(row['data'])['title']: row['id']
                    for row in archive.db.execute('SELECT id,data FROM opportunities')}
-            self.save_current_remote(archive, ids['Growth Hacker Keep'], {'decision': 'keep'})
-            self.save_current_remote(archive, ids['Growth Hacker Drop'], {'decision': 'exclude'})
-            self.save_current_remote(archive, ids['Growth Hacker Review'], {'decision': 'review'})
-            archive.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
-                               ('remote:selection', ids['Growth Hacker Stale'], 'source', 'old-key',
-                                json.dumps({'result': {'decision': 'keep'}}), 'test', '2025-01-01'))
-            # Deciso dal giudice System One: non deve comparire fra i candidati del remoto, o la
-            # card di Qwen prometterebbe chiamate su annunci che non gli arriveranno mai.
-            archive.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
-                               ('jev:selection', ids['Growth Hacker Jev'], 'source', 'key',
-                                json.dumps({'result': {'decision': 'exclude', 'rationale': 'Test',
-                                                       'evidence': ['Plan growth experiments and analyse product metrics']}}),
-                                'jev-1.13.0', '2026-09-20'))
+            self.save_jev(archive, ids['Growth Hacker Keep'], 'keep')
+            self.save_jev(archive, ids['Growth Hacker Drop'], 'exclude')
+            self.save_jev(archive, ids['Growth Hacker Review'], 'review')
             handoff = summary(archive, settings(), Path(directory))['funnel']['handoff']
             self.assertEqual(sum(value for _, _, value in handoff['parts']), len(rows))
             self.assertEqual(handoff['counts'], {
                 'regex_compatible': 1, 'regex_discarded': 1,
-                'jev_compatible': 0, 'jev_discarded': 1,
-                'remote_compatible': 1, 'remote_discarded': 1, 'remote_review': 1,
-                'jev_review': 0, 'jev_ready': 1, 'blocked': 1, 'stale': 1,
+                'jev_compatible': 1, 'jev_discarded': 1,
+                'jev_review': 1, 'jev_ready': 1, 'blocked': 1, 'stale': 0,
             })
 
     def test_description_card_counts_company_coverage(self):

@@ -31,7 +31,7 @@ def fixture(path, companies):
         for c in range(companies) for n in range(10)], 'fixture')
     payload = json.dumps({'result': {'decision': 'keep', 'rationale': 'Saved reasoning. ' * 100,
                                     'evidence': ['Analyze data with Python.']}})
-    archive.db.execute("""INSERT INTO enrichments SELECT 'remote:selection',id,content_hash,
+    archive.db.execute("""INSERT INTO enrichments SELECT 'jev:selection',id,content_hash,
         'fixture',?,'fixture',first_seen FROM opportunities""", (payload,))
     archive.db.commit()
     archive.db.execute("UPDATE companies SET first_seen='2026-01-01',last_seen='2026-01-01'")

@@ -6,11 +6,11 @@ ha già una categoria corrente, la richiesta contiene solo le domande utili per 
 serve soltanto la categoria, il passaggio invia una richiesta aziendale senza inventare un ruolo.
 
 Quello che lascia in `review` **resta indeciso**: nessun modello lo rivede, e diventa materiale per
-l'utente. Al modello remoto (`company_batch`) resta solo scrivere le schede: un System One model non
+l'utente. A Qwen (`company_batch`) resta solo scrivere le schede: un System One model non
 genera testo, e questo non e' un limite da aggirare ma il motivo per cui le sue decisioni non possono
 sbagliare formato. Si mandano uno `state` e delle domande tipizzate; tornano una probabilita' per
 ogni domanda e una scelta che puo' essere solo una delle opzioni dichiarate. I due modi in cui il
-batch remoto falliva — un giudizio `null` su un ruolo richiesto e una citazione con l'ID decorato —
+vecchio batch falliva — un giudizio `null` su un ruolo richiesto e una citazione con l'ID decorato —
 qui sono impossibili per costruzione: un `noul` restituisce sempre un numero e una `choice`
 restituisce sempre una chiave del catalogo.
 
@@ -41,9 +41,11 @@ from jobhunter.workspace import ROOT, now
 logger = logging.getLogger(__name__)
 TASKS = ('selection', 'category')
 # Le domande vivono in configurazione, ma questi nomi li legge il codice che le combina.
-REQUIRED = {'selection': ('mansioni_compatibili', 'famiglia_esclusa', 'posto_per_studenti'),
-            'category': ('categoria', 'descrive_il_datore', 'agenzia')}
+REQUIRED = {'selection': ('mansioni_descritte', 'mansioni_compatibili', 'famiglia_esclusa',
+                          'posto_per_studenti', 'seniority_fuori_profilo'),
+            'category': ('settori', 'descrive_il_datore', 'agenzia')}
 UNCLASSIFIED = 'Da classificare'
+BRIEF_EXCLUDABLE_FAMILIES = frozenset({'produzione_manutenzione', 'officina_ricambi'})
 # Richiesta rifiutata dal fornitore: niente e' stato calcolato, quindi il ritento non puo'
 # duplicare una spesa. Stessa regola del batch remoto; un errore di trasporto non si ritenta.
 THROTTLED = frozenset({429, 500, 502, 503, 504, 529})
@@ -85,6 +87,16 @@ def wire_questions(spec, catalog, options):
     for name, question in spec.items():
         question = copy.deepcopy(question)
         source = question.pop('options_from', None)
+        expand = question.pop('expand_from', None)
+        if expand == 'categories':
+            for index, (category, description) in enumerate(options.items()):
+                expanded = copy.deepcopy(question)
+                expanded['instructions'] = expanded['instructions'].format(
+                    category=category, description=description)
+                expanded['criteria'] = {key: value.format(category=category, description=description)
+                                        for key, value in expanded.get('criteria', {}).items()}
+                result[f'settore_{index:02d}'] = expanded
+            continue
         if source == 'evidence_catalog':
             question['criteria'] = dict(catalog)
         elif source == 'categories':
@@ -95,8 +107,20 @@ def wire_questions(spec, catalog, options):
 
 def signature(cfg, task):
     """Cache identity: model, endpoint, thresholds and the question set that produced the answer."""
-    return {'endpoint': cfg['endpoint'], 'model': cfg['model'], 'schema_version': cfg['schema_version'],
-            'thresholds': cfg['thresholds'], 'questions': questions(cfg, task)}
+    threshold_names = ({'keep_above', 'exclude_below', 'conflict_review_above',
+                        'flag_above', 'choice_confidence'}
+                       if task == 'selection' else
+                       {'flag_above', 'choice_confidence', 'max_categories', 'category_min_score',
+                        'category_single_accept', 'category_pair_min_sum'})
+    result = {'endpoint': cfg['endpoint'], 'model': cfg['model'], 'schema_version': cfg['schema_version'],
+              'decision_version': cfg['decision_versions'][task],
+              'thresholds': {name: cfg['thresholds'][name] for name in cfg['thresholds'] if name in threshold_names},
+              'questions': questions(cfg, task)}
+    if task == 'category':
+        # A Choice can only return an option it received. Adding or changing a category therefore
+        # changes the meaning of every answer, even when the question text stays byte-identical.
+        result['category_options'] = json.loads((ROOT/'config/categories.json').read_text(encoding='utf-8'))
+    return result
 
 
 def job_state(archive, oid, cfg, job=None):
@@ -204,23 +228,46 @@ def selected(answers, name, allowed):
     return option, float(confidence)
 
 
+def request_interval(cfg):
+    """Return seconds between departures; zero explicitly disables local rate pacing."""
+    rate = cfg.get('max_requests_per_minute', 0)
+    if type(rate) not in (int, float) or isinstance(rate, bool) or rate < 0:
+        raise ValueError('max_requests_per_minute must be zero or a positive number')
+    return 0.0 if rate == 0 else 60.0 / rate
+
+
 def judgement(cfg, spec, answers, catalog):
     """Dalle probabilita' al verdetto: la regola sta qui, in codice, non nel modello.
 
     Il modello risponde a domande indipendenti; a combinarle e' questa funzione, perche' una
     soglia e' aritmetica e l'aritmetica non si chiede a un System One model. `review` non e' un
-    fallimento: e' la banda in cui nessuna soglia e' stata raggiunta, e il modello remoto la
-    riceve come la riceveva dal regex.
+    fallimento: e' la banda in cui nessuna soglia e' stata raggiunta e serve una revisione umana.
     """
     limits = cfg['thresholds']
     evidence = next(name for name, q in spec.items() if q.get('options_from') == 'evidence_catalog')
     quote, _ = selected(answers, evidence, catalog)
+    described = probability(answers, 'mansioni_descritte')
     compatible = probability(answers, 'mansioni_compatibili')
     student = probability(answers, 'posto_per_studenti')
+    too_senior = probability(answers, 'seniority_fuori_profilo')
     family, family_confidence = selected(answers, 'famiglia_esclusa', set(spec['famiglia_esclusa']['criteria']))
     excluded = family != 'nessuna' and family_confidence >= limits['choice_confidence']
+    conflict = excluded and compatible >= limits['conflict_review_above']
     if student >= limits['flag_above']:
         decision, motive = 'exclude', 'Posto riservato a studenti o di tirocinio'
+    elif too_senior >= limits['flag_above']:
+        decision, motive = 'exclude', 'Seniority, management o esperienza obbligatoria fuori profilo'
+    elif conflict:
+        decision, motive = 'review', (
+            'Segnali in conflitto: mansioni compatibili e famiglia esclusa «%s»'
+            % family.replace('_', ' '))
+    elif (excluded and compatible <= limits['exclude_below']
+          and family in BRIEF_EXCLUDABLE_FAMILIES):
+        # Un titolo e una frase breve bastano per lavori manuali inequivocabili. Non serve pagare
+        # la futura review umana soltanto per confermare che un roofer installa tetti o pannelli.
+        decision, motive = 'exclude', 'Mansioni della famiglia esclusa «%s»' % family.replace('_', ' ')
+    elif described < limits['choice_confidence']:
+        decision, motive = 'review', 'Il testo non descrive mansioni specifiche del ruolo'
     elif excluded:
         decision, motive = 'exclude', 'Mansioni della famiglia esclusa «%s»' % family.replace('_', ' ')
     elif compatible >= limits['keep_above']:
@@ -229,37 +276,58 @@ def judgement(cfg, spec, answers, catalog):
         decision, motive = 'exclude', 'Le mansioni non sono quantitative ne\' di sviluppo su dati e modelli'
     else:
         decision, motive = 'review', 'Le mansioni non bastano a decidere'
-    unknown = [] if decision != 'review' else ['Mansioni ambigue: compatibilita' + f' {compatible:.0%}']
+    unknown = [] if decision != 'review' else [
+        ('Conflitto tra compatibilita\' e famiglia esclusa'
+         if conflict else
+         'Mansioni non descritte' if described < limits['choice_confidence']
+         else 'Mansioni ambigue: compatibilita' + f' {compatible:.0%}')]
     result = {'decision': decision, 'evidence': [quote], 'missing_information': unknown,
               'rationale': f'{motive} (compatibilita\' {compatible:.0%}).'}
     # Stesso contratto del giudizio remoto, stesso validatore: la citazione viene risolta qui e
     # una chiave fuori catalogo fermerebbe *questo* record, non la passata.
     return llm.validate('selection', result, {'title': '', 'description': '', 'evidence_catalog': catalog}), \
-        {'mansioni_compatibili': compatible, 'posto_per_studenti': student,
+        {'mansioni_descritte': described, 'mansioni_compatibili': compatible, 'posto_per_studenti': student,
+         'seniority_fuori_profilo': too_senior,
          'famiglia_esclusa': family, 'famiglia_confidenza': family_confidence}
 
 
 def classification(cfg, spec, answers, options):
-    """Il settore del datore di lavoro, o «Da classificare» quando il testo non lo dice.
+    """Select at most two independently supported sectors for the employer.
 
-    Due cancelli prima della categoria, ed entrambi hanno una causa misurata nell'archivio: un
-    annuncio descrive spesso il cliente e non chi assume, e un'agenzia di somministrazione non
-    appartiene al settore per cui sta cercando.
+    Un annuncio descrive spesso il cliente e non chi assume. Un'agenzia non eredita il settore del
+    cliente: viene classificata per la propria attività di recruiting o staffing.
     """
     limits = cfg['thresholds']
-    category, confidence = selected(answers, 'categoria', set(options))
     employer = probability(answers, 'descrive_il_datore')
     agency = probability(answers, 'agenzia')
+    scores = {category: probability(answers, f'settore_{index:02d}')
+              for index, category in enumerate(options)}
     if agency >= limits['flag_above']:
-        category, reason = UNCLASSIFIED, 'Agenzia per il lavoro: il settore cercato non e\' il suo'
-    elif employer < limits['choice_confidence']:
-        category, reason = UNCLASSIFIED, 'Il testo non distingue chi assume da chi e\' descritto'
-    elif confidence < limits['choice_confidence']:
-        category, reason = UNCLASSIFIED, f'Settore incerto: «{category}» solo al {confidence:.0%}'
+        # Un'agenzia viene classificata per la propria attività, non per i settori dei clienti
+        # descritti negli annunci.
+        scores = {category: 0.0 for category in options}
+        scores['Consulenza e servizi'] = agency
+    ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+    eligible = [item for item in ranked if item[1] >= limits['category_min_score']]
+    chosen = []
+    has_employer_evidence = employer >= limits['choice_confidence'] or agency >= limits['flag_above']
+    if has_employer_evidence:
+        pair = eligible[:limits['max_categories']]
+        if len(pair) >= 2 and sum(score for _, score in pair) >= limits['category_pair_min_sum']:
+            chosen = pair
+        elif eligible and eligible[0][1] >= limits['category_single_accept']:
+            chosen = eligible[:1]
+    labels = [category for category, _ in chosen]
+    if not has_employer_evidence:
+        reason = 'Il testo non distingue chi assume da chi e\' descritto'
+    elif labels:
+        reason = 'Settori supportati: ' + ', '.join(
+            f'{category} {score:.0%}' for category, score in chosen)
     else:
-        reason = f'Settore «{category}» al {confidence:.0%} sul testo degli annunci'
-    return {'category': category, 'reason': reason}, \
-        {'categoria': category, 'categoria_confidenza': confidence,
+        reason = 'Nessun settore supera le soglie multi-categoria'
+    primary = labels[0] if labels else UNCLASSIFIED
+    return {'category': primary, 'categories': labels, 'reason': reason}, \
+        {'categorie': labels, 'punteggi_categoria': scores,
          'descrive_il_datore': employer, 'agenzia': agency}
 
 
@@ -282,18 +350,19 @@ def pending(archive, cfg, limit, everything, revisit=False):
     therefore does not make the role stale when only company evidence changes. The request limit
     counts HTTP calls, not answers: a combined call can save two results.
     """
-    from jobhunter.evaluation.selection import verdicts
-    from jobhunter.evaluation.tier import UNKNOWN
-
     skipped = Counter()
     settings = {task: signature(cfg, task) for task in TASKS}
-    assigned = {row['company_id']: dict(row) for row in archive.db.execute(
-        'SELECT company_id,category,method FROM categories')}
+    assigned = {}
+    for row in archive.db.execute(
+            "SELECT DISTINCT company_id,method FROM categories WHERE category!=?", (UNCLASSIFIED,)):
+        assigned.setdefault(row['company_id'], set()).add(row['method'])
     category_records = {}
     for row in sorted(archive.db.execute('SELECT id FROM companies').fetchall(), key=lambda item: llm.digest(item['id'])):
         cid = row['id']
-        saved_category = assigned.get(cid, {})
-        if not revisit and saved_category.get('category', UNCLASSIFIED) != UNCLASSIFIED:
+        methods = assigned.get(cid, set())
+        # A manual or rules-based category is authoritative. A previous Jev assignment is only
+        # reusable while its saved result still matches the current vocabulary and thresholds.
+        if not revisit and methods - {'jev'}:
             continue
         state = company_state(archive, cid, cfg)
         if not state['testi']:
@@ -308,8 +377,11 @@ def pending(archive, cfg, limit, everything, revisit=False):
             continue
         category_records[cid] = {'id': cid, 'state': state, 'catalog': {}, 'cache_key': fingerprint}
 
-    undecided = {oid for company in verdicts(archive).values()
-                 for oid, verdict in company['ruoli'].items() if verdict['verdetto'] == UNKNOWN}
+    # Start from the regex axis, not the current final verdict. A stale Jev result must return to
+    # the queue when questions, thresholds or model change.
+    local = archive.evaluations()
+    undecided = {oid for oid, decision in local.items()
+                 if decision['status'] == 'review'}
     job_rows = [row for row in archive.db.execute('SELECT id,company_id,data FROM opportunities')
                 if row['id'] in undecided and judgeable(json.loads(row['data']).get('description') or '')]
     records = []
@@ -337,6 +409,9 @@ def pending(archive, cfg, limit, everything, revisit=False):
 
     for cid, category in category_records.items():
         records.append({'id': cid, 'company_id': cid, 'state': category['state'], 'category': category})
+    # Interleave category-only work with role requests. Without this sort, a large role backlog
+    # would starve companies that only need a sector in every bounded pilot.
+    records.sort(key=lambda record: llm.digest(record['id']))
     if not everything:
         records = records[:limit]
     return records, skipped
@@ -350,20 +425,17 @@ def save(archive, task, record, result, answers, usage, model, settings):
                            ('jev:'+task, record['id'], llm.digest(record['state']), record['cache_key'],
                             json.dumps(stored, ensure_ascii=False), model, now()))
         if task == 'category':
-            # Una classificazione fatta in chat resta dell'utente: la stessa guardia del batch remoto.
-            archive.db.execute("INSERT INTO categories VALUES(?,?,?,?,?) ON CONFLICT(company_id) DO UPDATE SET "
-                               "category=excluded.category,method=excluded.method,reason=excluded.reason,"
-                               "updated_at=excluded.updated_at WHERE categories.method!='chat'",
-                               (record['id'], result['category'], 'jev', result['reason'], now()))
+            from jobhunter.evaluation.company_categories import replace
+            replace(archive, record['id'], result['categories'], 'jev', result['reason'],
+                    answers.get('punteggi_categoria', {}))
 
 
 def run(archive, values, progress=None, config_path=None):
     """Run the combined Jev pass with an explicit preview gate and bounded concurrency."""
     cfg = config(config_path)
     specs = {task: questions(cfg, task) for task in TASKS}
-    options = {
-        **{name: ', '.join(terms) for name, terms in json.loads((ROOT/'config/categories.json').read_text(encoding='utf-8')).items()},
-        UNCLASSIFIED: 'Il testo non dice in che settore opera chi assume.'}
+    options = {name: ', '.join(terms) for name, terms in
+               json.loads((ROOT/'config/categories.json').read_text(encoding='utf-8')).items()}
     limit = min(max(int(values.get('limit') or cfg['default_limit']), 1), cfg['max_limit'])
     workers = min(max(int(values.get('workers') or cfg['workers']), 1), cfg['max_workers'])
     settings = {task: signature(cfg, task) for task in TASKS}
@@ -404,11 +476,13 @@ def run(archive, values, progress=None, config_path=None):
         checkpoint()
         return report
     gate, ready = threading.Lock(), [0.0]
-    interval = 60.0 / max(cfg['max_requests_per_minute'], 1)
+    interval = request_interval(cfg)
     key = llm.api_key(cfg)
 
     def pace():
         """Spread departures so `workers` concurrent calls still respect the per-minute limit."""
+        if interval == 0:
+            return
         with gate:
             start = max(time.monotonic(), ready[0])
             ready[0] = start + interval

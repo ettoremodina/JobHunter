@@ -32,6 +32,24 @@ NAMES = {'it': 'italiano', 'en': 'inglese', 'de': 'tedesco', 'fr': 'francese', '
 KNOWN = ('it', 'en')
 _PROFILES = {code: set(words.split()) for code, words in STOPWORDS.items()}
 
+# These markers intentionally describe obligation, not mere co-occurrence with a language name.
+# The clause must still contain one of the configured language patterns before either expression
+# is considered. Optional wording wins when both kinds of marker occur in the same clause.
+OPTIONAL_LANGUAGE = re.compile(
+    r'not (?:required|necessary|mandatory|essential)|no .{0,20}required|preferred|a plus|'
+    r'nice.to.have|optional|advantage|\basset\b|\btroef\b|\bmerit(?:erande)?\b|\bfördel\b|'
+    r'non (?:sono |è )?(?:richiest|necessari|obbligator)|preferenzial|facoltativ|'
+    r'von vorteil|wünschenswert', re.I)
+MANDATORY_LANGUAGE = re.compile(
+    r'required|must|essential|mandatory|fluen\w*|proficien\w*|native|business.level|'
+    r'\b[bBcC][12]\b|richiest\w*|obbligator\w*|padronanza|ottima conoscenza|'
+    r'\b(?:good|strong|excellent|professional)\b.{0,35}\b(?:written|spoken|knowledge|command)\b|'
+    r'\b(?:sehr\s+)?gute\w*\b.{0,40}\b(?:kenntnisse|deutsch|englisch)|'
+    r'\bkenntnisse\b.{0,20}\bwort und schrift\b|'
+    r'\b(?:god|goda)\s+(?:kunskap|kunskaper)|\bspråkkunskaper\b|\bflytande\b|'
+    r'\b(?:muntlig|skriftlig)\w*\b|\btal och skrift\b|\bfremstillingsevne\b|'
+    r'\bvloeiend\b|\bbeheersing\b|verhandlungssicher|zwingend|courant|maîtrise', re.I)
+
 
 def detect_language(text):
     """In che lingua è scritto un annuncio, contando le parole funzione che nessuno riesce a evitare.
@@ -70,10 +88,10 @@ def language_requirements(text, config):
         found = {name for name, pattern in patterns.items() if re.search(pattern, clause, re.I)}
         if not found:
             continue
-        if re.search(r'not (?:required|necessary|mandatory|essential)|no .{0,20}required|preferred|a plus|nice.to.have|optional|non (?:sono |è )?(?:richiest|necessari|obbligator)|preferenzial|facoltativ|von vorteil|wünschenswert', clause, re.I):
+        if OPTIONAL_LANGUAGE.search(clause):
             optional.update(found)
             continue
-        mandatory = re.search(r'required|must|essential|mandatory|fluen\w*|proficien\w*|native|business.level|\b[bBcC][12]\b|richiest\w*|obbligator\w*|padronanza|ottima conoscenza|verhandlungssicher|zwingend|courant|maîtrise', clause, re.I)
+        mandatory = MANDATORY_LANGUAGE.search(clause)
         if not mandatory:
             continue
         if re.search(r'\b(clients|customers|companies|market|office)\b', clause, re.I) and not re.search(r'language|speak|fluen|proficien|native|conoscenza|padronanza', clause, re.I):

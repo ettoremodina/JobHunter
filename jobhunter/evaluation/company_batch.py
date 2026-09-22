@@ -42,7 +42,11 @@ def response_schema(cfg, company_schema):
     definitions = {'job-summary': summary, 'role': {
         'type': 'object', 'additionalProperties': False, 'required': ['id', 'summary'], 'properties': {
             'id': {'type': 'string'},
-            'summary': {'anyOf': [{'$ref': '#/$defs/job-summary'}, {'type': 'null'}]}}}}
+            # Every role in `jobs` was explicitly requested and has usable evidence. Allowing
+            # null here contradicted the prompt and made the shortest schema-valid response six
+            # nulls instead of six cards. Empty/insufficient cards already have a grounded object
+            # form: summary="", facts=[], missing_information=[...].
+            'summary': {'$ref': '#/$defs/job-summary'}}}}
     return {'type': 'object', '$defs': definitions, 'additionalProperties': False,
             'required': ['company', 'jobs'], 'properties': {
                 'company': {'anyOf': [company_schema, {'type': 'null'}]},
@@ -107,12 +111,10 @@ def prepare(archive, cfg, prompt, cid, state, counts):
     tags = {oid: f'J{index}' for index, oid in enumerate(carded)}
     wire_jobs = {oid: {'evidence_catalog': namespaced(payloads[oid]['job-summary']['source']['evidence_catalog'], tags[oid])}
                  for oid in carded}
-    # Profilo ed etichette vanno in ogni chiamata *identici*: `request()` li sposta nel messaggio di
-    # sistema, dove diventano il prefisso in cache. Mandarli solo dove servono costerebbe di piu', non
-    # di meno: sotto i 1.024 token di prefisso il provider non mette niente in cache. Il profilo serve
-    # ancora: dice quali fatti vale la pena tirare fuori per *questo* lettore.
-    payload = {'candidate_profile': (ROOT/cfg['profile_path']).read_text(encoding='utf-8'),
-               'field_labels': json.loads((ROOT/cfg['job_fields_path']).read_text()),
+    # Le etichette sono stabili e `request()` le sposta nel messaggio di sistema. Il profilo del
+    # candidato invece non appartiene a uno step descrittivo: nel pilot induceva il modello a
+    # valutare il match e a scrivere persino il nome del candidato, malgrado il divieto nel prompt.
+    payload = {'field_labels': json.loads((ROOT/cfg['job_fields_path']).read_text()),
                'company': source, 'company_requested': company_needed, 'jobs': wire_jobs,
                'response_schema': response_schema(cfg, company['response_schema'])}
     oversized = len(carded) > limits['max_jobs'] or len(prompt)+len(json.dumps(payload)) > limits['max_input_chars']

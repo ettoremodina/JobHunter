@@ -43,14 +43,15 @@ def questions(archive, limit=None):
             undecided.append({"id": row["id"], "company_id": row["company_id"], "company": row["name"], **job})
         if verdict.get("verdetto") == tier.KEEP and state["azienda"]["verdetto"] == tier.NOT_INTERESTING:
             # Una categoria sposta centinaia di aziende, un record ne sposta uno: la domanda va fatta sul pattern.
-            sector = sectors.setdefault(state["azienda"]["categoria"], {"id": "category:" + state["azienda"]["categoria"], "kind": "company_axis",
-                                                                       "title": "Categoria non fra le preferite: " + state["azienda"]["categoria"],
-                                                                       "question": f"«{state['azienda']['categoria']}» non è fra preferred_categories, ma qui ci sono ruoli compatibili. La categoria ti interessa?",
-                                                                       "opportunities": 0, "company_ids": set(), "examples": []})
-            sector["opportunities"] += 1
-            if row["company_id"] not in sector["company_ids"] and len(sector["examples"]) < cfg["examples_per_group"]:
-                sector["examples"].append({"id": row["id"], "company_id": row["company_id"], "company": row["name"], "title": job["title"], "source_url": job["source_url"]})
-            sector["company_ids"].add(row["company_id"])
+            for category in state["azienda"].get("categorie") or [state["azienda"]["categoria"]]:
+                sector = sectors.setdefault(category, {"id": "category:" + category, "kind": "company_axis",
+                                                        "title": "Categoria non fra le preferite: " + category,
+                                                        "question": f"«{category}» non è fra preferred_categories, ma qui ci sono ruoli compatibili. La categoria ti interessa?",
+                                                        "opportunities": 0, "company_ids": set(), "examples": []})
+                sector["opportunities"] += 1
+                if row["company_id"] not in sector["company_ids"] and len(sector["examples"]) < cfg["examples_per_group"]:
+                    sector["examples"].append({"id": row["id"], "company_id": row["company_id"], "company": row["name"], "title": job["title"], "source_url": job["source_url"]})
+                sector["company_ids"].add(row["company_id"])
     groups = []
     covered = set()
     for group in cfg["groups"]:

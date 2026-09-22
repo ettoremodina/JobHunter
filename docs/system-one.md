@@ -21,13 +21,18 @@ JobHunter costruisce quindi tre forme di richiesta:
 
 | Lavoro pendente | Contenuto della richiesta |
 |---|---|
-| ruolo e azienda | quattro domande sul ruolo e tre sull'azienda |
-| solo ruolo | quattro domande sul ruolo |
-| solo azienda | tre domande sull'azienda |
+| ruolo e azienda | sei domande sul ruolo, una per ogni settore e due cancelli aziendali |
+| solo ruolo | sei domande sul ruolo |
+| solo azienda | una domanda per ogni settore e due cancelli aziendali |
 
 I risultati restano separati. Il ruolo viene salvato come `jev:selection` sull'annuncio; il settore
 come `jev:category` sull'azienda. Ogni risultato ha la propria impronta di stato, domande, soglie e
-modello. Una modifica ai dati aziendali non invalida un giudizio sul ruolo già corrente.
+modello. L'impronta della categoria comprende anche il vocabolario corrente: aggiungere o cambiare
+un settore rimette in coda soltanto le aziende interessate. Una modifica ai dati aziendali non
+invalida un giudizio sul ruolo già corrente.
+
+Ogni asse ha anche una `decision_version`. Va incrementata quando cambia il codice che combina le
+risposte, così una nuova regola non riusa un verdetto calcolato con la logica precedente.
 
 Se lo stato combinato supera `max_state_chars`, JobHunter divide il lavoro e lo segnala come
 `split_oversized`. Non tronca testo in silenzio.
@@ -42,6 +47,22 @@ https://api.typesafe.ai/v1/systemone
 
 Il modello configurato è `jev-latest`. La risposta salva anche l'identificatore versionato che ha
 servito la richiesta, utile quando si calibrano le soglie.
+
+### Parallelismo e rate limit
+
+Le richieste indipendenti viaggiano in parallelo; il valore predefinito è 64 worker e la CLI
+accetta `--workers N`. I worker eseguono soltanto il trasporto HTTP. Preparazione, validazione e
+scritture SQLite restano sul thread principale, così una singola connessione al database non viene
+condivisa fra thread.
+
+Le partenze sono distribuite nel tempo e rispettano `max_requests_per_minute`, anche quando ci sono
+molti worker liberi. Il valore `0` disabilita esplicitamente questo pacing; è la configurazione
+corrente, scelta dall'utente dopo che le prove a 60 e 500/minuto non hanno prodotto throttling. Non
+esiste comunque una quota pubblicata o garantita da TypeSafe. Un
+`429` o `529` viene ritentato con attesa crescente; un errore di trasporto,
+per cui la fatturazione potrebbe essere già avvenuta, ferma invece nuove partenze. Aumentare i
+worker riduce l'attesa solo finché la latenza delle chiamate è il collo di bottiglia: non supera il
+tetto di richieste al minuto e non riduce il costo.
 
 La chiave vive soltanto in `.env.local`, ignorato da Git. Il campo è già presente:
 
@@ -92,24 +113,50 @@ non un prompt di chat.
 
 Per il ruolo:
 
+- `mansioni_descritte`, Noul;
 - `mansioni_compatibili`, Noul;
 - `famiglia_esclusa`, Choice;
 - `posto_per_studenti`, Noul;
+- `seniority_fuori_profilo`, Noul;
 - `prova`, Choice sulle frasi reali dell'annuncio.
 
 Per l'azienda:
 
-- `categoria`, Choice sul vocabolario di `config/categories.json`;
+- `settori`, espansa in una domanda Noul indipendente per ogni voce di `config/categories.json`;
 - `descrive_il_datore`, Noul;
 - `agenzia`, Noul.
 
 `judgement()` e `classification()` applicano le soglie di `config/system_one.json`. Jev non fa
-aritmetica e non sceglie il flusso. Una categoria scelta in chat non viene mai sovrascritta.
+aritmetica e non sceglie il flusso. Se il testo non descrive mansioni concrete, il ruolo va in
+`review` con l'informazione mancante invece di diventare un falso scarto. Una famiglia esclusa e
+una compatibilità almeno pari a 0,60 producono `review` per segnali in conflitto. I ruoli fisici
+inequivocabili, limitati a produzione, installazione, manutenzione, officina e ricambi, possono
+invece essere esclusi anche da una descrizione breve quando la compatibilità non supera 0,20. La
+domanda sulla seniority copre titoli senior o manageriali ed esperienza obbligatoria oltre due
+anni, anche in annunci non inglesi.
+
+Un datore che opera come
+agenzia, staffing o recruiting viene classificato in `Consulenza e servizi`; non eredita il settore
+del cliente. Il codice conserva al massimo due categorie: punteggio individuale minimo 0,40,
+categoria singola da 0,60, oppure coppia con somma almeno 0,80. La somma è una soglia operativa,
+non una probabilità composta. Una categoria scelta in chat non viene mai sovrascritta.
 
 Choice e Score riportano `confidence`; Noul riporta direttamente la probabilità del sì. Le soglie
 attuali sono valori iniziali. Vanno calibrate su un campione reale, soprattutto sugli annunci in
 italiano. Un output tipizzato impedisce valori fuori schema, non garantisce che il giudizio sia
 corretto.
+
+I risultati dei primi pilot e i casi ancora da calibrare sono in
+[Pilot Jev del 22 settembre 2026](jev-pilot-2026-09-22.md).
+
+Per ricontrollare un batch senza chiamare modelli né usare token, lo script seguente sceglie casi
+di soglia e un campione deterministico, poi verifica le invarianti del combinatore:
+
+```powershell
+python scripts\audit_jev_results.py --per-decision 5 --category-sample 10
+```
+
+Senza `--report` usa automaticamente l'ultimo report Jev.
 
 ## Errori e ritenti
 

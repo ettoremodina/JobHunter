@@ -12,6 +12,7 @@ from playwright.sync_api import sync_playwright, expect
 from jobhunter.workspace import Archive, ROOT, settings
 from jobhunter.exploration.dashboard import create_server
 from jobhunter.evaluation import remote_llm
+from jobhunter.evaluation.company_categories import replace as replace_categories
 
 
 def main():
@@ -37,7 +38,10 @@ def main():
         summary = {'summary': 'Analisi dati e miglioramento dei modelli.', 'facts': [{'field': 'responsibilities', 'text': 'Analisi dati', 'quote': reference}], 'missing_information': []}
         with patch('jobhunter.evaluation.remote_llm.api_key', return_value='dummy'), patch('jobhunter.evaluation.remote_llm.request', return_value=(summary, {}, [])):
             assert remote_llm.run(archive, 'job-summary', execute=True, config_path=remote_path)['processed'] == 1
-        archive.categorize(cid, "Energia", "Fixture: categoria aziendale già verificata")
+        with archive.db:
+            replace_categories(archive, cid, ["Energia", "Software e tecnologia"], "jev",
+                               "Fixture multi-categoria", {"Energia": 0.55, "Software e tecnologia": 0.40},
+                               preserve_chat=False)
         archive.close()
         cfg = settings()
         server = create_server(database, cfg, 0)
@@ -71,6 +75,7 @@ def main():
                 page.get_by_role("button", name="Cerca", exact=True).click()
                 page.get_by_role("button", name="Energy Lab", exact=True).click()
                 page.get_by_role("heading", name="Energy Lab", exact=True).wait_for()
+                expect(page.locator("#detail")).to_contain_text("Energia · Software e tecnologia")
                 expect(page.get_by_role("button", name="Azienda non interessante", exact=True)).to_be_visible()
                 expect(page.get_by_role("button", name="Nessun ruolo adatto adesso", exact=True)).to_be_visible()
                 # Il collegamento porta il nome del dominio, non un'etichetta generica.

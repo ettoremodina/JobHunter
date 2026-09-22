@@ -191,8 +191,8 @@ async function load() {
       el("span", labels[company.status], `badge ${company.status}`),
     );
     const category = el("td", undefined, "col-categoria");
-    category.append(el("span", company.category || "Da classificare"));
-    if (company.category && company.category !== "Da classificare") {
+    for (const label of companyCategories(company)) category.append(el("span", label, "tag"));
+    if (company.categories?.length) {
       category.append(el("small", categoryMethods[company.category_method] || company.category_method));
     }
     tr.append(
@@ -268,7 +268,7 @@ function axisSummary(company) {
 
 /** Show which judge decided a role and on what evidence, so a verdict is checkable months later. */
 function roleVerdict(verdict) {
-  const judges = {regex: "regex su titolo e descrizione", llm_remoto: "modello remoto"};
+  const judges = {regex: "regex su titolo e descrizione", jev: "Jev"};
   const line = el("p", undefined, "muted");
   line.append(verdictBadge(verdict.verdetto));
   line.append(el("span", verdict.giudice ? ` deciso dal ${judges[verdict.giudice] || verdict.giudice}` : " nessun giudice ha ancora deciso"));
@@ -444,10 +444,9 @@ async function show(id, context = {}) {
   panel.append(axisSummary(company));
   const origin = company.category_method === "chat" ? "Assegnata dalla chat"
     : company.category_method === "jev" ? "Assegnata dal giudice System One"
-    : company.category_method === "remote" ? "Assegnata dal modello remoto"
     : company.category_method === "rules" ? "Suggerita da regole" : "";
   panel.append(factList([
-    ["Categoria", company.category, [origin, company.category_reason].filter(Boolean).join(" · ")],
+    ["Categorie", companyCategories(company).join(" · "), [origin, company.category_reason].filter(Boolean).join(" · ")],
     ["Settori", company.sectors],
     ["Sito", company.website ? link(company.website, hostname(company.website)) : ""],
     ["Osservata", date(company.last_seen), `${company.opportunities.length} opportunità osservate`]]));
@@ -821,7 +820,7 @@ async function loadSaved() {
     const row = el("article", undefined, "queue-company");
     const heading = el("div", undefined, "queue-company-heading");
     const title = el("div");
-    title.append(el("h3", company.name), el("p", `${company.tier_label} · ${company.category}`, "muted"));
+    title.append(el("h3", company.name), el("p", `${company.tier_label} · ${companyCategories(company).join(" · ")}`, "muted"));
     const open = el("button", "Apri qui", "primary");
     open.setAttribute("aria-label", "Apri " + company.name);
     open.addEventListener("click", guarded(() => openSaved(company.id)));
@@ -983,7 +982,7 @@ async function showDebugDetail(item, lens) {
   heading.append(el("h3", company.name), el("span", company.tier || "Senza tier", "tag"));
   panel.append(heading, el("p", lens.label, "muted"));
   panel.append(factList([
-    ["Categoria", company.category || "Da classificare"],
+    ["Categorie", companyCategories(company).join(" · ")],
     ["Stato", labels[company.status] || company.status],
     ["Sito", company.website ? link(company.website, hostname(company.website)) : "Non disponibile"],
   ]));
@@ -1215,8 +1214,13 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /** Render comparable counts with a shared denominator and no chart dependency. */
-const categoryMethods = {rules: "da parole chiave", remote: "modello remoto",
+const categoryMethods = {rules: "da parole chiave", jev: "da Jev",
   chat: "scelta tua", unknown: "nessuna corrispondenza"};
+
+/** Normalize the transitional first-category field into the multi-label UI contract. */
+function companyCategories(company) {
+  return company.categories?.length ? company.categories : [company.category || "Da classificare"];
+}
 
 const nf = (value) => Number(value || 0).toLocaleString("it-IT");
 const pf = (value, total) => (total > 0 ? (value * 100) / total : 0).toLocaleString("it-IT", {maximumFractionDigits: 1}) + "%";
@@ -1401,7 +1405,7 @@ const pipelineAbout = {
   descriptions: ['Aziende, tramite i loro annunci', 'Scarica il testo completo degli annunci, a partire da uno per ogni azienda ancora senza evidenza. Non giudica: prepara il materiale per i giudici.'],
   filters: ['Annunci', 'Regole locali su titolo e descrizione, gratis. Classifica ogni annuncio: compatibile, escluso o «non so». Marca, non elimina: gli esclusi restano in archivio.'],
   jev: ['Annunci e aziende', 'Una richiesta può decidere il ruolo e assegnare il settore dell’azienda. Jev risponde a domande indipendenti; il codice applica le soglie e salva i risultati separatamente. Non sovrascrive una categoria scelta in chat.'],
-  remote: ['Aziende e annunci', 'Una chiamata al modello remoto per azienda, a pagamento. È l’unico passaggio che scrive, e l’unico che non giudica: riassume gli annunci sopravvissuti di Tier A e B e compone la scheda dell’azienda. Verdetti e categorie arrivano già decisi dai passaggi precedenti.'],
+  remote: ['Aziende e annunci', 'Una chiamata a Qwen per azienda, a pagamento. È l’unico passaggio che scrive, e l’unico che non giudica: riassume gli annunci sopravvissuti di Tier A e B e compone la scheda dell’azienda. Verdetti e categorie arrivano già decisi dai passaggi precedenti.'],
   queue: ['Aziende', 'Incrocia asse ruolo e asse azienda nel Tier e mette in coda le aziende di Tier A e B. Non scarta: ordina e propone.'],
   feedback: ['Aziende e annunci', 'Le tue decisioni, su un’azienda intera o su un singolo ruolo. È l’unico passaggio che decide in modo definitivo.']};
 
@@ -1509,10 +1513,9 @@ function renderPipelineHandoff(handoff) {
   const counts = handoff.counts || {};
   const facts = el('dl', undefined, 'pipeline-handoff-facts');
   for (const [label, value, note] of [
-    ['Candidati al giudice System One', counts.jev_ready, 'Il comando applicherà ancora limiti e vincoli del payload.'],
-    ['Indecisi anche per System One', counts.jev_review, 'Nessun giudice automatico viene dopo: restano a te.'],
+    ['Candidati a Jev', counts.jev_ready, 'Il comando applicherà ancora limiti e vincoli del payload.'],
+    ['Indecisi dopo Jev', counts.jev_review, 'Nessun giudice automatico viene dopo: restano a te.'],
     ['Bloccati dai dati', counts.blocked, 'Serve una descrizione utilizzabile prima del giudizio semantico.'],
-    ['Già valutati, ancora indecisi', counts.remote_review, 'La risposta review corrente viene riusata.'],
     ['Da aggiornare o verificare', counts.stale, 'Testo, regole, profilo o configurazione non coincidono più.']]) {
     facts.append(el('dt', label));
     const detail = el('dd');
@@ -1686,7 +1689,7 @@ function renderJourney(area, funnel) {
       ['seg-gone', 'Scarto', funnel.tier.scarto]]),
     axisCard('Origine dei giudizi · annunci', funnel.archive.jobs, [
       ['seg-in', 'Regex', funnel.giudici?.regex || 0],
-      ['seg-review', 'Modello remoto', funnel.giudici?.llm_remoto || 0],
+      ['seg-review', 'Jev', funnel.giudici?.jev || 0],
       ['seg-pending', 'Senza giudizio', funnel.giudici?.nessuno || 0]]));
   axes.append(axesGrid);
   area.append(block, axes);

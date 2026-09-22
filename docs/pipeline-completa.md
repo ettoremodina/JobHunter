@@ -56,12 +56,13 @@ flowchart TD
 
     U1 --> J{"c'è una descrizione<br/>da leggere?<br/><i>selection.judgeable</i>"}
     J -->|"no"| W["FERMO<br/>nessun modello viene chiamato"]
-    J -->|"sì"| G3
+    J -->|"sì"| G2
 
-    G3{{"4 · GIUDICE 2 · QWEN REMOTO<br/>qwen3.7-flash via API<br/>una chiamata per <b>azienda</b><br/>→ <b>enrichments</b> remote:selection"}}
-    G3 --> K3["verdetto finale"]
-    G3 -.->|"solo Tier A e B"| C1["scheda annuncio<br/>remote:job-summary"]
-    G3 -.-> C2["categoria e scheda azienda<br/>remote:company-summary"]
+    G2{{"4 · GIUDICE 2 · JEV<br/>una chiamata può decidere ruolo e settore<br/>→ <b>enrichments</b> jev:selection / jev:category"}}
+    G2 --> K3["verdetto finale o revisione umana"]
+    K3 -.->|"solo Tier A e B"| G3["5 · QWEN SCRIVE LE SCHEDE<br/>non giudica e non categorizza"]
+    G3 --> C1["scheda annuncio<br/>remote:job-summary"]
+    G3 --> C2["scheda azienda<br/>remote:company-summary"]
 ```
 
 ### Cosa fa ogni passaggio
@@ -92,7 +93,7 @@ rapporto, il lavoro è già stato fatto.
 Conseguenza importante: **i verdetti del regex si auto-correggono.** Arriva la descrizione,
 cambia il `content_hash`, il verdetto si rifà da solo.
 
-**Il filtro «c'è una descrizione?»** è il freno che protegge i due modelli. Dare a un
+**Il filtro «c'è una descrizione?»** è il freno che protegge Jev. Dare a un
 modello solo il titolo produce sempre `review`: il costo di una chiamata per nessuna
 informazione nuova. Senza descrizione, l'annuncio resta fermo e in attesa — non respinto.
 
@@ -102,11 +103,12 @@ dell'azienda. Non genera testo: risponde a domande tipizzate e
 restituisce una probabilità per ognuna, quindi un giudizio mancante o una citazione fuori
 catalogo non sono possibili. Le soglie che trasformano le probabilità in verdetto stanno in
 `config/system_one.json`, le domande in `config/system-one-questions.json`. Le risposte
-restano indipendenti e vengono salvate separatamente. Il settore legge il **testo vero** degli
-annunci invece delle frasi che il regex lascia passare. Dettagli in
+restano indipendenti e vengono salvate separatamente. Per l'azienda invia una domanda indipendente
+per settore e conserva al massimo due categorie che superano le soglie configurate. Il settore
+legge il **testo vero** degli annunci invece delle frasi che il regex lascia passare. Dettagli in
 [docs/system-one.md](system-one.md).
 
-**5 · Schede · Qwen remoto.** Non giudica e non categorizza: è l'unico passaggio che
+**5 · Schede · Qwen.** Non giudica e non categorizza: è l'unico passaggio che
 **scrive**, e scrive soltanto. **Una sola chiamata per azienda**, che porta insieme le schede
 degli annunci compatibili di Tier A e B e la scheda aziendale. Il profilo e le etichette
 stanno nel messaggio di sistema perché il provider possa metterlo in cache; il profilo qui
@@ -165,9 +167,9 @@ classificare», il verdetto è `evidenza_mancante` — che è una coda di lavoro
 rifiuto.
 
 **Chi ha scritto la categoria conta.** Il campo `categories.method` dice se è arrivata
-dalle regole, da Jev, dal modello remoto storico o da te in chat (`local_llm` resta sulle righe scritte dal
-giudice locale prima della sua rimozione). Le regole non riscrivono mai il giudizio di un
-modello, e niente riscrive mai una tua decisione da chat.
+dalle regole, da Jev o da te in chat (`local_llm` resta soltanto su eventuali righe storiche
+del giudice locale). Le regole non riscrivono mai il giudizio di Jev, e niente riscrive una
+tua decisione da chat.
 
 ---
 
@@ -199,12 +201,12 @@ basta un ruolo compatibile qualsiasi. Per un'azienda che non interessa serve un 
 | tabella | cosa conserva | chi la scrive |
 |---|---|---|
 | `opportunities` | l'annuncio come JSON, più `content_hash` | raccolta, recupero descrizione |
-| `companies` | nome, sito, settore, descrizione, `description_provenance` | importazione, `company_profile` |
+| `companies` | nome, sito, settore sorgente, descrizione, `description_provenance` | importazione, `company_profile` |
 | `observations` | dove e quando quell'annuncio è stato visto | raccolta |
 | `description_attempts` | esito del recupero **per annuncio**, con quando riprovare | `descriptions.recover` |
 | `company_profile_attempts` | esito di **ogni strategia** provata per azienda, col testo grezzo | `company_profile.recover` |
 | `search_eligibility` | esito del regex, invalidato da contenuto e regole | cache pigra, a ogni lettura |
-| `categories` | categoria, **metodo** e motivazione | regole, modelli, chat |
+| `categories` | fino a due categorie ordinate per azienda, confidenza, **metodo** e motivazione | regole, Jev, chat |
 | `enrichments` | ogni risposta del modello remoto, con impronta dell'input e nome del modello | il passaggio remoto |
 | `personal_queue` | le aziende pronte da rivedere adesso | `selection.queue` |
 | `feedback` | le tue decisioni, annullabili | interfaccia |
@@ -231,7 +233,7 @@ Per la traccia grezza:
 |---|---|
 | il testo dell'annuncio è stato scaricato? | `description_attempts` |
 | che cosa ha deciso il regex e perché | `search_eligibility.decision` |
-| quale modello ha giudicato e con che prova | `enrichments`, task `remote:selection` |
+| quale modello ha giudicato e con che prova | `enrichments`, task `jev:selection` |
 | da dove viene la descrizione dell'azienda | `companies.description_provenance` |
 | quali strade sono state provate su quell'azienda | `company_profile_attempts` |
 | chi ha messo quella categoria | `categories.method` |

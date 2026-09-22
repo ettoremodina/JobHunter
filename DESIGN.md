@@ -95,6 +95,11 @@ Conseguenza da tenere presente: **quello che System One lascia indeciso resta in
 Nessun modello lo rivede; è materiale per te, in chat o nella dashboard. È una scelta, non
 una dimenticanza: pagare un secondo giudizio su un caso già ambiguo non lo rende meno ambiguo.
 
+L'asse azienda è invece multi-etichetta: Jev usa probabilità indipendenti per settore e conserva al
+massimo due categorie affidabili. Gli indecisi
+sui ruoli e le aziende senza categorie affidabili alimentano la futura revisione guidata da Codex.
+Dettagli e soglie in [docs/categorie-multiple-e-review-codex.md](docs/categorie-multiple-e-review-codex.md).
+
 Il livello 2 va speso **dove il primo ha fallito**, mai prima. La sintesi e l'impaginazione
 si fanno **dopo** l'assegnazione del tier e **solo su Tier A e B**: riscrivere la scheda di
 un'azienda che poi si scarta è lavoro pagato e buttato.
@@ -201,7 +206,7 @@ I dati esistono già, sparsi:
 | dove | asse | giudice | cosa conserva |
 |------|------|---------|---------------|
 | `search_eligibility.decision` | ruolo | regex | `reasons`, requisiti, verifiche |
-| `enrichments` (`remote:selection`) | ruolo | LLM remoto | `rationale` + citazione verificata |
+| `enrichments` (`jev:selection`) | ruolo | Jev | `rationale` + citazione verificata |
 | `categories` (`method`, `reason`) | azienda | tutti | categoria + provenienza |
 | *(da aggiungere)* | entrambi | utente | commento sulla scheda |
 

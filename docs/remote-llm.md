@@ -11,7 +11,7 @@ l'archivio. I suoi esiti salvati continuano a valere nella catena come `llm_remo
 
 Per avviare il passaggio dalla web app, inclusi pilot su 100 aziende e sequenze automatiche, leggere [Pipeline dalla UI](pipeline-ui.md). I comandi qui sotto restano disponibili per i singoli task.
 
-L'integrazione remota è opzionale e separata da Ollama. La configurazione corrente usa Alibaba Cloud Model Studio, endpoint internazionale QwenCloud, modello `qwen3.7-flash`, con thinking disabilitato e output JSON. Non sono state effettuate chiamate a pagamento durante la preparazione. La qualità reale e la disponibilità del modello sull'account richiedono un pilot.
+L'integrazione remota è opzionale e separata da Ollama. La configurazione corrente usa Alibaba Cloud Model Studio, endpoint internazionale QwenCloud, modello `qwen3.8-flash`, con thinking disabilitato e JSON Schema rigoroso. Il pilot del 22 settembre 2026 ha confermato la disponibilità del modello e un netto miglioramento nella completezza e nella fedeltà delle schede rispetto a `qwen3.7-flash`.
 
 ## Configurazione e chiave
 
@@ -19,7 +19,7 @@ La console QwenCloud dell’utente mostra come Base URL `https://dashscope-intl.
 
 La ricerca web rimane disabilitata: l’integrazione esistente supporta il formato di ricerca OpenRouter e deve essere adattata prima di abilitare quella Alibaba. Sintesi e selezione usano le fonti già raccolte.
 
-Fonti: [endpoint Alibaba](https://www.alibabacloud.com/help/en/model-studio/base-url), [capacità Qwen 3.7 Flash](https://www.alibabacloud.com/help/en/model-studio/qwen3-7-flash).
+Fonti: [endpoint Alibaba](https://www.alibabacloud.com/help/en/model-studio/base-url), [capacità Qwen 3.8 Flash](https://www.alibabacloud.com/help/en/model-studio/qwen3-8-flash).
 
 Alibaba può restituire i token senza un costo monetario: consultare il consuntivo Model Studio. L’assenza di costo nella risposta non significa costo zero.
 
@@ -57,7 +57,7 @@ qualità del modello. Nessuna modifica alle preferenze o alla selezione della pi
 
 Il passaggio combinato prepara ogni azienda sul thread che possiede SQLite e manda in parallelo solo la chiamata HTTP: i worker non toccano il database. Il numero di chiamate contemporanee si imposta in `config/remote_llm.json` (`company_batch.workers`, massimo `company_batch.max_workers`) e dal campo «Chiamate API contemporanee» nella card del passaggio. Il parallelismo riduce il tempo totale, non il costo: le chiamate restano una per azienda.
 
-Una risposta non è più tutto-o-niente. Ogni giudizio di ruolo, ogni scheda di ruolo e la scheda aziendale vengono validati separatamente sulle proprie evidenze e salvati singolarmente. Se il modello inventa una citazione in una scheda, o omette la scheda aziendale richiesta, il resto della risposta già pagata resta salvato e la parte scartata viene ricontata come `rejected_jobs` nel report. Un errore di trasporto continua invece a fermare l'invio di nuove richieste: l'esito di fatturazione è ignoto e nessun tentativo viene ripetuto implicitamente.
+Una risposta non è più tutto-o-niente. Ogni scheda di ruolo e la scheda aziendale vengono validate separatamente sulle proprie evidenze e salvate singolarmente. Se il modello inventa una citazione in una scheda, o omette la scheda aziendale richiesta, il resto della risposta già pagata resta salvato e la parte scartata viene ricontata come `rejected_jobs` nel report. Un errore di trasporto continua invece a fermare l'invio di nuove richieste: l'esito di fatturazione è ignoto e nessun tentativo viene ripetuto implicitamente.
 
 Nella stessa richiesta ogni annuncio ha un proprio spazio di riferimenti (`J0-S3`, `J1-S7`, …): due annunci non possono più citarsi a vicenda per errore, perché entrambi i cataloghi partivano da `S0`.
 
@@ -85,6 +85,17 @@ python main.py llm company-research --limit 3 --execute
 
 Il limite attuale è 50 richieste per esecuzione, configurabile. I task sugli annunci partono dai non esclusi dai filtri attivi. Le regex sperimentali delle simulazioni non vengono applicate da questi comandi. Se si vuole verificare anche gli esclusi locali, occorre preparare separatamente quel campione: non si promette copertura dell'intero archivio con questo pilot.
 
+Per leggere le schede prodotte da un batch senza nuove chiamate o token:
+
+```powershell
+python scripts\audit_company_batch.py
+python scripts\audit_company_batch.py --report data\remote-llm\company-batch-...\report.json
+```
+
+La mappa interattiva del coordinatore parallelo è in
+[Flusso di company_batch.run](code-flow-company-batch/index.html); le annotazioni verificabili sono
+in [semantic.json](code-flow-company-batch/semantic.json).
+
 ## Prompt e profilo
 
 - `remote-selection.txt`: confronto semantico tra mansioni e profilo, con keep/exclude/review e citazioni.
@@ -92,21 +103,23 @@ Il limite attuale è 50 richieste per esecuzione, configurabile. I task sugli an
 - `remote-company-summary.txt`: cosa produce/offre l'azienda, per chi e in quale ambito. Nessun profilo personale inviato per le sintesi.
 - `user_context/llm-selection-profile.md`: preferenze personali confermate, separate dalle istruzioni generiche del classificatore. Sostituire il file per un'altra persona.
 
+Il batch combinato usa `remote-company-batch.txt`. Non riceve il profilo personale: un pilot reale mostrava che quel contesto trasformava una scheda descrittiva in una valutazione del candidato. Le schede aziendali richiedono prodotti, servizi, clienti o mercato concreti; slogan e missioni generiche producono una scheda vuota con il motivo.
+
 Un modello più potente può interpretare meglio il contesto, ma non conosce le preferenze dell'utente se non gli vengono fornite. I prompt quindi restano precisi sul risultato e sulle evidenze, senza lunghi elenchi di regex o istruzioni di ragionamento. Non si impone una quota di esclusioni: il target sotto mille non giustifica scartare opportunità pertinenti.
 
 ## Persistenza, errori e costi
 
 Gli originali rimangono nel database; le sintesi non sovrascrivono descrizioni o dati aziendali. La selezione usa sempre la fonte originale normalizzata, non una sintesi generata. I risultati validati sono nella tabella esistente `enrichments`, con task `remote:selection`, `remote:job-summary` o `remote:company-summary`. I report in `data/remote-llm/` espongono risultati, ID, uso token restituito dal provider ed eventuale errore.
 
-La cache dipende da fonte inviata, prompt, profilo quando necessario, modello, endpoint, parametri e versione di schema. Un nuovo avvio salta gli output già validi. Cambiare profilo o modello rende necessaria una nuova elaborazione; la vecchia versione è mantenuta nei report precedenti. Non c'è riscrittura periodica automatica.
+La cache dipende da fonte inviata, prompt, profilo per i soli task che lo usano, modello, endpoint, parametri e versione di schema. Un nuovo avvio salta gli output già validi. Cambiare il prompt del batch o il modello rende necessaria una nuova elaborazione; la vecchia versione è mantenuta nei report precedenti. Non c'è riscrittura periodica automatica.
 
-Una richiesta per record, esecuzione seriale e nessun retry automatico: su 429, errore di rete, output non valido o troncato, il batch si ferma dopo aver salvato i progressi. Una risposta fallita può comunque essere stata fatturata. I corpi di errore HTTP e la chiave non vengono riportati nei log. Non viene stimato un costo in valuta senza un listino del provider verificato; i limiti di batch e output limitano il volume, non garantiscono un tetto monetario.
+Il batch usa una richiesta per azienda e più richieste contemporanee. Ritenta soltanto i rifiuti espliciti del provider (429 e 5xx configurati), che non hanno generato una risposta; un errore di trasporto ferma nuovi invii perché la fatturazione è incerta. Output non validi vengono registrati e il batch prosegue sulle altre aziende. I corpi di errore HTTP e la chiave non vengono riportati nei log.
 
 Le citazioni devono esistere esattamente nelle fonti fornite. Questo non dimostra che la parafrasi sia corretta o completa: il pilot deve controllare esclusioni errate e informazioni importanti omesse. I task ordinari non hanno strumenti; le tool calls da eseguire sul client sono sempre rifiutate.
 
 ## Stato della preparazione
 
-Pronti configurazione Alibaba, quattro task, cache, report e test senza rete. La dashboard mostra le sintesi validate e i campi strutturati, conservando gli originali consultabili. I giudizi di selezione non modificano ancora shortlist o feedback: la loro applicazione richiede la validazione del pilot. Ollama resta disponibile. La dashboard verifica fonti, prompt e impostazioni correnti prima di mostrare una sintesi: output obsoleti o prodotti con una diversa configurazione sperimentale vengono nascosti.
+Configurazione Alibaba, cache, report e validazione sono operativi. Il pilot combinato del 22 settembre ha completato 5 richieste parallele con 6 schede annuncio e 4 schede azienda; un errore di spazio citazioni è stato respinto e completato al riavvio senza rigenerare le sei schede valide. La dashboard mostra le sintesi validate e i campi strutturati, conservando gli originali consultabili. Output obsoleti o prodotti con una diversa configurazione vengono nascosti.
 
 ## Schema degli annunci e scheda aziendale
 
@@ -132,7 +145,7 @@ Resta da sviluppare la proposta di raggruppare i motivi dei `review` per formula
 
 ## Errori nel pilot aziendale
 
-Le risposte JSON ricevute ma respinte dalla validazione vengono conservate solo nei report come `rejected_answer`, insieme ai token consumati. Non entrano nelle sintesi visibili o nelle valutazioni. Il pilot prosegue sugli altri record, conta `rejected` e termina con stato `partial` se esistono scarti, anche quando ha attraversato tutte le aziende. Errori API, di trasporto o risposte incomplete fermano invece la sequenza. Non ci sono retry automatici. `completed_companies` indica aziende attraversate, non aziende con tutti gli output validi.
+Le risposte JSON ricevute ma respinte dalla validazione vengono conservate solo nei report come `rejected_answer`, insieme ai token consumati. Non entrano nelle sintesi visibili. Il pilot prosegue sugli altri record e termina con stato `partial` se esistono scarti. I soli rifiuti espliciti del provider vengono ritentati; errori di trasporto o risposte incomplete fermano nuovi invii. `completed_companies` indica aziende attraversate, non aziende con tutti gli output validi.
 
 ## Formato vincolato e prove dalla fonte
 
@@ -144,13 +157,13 @@ Il controllo strutturale non dimostra che una frase italiana interpreti corretta
 
 ## Arricchimento dopo la selezione
 
-La pipeline aziendale seleziona prima i ruoli sopravvissuti ai filtri locali, più il campione di audit configurato. Solo keep/review attuali autorizzano company-summary e job-summary. Company-summary restituisce anche category, scelta dalle categorie esterne in config/categories.json; categoria e sintesi richiedono una sola chiamata. La categoria viene salvata con method=remote, senza sovrascrivere method=chat. Senza dati sufficienti resta Da classificare. La classificazione locale durante importazione è stata rimossa; resta disponibile come comando esplicito. Vedere docs/pipeline-ui.md per ordine e contatori.
+La pipeline scrive le schede soltanto dopo i due giudici. Le schede dei ruoli riguardano i `keep` di aziende Tier A e B; la scheda aziendale segue il Tier A o B anche quando nessun ruolo della stessa azienda richiede una nuova scheda. Qwen non assegna categorie: arrivano da Jev o da una scelta manuale protetta. Vedere [Pipeline dalla UI](pipeline-ui.md) per ordine e contatori.
 
 
 ## Richiesta unica per azienda
-La pipeline GUI usa company_batch.run: selezione e sintesi dei ruoli mantenuti, descrizione e categoria aziendale condividono una richiesta. Profilo e contesto compaiono una volta. I risultati validi precedenti vengono riutilizzati. Le operazioni CLI individuali restano disponibili.
-Tutti gli ID e le prove sono validati prima di una transazione unica. I token sono registrati una sola volta nel report aziendale, anche se la validazione fallisce. Errori del provider o di trasporto interrompono senza retry automatici; errori di validazione locale vengono registrati e la run prosegue con le aziende successive. Prompt e limiti sono esterni in config/prompts/remote-company-batch.txt e config/remote_llm.json, sezione company_batch.
-Aziende oltre max_jobs o max_input_chars sono differite esplicitamente senza troncamenti. max_tokens limita la risposta; risposte incomplete non vengono accettate. Il campione di audit locale resta attivo. Le esclusioni restano proposte. Un pilot reale deve verificare copertura e consumi.
+La pipeline GUI usa `company_batch.run`: schede dei ruoli mantenuti e descrizione aziendale condividono una richiesta. Il profilo personale non viene inviato. I risultati validi precedenti vengono riutilizzati. Le operazioni CLI individuali restano disponibili.
+Ogni scheda viene validata e salvata separatamente. I token sono registrati una sola volta nel report aziendale, anche se una parte fallisce. Prompt e limiti sono esterni in `config/prompts/remote-company-batch.txt` e `config/remote_llm.json`, sezione `company_batch`.
+Aziende oltre `max_jobs` o `max_input_chars` sono differite esplicitamente senza troncamenti. `max_tokens` limita la risposta; risposte incomplete non vengono accettate.
 
 
 ### Input compatto e conteggio richieste
@@ -159,9 +172,9 @@ Il batch usa `$defs` e `$ref` per inviare una sola definizione dello schema di r
 
 
 ### Fonti mancanti
-Gli schemi non emettono enum vuoti quando il catalogo delle prove e vuoto. La validazione locale continua a rifiutare qualsiasi identificatore non presente nel catalogo. Se la scheda aziendale non e richiesta, il relativo campo accetta solo null. Gli annunci senza descrizione ricevono solo la selezione; la sintesi e null e un giudizio valido viene riutilizzato anche senza scheda. La successiva acquisizione della descrizione invalida normalmente il risultato tramite fingerprint.
-Gli errori HTTP conservano il messaggio JSON del provider, limitato in lunghezza e con la chiave API oscurata, senza retry automatici.
+Gli schemi non emettono enum vuoti quando il catalogo delle prove è vuoto. La validazione locale continua a rifiutare qualsiasi identificatore non presente nel catalogo. Se la scheda aziendale non è richiesta, il relativo campo accetta solo `null`. Gli annunci senza mansioni utilizzabili non vengono inviati. La successiva acquisizione della descrizione li rende normalmente eleggibili tramite fingerprint.
+Gli errori HTTP conservano il messaggio JSON del provider, limitato in lunghezza e con la chiave API oscurata. Solo 429 e i 5xx configurati vengono ritentati.
 
 
 ### Risposte superflue e validazione locale
-Una scheda aziendale non richiesta viene ignorata senza invalidare i giudizi degli annunci, che restano validati prima del salvataggio. La scheda ignorata non viene mostrata o salvata. Una risposta aziendale con giudizi non validi non salva derivati: viene registrata come errore e si passa alla prossima azienda senza ritentare la stessa richiesta. La run termina parziale se resta almeno un errore. Errori HTTP o di trasporto continuano a fermare la run.
+Una scheda aziendale non richiesta viene ignorata senza invalidare le schede degli annunci, che restano validate prima del salvataggio. La scheda ignorata non viene mostrata o salvata. Una parte non valida viene registrata come errore, mentre le parti valide della stessa risposta restano salvate. La run termina parziale se resta almeno un errore.

@@ -13,7 +13,7 @@ import logging
 import re
 
 from jobhunter.normalization import identity
-from jobhunter.workspace import ROOT, now
+from jobhunter.workspace import ROOT
 
 logger = logging.getLogger(__name__)
 UNCLASSIFIED = "Da classificare"
@@ -28,8 +28,8 @@ def vocabulary():
 
 def category(archive, cid):
     """Expose an assignment together with its provenance and explanation."""
-    row = archive.db.execute("SELECT category,method AS category_method,reason AS category_reason FROM categories WHERE company_id=?", (cid,)).fetchone()
-    return dict(row) if row else {"category": UNCLASSIFIED, "category_method": "unknown", "category_reason": "Dati aziendali insufficienti"}
+    from jobhunter.evaluation.company_categories import summary
+    return summary(archive, cid)
 
 
 def assign(archive, cid, label, reason):
@@ -38,8 +38,10 @@ def assign(archive, cid, label, reason):
         raise ValueError("Company not found")
     if label not in [*vocabulary(), UNCLASSIFIED] or not isinstance(reason, str) or not reason.strip():
         raise ValueError("Choose a known category and supply a reason")
+    from jobhunter.evaluation.company_categories import replace
     with archive.db:
-        archive.db.execute("INSERT OR REPLACE INTO categories VALUES(?,?,?,?,?)", (cid, label, "chat", reason, now()))
+        replace(archive, cid, [] if label == UNCLASSIFIED else [label], "chat", reason,
+                preserve_chat=False)
     logger.info("Classified company %s from chat", cid)
     return category(archive, cid)
 
@@ -52,7 +54,7 @@ def categorize(archive, cid=None, label=None, reason="", company_ids=None):
     count = 0
     with archive.db:
         scope = " AND id IN (SELECT value FROM json_each(?))" if company_ids is not None else ""
-        for company in archive.db.execute("SELECT * FROM companies WHERE id NOT IN (SELECT company_id FROM categories WHERE method='chat')" + scope,
+        for company in archive.db.execute("SELECT * FROM companies WHERE id NOT IN (SELECT company_id FROM categories WHERE method NOT IN ('rules','unknown'))" + scope,
                                           (json.dumps(sorted(company_ids)),) if company_ids is not None else ()).fetchall():
             from jobhunter.evaluation.enrichment import company_input
             enriched = archive.db.execute("SELECT source_hash FROM enrichments WHERE task='category' AND record_id=?", (company["id"],)).fetchone()
@@ -83,8 +85,8 @@ def categorize(archive, cid=None, label=None, reason="", company_ids=None):
             # Il giudizio di un modello batte una parola chiave: le regole riscrivono solo quello
             # che hanno scritto loro, o una casella ancora vuota. Senza questa condizione una
             # passata a regole cancellava una categoria pagata al modello remoto (docs/asse-azienda-piano.md).
-            archive.db.execute("INSERT INTO categories VALUES(?,?,?,?,?) ON CONFLICT(company_id) DO UPDATE SET category=excluded.category,method=excluded.method,reason=excluded.reason,updated_at=excluded.updated_at WHERE categories.method IN ('rules','unknown') AND (category!=excluded.category OR method!=excluded.method OR reason!=excluded.reason)",
-                               (company["id"], name, method, reason, now()))
+            from jobhunter.evaluation.company_categories import replace
+            replace(archive, company["id"], [] if name == UNCLASSIFIED else [name], method, reason)
             count += name != UNCLASSIFIED
     logger.info("Category rules matched %s companies", count)
     return {"matched_by_rules": count,

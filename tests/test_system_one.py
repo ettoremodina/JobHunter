@@ -42,9 +42,12 @@ class ThresholdTests(unittest.TestCase):
         self.cfg = system_one.config()
         self.spec = system_one.questions(self.cfg, 'selection')
 
-    def judge(self, compatible, family=('nessuna', 0.9), student=0.02):
+    def judge(self, compatible, family=('nessuna', 0.9), student=0.02, described=0.98,
+              too_senior=0.02):
         """Answer every configured question, then let `judgement()` combine them."""
-        answers = {'mansioni_compatibili': noul(compatible), 'posto_per_studenti': noul(student),
+        answers = {'mansioni_descritte': noul(described), 'mansioni_compatibili': noul(compatible),
+                   'posto_per_studenti': noul(student),
+                   'seniority_fuori_profilo': noul(too_senior),
                    'famiglia_esclusa': choice(*family), 'prova': choice('S0', 0.8)}
         return system_one.judgement(self.cfg, self.spec, answers, CATALOG)[0]
 
@@ -54,15 +57,36 @@ class ThresholdTests(unittest.TestCase):
         self.assertEqual(self.judge(0.05)['decision'], 'exclude')
         self.assertEqual(self.judge(0.5)['decision'], 'review')
         # Una famiglia esclusa batte la compatibilita': il profilo esclude per mansione, non per punteggio.
-        self.assertEqual(self.judge(0.94, family=('commerciale_marketing', 0.9))['decision'], 'exclude')
+        self.assertEqual(self.judge(0.94, family=('commerciale_marketing', 0.9))['decision'], 'review')
+        self.assertEqual(self.judge(0.5, family=('commerciale_marketing', 0.9))['decision'], 'exclude')
         # Una famiglia scelta senza convinzione non esclude niente.
         self.assertEqual(self.judge(0.94, family=('commerciale_marketing', 0.2))['decision'], 'keep')
         self.assertEqual(self.judge(0.94, student=0.95)['decision'], 'exclude')
+        self.assertEqual(self.judge(0.94, too_senior=0.95)['decision'], 'exclude')
+        self.assertEqual(self.judge(0.05, described=0.05)['decision'], 'review')
+
+    def test_conflicting_positive_and_excluded_signals_go_to_review(self):
+        """Quantitative work in an excluded domain must not become a false negative."""
+        result = self.judge(0.92, family=('produzione_manutenzione', 0.88))
+        self.assertEqual(result['decision'], 'review')
+        self.assertEqual(result['missing_information'], ["Conflitto tra compatibilita' e famiglia esclusa"])
+        self.assertEqual(self.judge(0.67, family=('commerciale_marketing', 0.85))['decision'], 'review')
+
+    def test_an_obvious_manual_role_does_not_require_detailed_duties(self):
+        """A strong excluded family and very low compatibility can decide a short manual advert."""
+        result = self.judge(0.02, family=('produzione_manutenzione', 1.0), described=0.34)
+        self.assertEqual(result['decision'], 'exclude')
+        self.assertEqual(result['missing_information'], [])
+        self.assertEqual(self.judge(0.02, described=0.34)['decision'], 'review')
+        self.assertEqual(self.judge(
+            0.02, family=('amministrazione_hr_legale', 0.95), described=0.03
+        )['decision'], 'review')
 
     def test_evidence_is_resolved_from_the_catalog_and_cannot_be_invented(self):
         """La prova e' una chiave del catalogo: il validatore condiviso la espande e nient'altro passa."""
         self.assertEqual(self.judge(0.94)['evidence'], [CATALOG['S0']])
-        answers = {'mansioni_compatibili': noul(0.94), 'posto_per_studenti': noul(0.0),
+        answers = {'mansioni_descritte': noul(0.98), 'mansioni_compatibili': noul(0.94),
+                   'posto_per_studenti': noul(0.0), 'seniority_fuori_profilo': noul(0.02),
                    'famiglia_esclusa': choice('nessuna', 0.9), 'prova': choice('S9', 0.8)}
         with self.assertRaises(ValueError):
             system_one.judgement(self.cfg, self.spec, answers, CATALOG)
@@ -71,7 +95,8 @@ class ThresholdTests(unittest.TestCase):
         """Un numero fuori da [0, 1] o assente ferma questo record, non la passata."""
         def answers():
             """A complete, valid answer set to break one field at a time."""
-            return {'mansioni_compatibili': noul(0.9), 'posto_per_studenti': noul(0.0),
+            return {'mansioni_descritte': noul(0.98), 'mansioni_compatibili': noul(0.9),
+                    'posto_per_studenti': noul(0.0), 'seniority_fuori_profilo': noul(0.02),
                     'famiglia_esclusa': choice('nessuna', 0.9), 'prova': choice('S0', 0.8)}
         broken = [{**answers(), 'mansioni_compatibili': noul(1.4)},
                   {**answers(), 'mansioni_compatibili': noul('alta')},
@@ -89,19 +114,44 @@ class CategoryTests(unittest.TestCase):
         """Read the real rubric and the shared sector vocabulary."""
         self.cfg = system_one.config()
         self.spec = system_one.questions(self.cfg, 'category')
-        self.options = {'Energia': 'x', system_one.UNCLASSIFIED: 'y'}
+        self.options = {'Energia': 'x', 'Consulenza e servizi': 'y', 'Software e tecnologia': 'z'}
 
-    def classify(self, category=('Energia', 0.9), employer=0.9, agency=0.02):
+    def answers(self, scores=None, employer=0.9, agency=0.02):
+        """Build one independent Noul response for every configured category."""
+        scores = {'Energia': 0.9} if scores is None else scores
+        return {**{f'settore_{index:02d}': noul(scores.get(category, 0.02))
+                   for index, category in enumerate(self.options)},
+                'descrive_il_datore': noul(employer), 'agenzia': noul(agency)}
+
+    def classify(self, scores=None, employer=0.9, agency=0.02):
         """Answer the three company questions, then let `classification()` combine them."""
-        answers = {'categoria': choice(*category), 'descrive_il_datore': noul(employer), 'agenzia': noul(agency)}
-        return system_one.classification(self.cfg, self.spec, answers, self.options)[0]['category']
+        return system_one.classification(
+            self.cfg, self.spec, self.answers(scores, employer, agency), self.options)[0]
 
     def test_only_a_described_employer_earns_a_sector(self):
-        """Un annuncio parla spesso del cliente: senza quel cancello il settore sarebbe del cliente."""
-        self.assertEqual(self.classify(), 'Energia')
-        self.assertEqual(self.classify(employer=0.2), system_one.UNCLASSIFIED)
-        self.assertEqual(self.classify(agency=0.95), system_one.UNCLASSIFIED)
-        self.assertEqual(self.classify(category=('Energia', 0.3)), system_one.UNCLASSIFIED)
+        """A client sector is not assigned to the employer when the text does not distinguish them."""
+        self.assertEqual(self.classify()['categories'], ['Energia'])
+        self.assertEqual(self.classify(employer=0.2)['categories'], [])
+        self.assertEqual(self.classify({'Energia': 0.3})['categories'], [])
+
+    def test_two_moderate_sectors_are_kept_and_lower_scores_are_dropped(self):
+        """The approved 0.40 / 0.80 rule keeps at most the two strongest sectors."""
+        result = self.classify({'Energia': 0.45, 'Software e tecnologia': 0.40,
+                                'Consulenza e servizi': 0.34})
+        self.assertEqual(result['categories'], ['Energia', 'Software e tecnologia'])
+
+    def test_a_staffing_agency_is_classified_by_its_own_activity(self):
+        """Recruiting is a company sector, not a reason to erase the company axis."""
+        answers = self.answers({}, employer=0.2, agency=0.95)
+        result, detail = system_one.classification(self.cfg, self.spec, answers, self.options)
+        self.assertEqual(result['category'], 'Consulenza e servizi')
+        self.assertEqual(result['categories'], ['Consulenza e servizi'])
+        self.assertEqual(detail['punteggi_categoria']['Consulenza e servizi'], 0.95)
+
+    def test_category_cache_identity_contains_the_live_vocabulary(self):
+        """Adding a category must invalidate answers produced without that option."""
+        signature = system_one.signature(self.cfg, 'category')
+        self.assertIn('Media, cultura e intrattenimento', signature['category_options'])
 
 
 class CombinedPassTests(unittest.TestCase):
@@ -110,13 +160,17 @@ class CombinedPassTests(unittest.TestCase):
     @staticmethod
     def answers():
         """Return a complete Jev response for both question groups."""
-        return {'mansioni_compatibili': noul(0.95), 'posto_per_studenti': noul(0.01),
+        category_names = list(json.loads((system_one.ROOT/'config/categories.json').read_text(encoding='utf-8')))
+        return {'mansioni_descritte': noul(0.98), 'mansioni_compatibili': noul(0.95),
+                'posto_per_studenti': noul(0.01), 'seniority_fuori_profilo': noul(0.02),
                 'famiglia_esclusa': choice('nessuna', 0.95), 'prova': choice('S0', 0.9),
-                'categoria': choice('Energia', 0.95), 'descrive_il_datore': noul(0.95),
+                **{f'settore_{index:02d}': noul(0.95 if category == 'Energia' else 0.01)
+                   for index, category in enumerate(category_names)},
+                'descrive_il_datore': noul(0.95),
                 'agenzia': noul(0.01)}
 
     def test_a_decision_enters_the_chain_and_removes_the_role_from_the_paid_queue(self):
-        """Quello che decide System One non arriva a Qwen: e' l'unico motivo per cui fa risparmiare."""
+        """Quello che decide Jev esce dalla coda invece di essere pagato una seconda volta."""
         with tempfile.TemporaryDirectory() as folder:
             archive, path = workspace(folder)
             try:
@@ -150,6 +204,26 @@ class CombinedPassTests(unittest.TestCase):
                     repeated = system_one.run(archive, {'all': True, 'mode': 'execute'}, config_path=path)
                 again.assert_not_called()
                 self.assertEqual(repeated['total'], 0)
+                category_key = archive.db.execute(
+                    "SELECT cache_key FROM enrichments WHERE task='jev:category' AND record_id=?", (cid,)
+                ).fetchone()['cache_key']
+                archive.db.execute("UPDATE enrichments SET cache_key='stale' WHERE task='jev:category' AND record_id=?",
+                                   (cid,))
+                archive.db.commit()
+                stale_category = system_one.run(archive, {'all': True}, config_path=path)
+                self.assertEqual(stale_category['total'], 1)
+                self.assertEqual(stale_category['items'][0]['tasks'], ['category'])
+                archive.db.execute("UPDATE enrichments SET cache_key=? WHERE task='jev:category' AND record_id=?",
+                                   (category_key, cid))
+                archive.db.commit()
+                archive.db.execute("UPDATE enrichments SET cache_key='stale' WHERE task='jev:selection' AND record_id=?",
+                                   (oid,))
+                archive.db.commit()
+                with patch('jobhunter.evaluation.system_one.llm.api_key', return_value='test'), \
+                        patch('jobhunter.evaluation.system_one.ask',
+                              return_value=(answers, {'input_tokens': 900}, 'jev-1.13.0')) as refreshed:
+                    rerun = system_one.run(archive, {'all': True, 'mode': 'execute'}, config_path=path)
+                self.assertEqual((refreshed.call_count, rerun['counts']['selection_decided']), (1, 1))
             finally:
                 archive.close()
 
@@ -267,6 +341,15 @@ class TransportTests(unittest.TestCase):
         cfg = {**system_one.config(), 'endpoint': 'http://api.example.org/v1/systemone'}
         with self.assertRaises(ValueError):
             system_one.ask(cfg, {'titolo': 'x'}, {'q': {'type': 'noul', 'instructions': 'y'}}, 'k')
+
+    def test_zero_explicitly_disables_local_rate_pacing(self):
+        """Unlimited means no local sleep, while a negative or boolean value is a config error."""
+        cfg = system_one.config()
+        self.assertEqual(system_one.request_interval({**cfg, 'max_requests_per_minute': 0}), 0.0)
+        self.assertEqual(system_one.request_interval({**cfg, 'max_requests_per_minute': 500}), 0.12)
+        for value in (-1, True, '500'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                system_one.request_interval({**cfg, 'max_requests_per_minute': value})
 
 
 if __name__ == '__main__':

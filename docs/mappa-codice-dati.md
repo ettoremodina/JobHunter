@@ -87,7 +87,7 @@ Confronto circoscritto a [jobhunter-v2.md](jobhunter-v2.md), senza rifare la gui
 
 | Affermazione nella guida | Codice attuale |
 |---|---|
-| Il percorso normale non chiama LLM; API futura | L'azione `remote` della dashboard chiama già `company_batch.run` in modalità execute. Configurazione attuale Qwen `qwen3.7-flash`. La consultazione ordinaria non chiama il modello. |
+| Il percorso normale non chiama LLM; API futura | L'azione `remote` della dashboard chiama già `company_batch.run` in modalità execute. Configurazione attuale Qwen `qwen3.8-flash`. La consultazione ordinaria non chiama il modello. |
 | `enrich` usa Ollama opzionale | Il parser CLI non espone `enrich`; `enrichment.py` ora prepara testo e input, senza modello locale. |
 | `collect-all` recupera dettagli, categorie, filtri, statistiche e coda al termine | `sweep.sweep` conclude con copertura e statistiche dell'archivio; non orchestra quelle fasi. I collector possono comunque acquisire testo insieme ai listing. |
 | L'import e il recupero testi aggiornano automaticamente le categorie | `Archive.ingest` termina dopo il salvataggio, senza categorizzazione automatica; consultare i comandi e il percorso remoto sopra. |

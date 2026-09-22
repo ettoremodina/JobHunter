@@ -10,23 +10,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from playwright.sync_api import expect, sync_playwright
 
-from jobhunter.evaluation import remote_llm
 from jobhunter.exploration.dashboard import create_server
 from jobhunter.workspace import Archive, settings
 
 
-def save_remote_result(archive, opportunity_id, result, current=True):
-    """Store a fixture result with either a current or deliberately stale cache key."""
-    cfg = json.loads((remote_llm.ROOT / 'config/remote_llm.json').read_text(encoding='utf-8'))
-    job = json.loads(archive.db.execute(
-        'SELECT data FROM opportunities WHERE id=?', (opportunity_id,)).fetchone()[0])
-    payload = remote_llm.inputs(archive, 'selection', opportunity_id, cfg, job=job, cache={})
-    prompt = (remote_llm.ROOT / cfg['prompts']['selection']).read_text(encoding='utf-8')
-    key = remote_llm.digest({'source': payload, 'prompt': prompt,
-                             'settings': remote_llm.signature(cfg, 'selection')}) if current else 'stale'
+def save_jev_result(archive, opportunity_id, decision):
+    """Store a fixture Jev verdict."""
     archive.db.execute('INSERT INTO enrichments VALUES(?,?,?,?,?,?,?)',
-                       ('remote:selection', opportunity_id, 'source', key,
-                        json.dumps({'result': result}), 'browser-fixture', '2026-01-01'))
+                       ('jev:selection', opportunity_id, 'source', 'key',
+                        json.dumps({'result': {'decision': decision}}), 'browser-fixture', '2026-01-01'))
 
 
 def main():
@@ -43,14 +35,11 @@ def main():
              'description': 'Analyse experiments and product metrics.', 'source_url': 'https://example.org/ready'},
             {'company_name': 'Signal Works', 'title': 'Growth Hacker Blocked',
              'description': '', 'source_url': 'https://example.org/blocked'},
-            {'company_name': 'Signal Works', 'title': 'Growth Hacker Stale',
-             'description': 'Analyse experiments and product metrics.', 'source_url': 'https://example.org/stale'},
         ], 'browser-fixture')
         archive.evaluations()
         ids = {json.loads(row['data'])['title']: row['id']
                for row in archive.db.execute('SELECT id,data FROM opportunities')}
-        save_remote_result(archive, ids['Growth Hacker Review'], {'decision': 'review'})
-        save_remote_result(archive, ids['Growth Hacker Stale'], {'decision': 'keep'}, current=False)
+        save_jev_result(archive, ids['Growth Hacker Review'], 'review')
         archive.close()
 
         server = create_server(database, settings(), 0)
@@ -66,19 +55,18 @@ def main():
                 page.wait_for_load_state('networkidle')
 
                 page.get_by_role('button', name='Pipeline', exact=True).click()
-                expect(page.locator('#pipeline-status')).to_contain_text('Archivio: 5 annunci · 1 aziende')
+                expect(page.locator('#pipeline-status')).to_contain_text('Archivio: 4 annunci · 1 aziende')
                 expect(page.locator('#pipeline-active')).to_contain_text('Attività della web app')
                 expect(page.locator('#pipeline-active')).to_contain_text('Nessun comando attivo')
-                expect(page.locator('#pipeline-handoff')).to_contain_text('Indecisi anche per System One')
-                expect(page.locator('#pipeline-handoff')).to_contain_text('Già valutati, ancora indecisi')
+                expect(page.locator('#pipeline-handoff')).to_contain_text('Indecisi dopo Jev')
                 expect(page.locator('#pipeline-handoff')).to_contain_text('Da aggiornare o verificare')
-                expect(page.locator('#pipeline-handoff')).to_contain_text('Candidati al giudice System One')
+                expect(page.locator('#pipeline-handoff')).to_contain_text('Candidati a Jev')
                 expect(page.locator('#pipeline-steps > li')).to_have_count(6)
                 assert page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth')
 
                 page.get_by_role('button', name='Metriche', exact=True).click()
                 expect(page.locator('.journey-handoff')).to_contain_text('Partizione corrente · annunci')
-                expect(page.locator('.journey-handoff')).to_contain_text('Valutati dal remoto, ancora indecisi')
+                expect(page.locator('.journey-handoff')).to_contain_text('Indecisi dopo Jev')
                 expect(page.locator('.journey-chart rect.track')).not_to_have_count(0)
                 expect(page.locator('.journey-chart rect.seg')).not_to_have_count(0)
 

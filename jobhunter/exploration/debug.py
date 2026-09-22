@@ -32,24 +32,24 @@ LENSES = {
                   FROM search_eligibility e JOIN opportunities o ON o.id=e.opportunity_id
                   JOIN companies c ON c.id=o.company_id WHERE e.status='excluded'
                   ORDER BY c.name COLLATE NOCASE"""},
-    'annunci-scartati-dal-modello': {
-        'label': 'Annunci scartati dal modello remoto', 'unit': 'annunci', 'scope': 'annunci',
+    'annunci-scartati-da-jev': {
+        'label': 'Annunci scartati da Jev', 'unit': 'annunci', 'scope': 'annunci',
         'section': 'Esiti e motivi',
         'sql': """SELECT o.id, o.company_id, c.name, '' facet, json_extract(o.data,'$.title') detail,
                          json_extract(o.data,'$.application_url') url
                   FROM enrichments n JOIN opportunities o ON o.id=n.record_id
                   JOIN companies c ON c.id=o.company_id
-                  WHERE n.task='remote:selection' AND json_extract(n.data,'$.result.decision')='exclude'
+                  WHERE n.task='jev:selection' AND json_extract(n.data,'$.result.decision')='exclude'
                   ORDER BY c.name COLLATE NOCASE"""},
     'annunci-senza-verdetto': {
-        'label': 'Annunci lasciati aperti dal regex e mai chiamati al modello', 'unit': 'annunci',
+        'label': 'Annunci lasciati aperti dal regex e non ancora valutati da Jev', 'unit': 'annunci',
         'scope': 'annunci', 'section': 'Esiti e motivi',
         'sql': """SELECT o.id, o.company_id, c.name, '' facet, json_extract(o.data,'$.title') detail,
                          json_extract(o.data,'$.application_url') url
                   FROM search_eligibility e JOIN opportunities o ON o.id=e.opportunity_id
                   JOIN companies c ON c.id=o.company_id
                   WHERE e.status='review' AND NOT EXISTS(
-                      SELECT 1 FROM enrichments n WHERE n.task='remote:selection' AND n.record_id=o.id)
+                      SELECT 1 FROM enrichments n WHERE n.task='jev:selection' AND n.record_id=o.id)
                   ORDER BY c.name COLLATE NOCASE"""},
     'ruoli-buoni-azienda-cieca': {
         'label': 'Aziende con ruoli compatibili ma senza evidenza aziendale', 'unit': 'aziende',
@@ -59,7 +59,7 @@ LENSES = {
                           JOIN opportunities o ON o.id=e.opportunity_id
                           WHERE o.company_id=c.id AND e.status='potential') detail,
                          c.website url FROM companies c
-                  WHERE COALESCE((SELECT category FROM categories WHERE company_id=c.id),'Da classificare')='Da classificare'
+                  WHERE NOT EXISTS(SELECT 1 FROM categories WHERE company_id=c.id)
                     AND EXISTS(SELECT 1 FROM search_eligibility e JOIN opportunities o ON o.id=e.opportunity_id
                                WHERE o.company_id=c.id AND e.status='potential')
                   ORDER BY c.name COLLATE NOCASE"""},
@@ -68,7 +68,7 @@ LENSES = {
         'sql': """SELECT c.id, c.id company_id, c.name, '' facet,
                          CASE WHEN trim(c.description)='' THEN 'senza descrizione' ELSE 'con descrizione' END detail,
                          c.website url FROM companies c
-                  WHERE COALESCE((SELECT category FROM categories WHERE company_id=c.id),'Da classificare')='Da classificare'
+                  WHERE NOT EXISTS(SELECT 1 FROM categories WHERE company_id=c.id)
                   ORDER BY c.name COLLATE NOCASE"""},
     'aziende-decise-a-mano': {
         'label': 'Aziende su cui hai già deciso', 'unit': 'aziende', 'scope': 'aziende',

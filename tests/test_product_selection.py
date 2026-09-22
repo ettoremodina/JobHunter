@@ -64,6 +64,27 @@ class ProductSelectionTests(unittest.TestCase):
                 self.assertEqual(decision['requirements']['languages']['unsupported'], unsupported)
                 self.assertEqual(decision['requirements']['languages']['evidence'], [text])
 
+    def test_language_requirements_in_common_european_wording(self):
+        """Strong explicit wording in source languages is mandatory; advantages stay optional."""
+        mandatory = (
+            'Good written and spoken German.',
+            'Sehr gute Deutsch- und Englischkenntnisse in Wort und Schrift.',
+            'God kunskap i svenska i tal och skrift.',
+            'Flytande språkkunskaper i svenska.',
+            'God muntlig og skriftlig fremstillingsevne på norsk og engelsk.',
+        )
+        for text in mandatory:
+            with self.subTest(text=text):
+                self.assertEqual(evaluate({'title': 'Data Scientist', 'description': text})['status'], 'excluded')
+        optional_or_unrelated = (
+            'Knowledge of German is an advantage.',
+            'Vloeiend Nederlands is een sterke troef.',
+            'Translations into English or Swedish if source material requires it.',
+        )
+        for text in optional_or_unrelated:
+            with self.subTest(text=text):
+                self.assertEqual(evaluate({'title': 'Data Scientist', 'description': text})['status'], 'potential')
+
     def test_company_rejection_is_recorded_beside_the_pipeline(self):
         """Una decisione manuale resta un campo a parte: nuovi annunci non la cancellano, e i verdetti non cambiano."""
         with tempfile.TemporaryDirectory() as directory, closing(Archive(Path(directory) / 'test.db')) as archive:

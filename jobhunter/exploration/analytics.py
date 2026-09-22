@@ -24,7 +24,10 @@ def summary(archive, eligibility=''):
     health = Counter({k: 0 for k in ('with_description', 'categorized', 'country_known', 'with_salary', 'with_posted_date')})
     companies = set()
     total = 0
-    for row in archive.db.execute("SELECT o.id,o.company_id,o.data,e.status,COALESCE(c.category,'Da classificare') category FROM opportunities o JOIN search_eligibility e ON e.opportunity_id=o.id LEFT JOIN categories c ON c.company_id=o.company_id"):
+    for row in archive.db.execute("""SELECT o.id,o.company_id,o.data,e.status,
+            COALESCE((SELECT category FROM categories c WHERE c.company_id=o.company_id ORDER BY rank LIMIT 1),
+                     'Da classificare') category
+            FROM opportunities o JOIN search_eligibility e ON e.opportunity_id=o.id"""):
         job = json.loads(row['data'])
         status = row['status']
         if eligibility and status != eligibility:

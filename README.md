@@ -48,7 +48,7 @@ python main.py --help
 
 [Profilo, prompt e filtri usati dai modelli](docs/llm-review.html): pagina di conferma generata dai file di configurazione attivi con `python docs/build_llm_review.py`.
 
-[LLM remoto: GLM via API, configurazione chiave e pilot](docs/remote-llm.md). I comandi `python main.py llm ...` sono anteprime senza chiamate; `--execute` avvia esplicitamente le richieste remote. Gli originali restano conservati.
+[Jev tramite TypeSafe: configurazione, richieste combinate e pilot](docs/system-one.md). Il comando `python main.py system-one` prepara un'anteprima; `--execute` avvia esplicitamente le richieste. Qwen resta separato e scrive soltanto le schede dei risultati sopravvissuti.
 
 [Guida operativa, schema e manutenzione](docs/jobhunter-v2.md)
 

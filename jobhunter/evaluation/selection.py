@@ -92,24 +92,21 @@ def verdicts(archive, cid=None):
     decisions = archive.evaluations(cid)
     # ponytail: legge gli esiti LLM salvati senza rivalidare la loro cache, troppo cara su 23k
     # annunci; la scadenza resta visibile in aggregato da pipeline.summary().
-    saved = {"jev:selection": {}, "remote:selection": {}}
+    saved = {}
     # Scoped reads already know their opportunity IDs. Use the existing (task, record_id)
     # primary key instead of loading every saved LLM response for each search page.
-    # I due giudici LLM si leggono in una query sola: erano due scansioni della stessa tabella.
-    saved_sql = "SELECT task,record_id,data FROM enrichments WHERE task IN ('jev:selection','remote:selection')"
+    saved_sql = "SELECT record_id,data FROM enrichments WHERE task='jev:selection'"
     saved_args = ()
     if cid is not None:
         saved_sql += " AND record_id IN (SELECT value FROM json_each(?))"
         saved_args = (json.dumps(list(decisions)),)
     for row in archive.db.execute(saved_sql, saved_args):
-        saved[row["task"]][row["record_id"]] = json.loads(row["data"]).get("result") or {}
+        saved[row["record_id"]] = json.loads(row["data"]).get("result") or {}
     roles = {}
     for oid, decision in decisions.items():
-        # DESIGN §3, la cascata: dopo il regex decide il giudice System One, e solo i suoi «non so»
-        # arrivano al modello remoto, che li paga. L'ordine di questa tupla *e'* la cascata.
+        # La cascata ha un solo giudice semantico: un «non so» di Jev resta aperto all'utente.
         chain = [j for j in (regex_judgement(decision),
-                             llm_judgement(saved["jev:selection"].get(oid), "jev"),
-                             llm_judgement(saved["remote:selection"].get(oid), "llm_remoto")) if j]
+                             llm_judgement(saved.get(oid), "jev")) if j]
         roles[oid] = {**tier.role_verdict(chain), "primary": chain[0]["primary"], "catena": chain}
     if cid is None:
         scope, own_scope, arguments = "", "", ()
@@ -121,14 +118,19 @@ def verdicts(archive, cid=None):
     grouped = {}
     for row in archive.db.execute("SELECT id,company_id FROM opportunities" + scope, arguments):
         grouped.setdefault(row["company_id"], []).append(row["id"])
-    assigned = {r["company_id"]: dict(r) for r in
-                archive.db.execute("SELECT company_id,category,method,reason FROM categories" + scope, arguments)}
+    assigned = {}
+    for row in archive.db.execute(
+            "SELECT company_id,category,rank,method,reason FROM categories" + scope + " ORDER BY rank", arguments):
+        assigned.setdefault(row['company_id'], []).append(dict(row))
     result = {}
     for row in archive.db.execute("SELECT id FROM companies" + own_scope, arguments):
-        company = assigned.get(row["id"], {"category": tier.UNCLASSIFIED, "method": "unknown", "reason": "Dati aziendali insufficienti"})
-        verdict = tier.company_verdict(company["category"], preferred)
+        categories = assigned.get(row["id"], [])
+        labels = [item['category'] for item in categories]
+        company = categories[0] if categories else {"category": tier.UNCLASSIFIED, "method": "unknown", "reason": "Dati aziendali insufficienti"}
+        verdict = tier.company_verdict(labels, preferred)
         own = {oid: roles[oid] for oid in grouped.get(row["id"], []) if oid in roles}
         result[row["id"]] = {"azienda": {"verdetto": verdict, "categoria": company["category"],
+                                        "categorie": labels,
                                         "motivo": company["reason"], "giudice": company["method"]},
                              "ruoli": own, "tier": tier.tier(verdict, own.values())}
     return result

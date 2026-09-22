@@ -100,8 +100,10 @@ class Archive:
           started_at TEXT NOT NULL, finished_at TEXT, detail TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS pipeline_cancellations(job_id INTEGER PRIMARY KEY REFERENCES pipeline_jobs(id), requested_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS feedback_company ON feedback(company_id,id);
-        CREATE TABLE IF NOT EXISTS categories(company_id TEXT PRIMARY KEY REFERENCES companies(id),
-          category TEXT NOT NULL, method TEXT NOT NULL, reason TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS categories(company_id TEXT NOT NULL REFERENCES companies(id),
+          category TEXT NOT NULL, rank INTEGER NOT NULL, confidence REAL,
+          method TEXT NOT NULL, reason TEXT NOT NULL, updated_at TEXT NOT NULL,
+          PRIMARY KEY(company_id,category), UNIQUE(company_id,rank));
         CREATE TABLE IF NOT EXISTS enrichments(task TEXT NOT NULL, record_id TEXT NOT NULL, source_hash TEXT NOT NULL,
           cache_key TEXT NOT NULL, data TEXT NOT NULL, model TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(task,record_id));
         CREATE TABLE IF NOT EXISTS feedback_detail(event_id INTEGER PRIMARY KEY REFERENCES feedback(id), reason TEXT NOT NULL,
@@ -132,6 +134,21 @@ class Archive:
         if 'description_provenance' not in {r[1] for r in self.db.execute('PRAGMA table_info(companies)')}:
             # Quale leva ha prodotto il «chi siamo» e quando: le quattro non hanno la stessa affidabilità.
             self.db.execute("ALTER TABLE companies ADD COLUMN description_provenance TEXT NOT NULL DEFAULT '{}'")
+        category_columns = {r[1] for r in self.db.execute('PRAGMA table_info(categories)')}
+        if 'rank' not in category_columns:
+            # La prima versione ammetteva una sola categoria per azienda. La migrazione conserva
+            # ogni assegnazione e la rende la prima etichetta dell'insieme multi-categoria.
+            with self.db:
+                self.db.execute('ALTER TABLE categories RENAME TO categories_single')
+                self.db.execute('''CREATE TABLE categories(
+                    company_id TEXT NOT NULL REFERENCES companies(id), category TEXT NOT NULL,
+                    rank INTEGER NOT NULL, confidence REAL, method TEXT NOT NULL,
+                    reason TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    PRIMARY KEY(company_id,category), UNIQUE(company_id,rank))''')
+                self.db.execute('''INSERT INTO categories(company_id,category,rank,confidence,method,reason,updated_at)
+                    SELECT company_id,category,1,NULL,method,reason,updated_at FROM categories_single
+                    WHERE category!='Da classificare' ''')
+                self.db.execute('DROP TABLE categories_single')
 
     def close(self):
         """Release the database connection."""
@@ -368,8 +385,11 @@ class Archive:
             conditions.append('EXISTS(SELECT 1 FROM opportunities o WHERE o.company_id=c.id' + role_where + ')')
             args.extend(role_args)
         if category:
-            conditions.append("COALESCE((SELECT category FROM categories WHERE company_id=c.id),'Da classificare')=?")
-            args.append(category)
+            if category == 'Da classificare':
+                conditions.append("NOT EXISTS(SELECT 1 FROM categories WHERE company_id=c.id)")
+            else:
+                conditions.append("EXISTS(SELECT 1 FROM categories WHERE company_id=c.id AND category=?)")
+                args.append(category)
         if query.strip():
             conditions.append("(c.name || ' ' || c.description || ' ' || c.sectors LIKE ? OR EXISTS(SELECT 1 FROM opportunities o WHERE o.company_id=c.id AND o.data LIKE ?" + role_where + '))')
             args.extend(['%' + query.strip() + '%'] * 2 + role_args)
@@ -391,7 +411,7 @@ class Archive:
         selected = ("SELECT c.*, " + status_sql + " AS status, "
                     "(SELECT count(*) FROM opportunities o WHERE o.company_id=c.id) AS opportunity_count, "
                     + matching_count + " AS matching_roles, "
-                    "COALESCE((SELECT category FROM categories WHERE company_id=c.id),'Da classificare') AS category")
+                    "COALESCE((SELECT category FROM categories WHERE company_id=c.id ORDER BY rank LIMIT 1),'Da classificare') AS category")
         sql = selected + " FROM companies c" + where + " ORDER BY " + self.SORTS[sort] + ",c.name COLLATE NOCASE,c.id LIMIT ? OFFSET ?"
         items = [dict(r) for r in self.db.execute(sql, count_args + args + [min(max(int(limit), 1), 500), max(int(offset), 0)])]
         from jobhunter.evaluation import tier as tiers

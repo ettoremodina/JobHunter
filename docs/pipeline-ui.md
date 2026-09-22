@@ -12,17 +12,13 @@ Le operazioni disponibili sono raccolta per fonte, filtri locali, recupero descr
 
 La sequenza si ferma al primo risultato parziale o errore. “Riprova” significa riaprire il passaggio, verificare i parametri e avviarlo di nuovo: i risultati validi già salvati vengono riutilizzati dove previsto dai rispettivi task. Non esistono retry automatici a pagamento. Il passaggio remoto ritenta da solo la sola richiesta che il provider ha **rifiutato** (HTTP 429 o 5xx): non ha generato niente, quindi non c'è spesa da duplicare. Un fallimento di trasporto, dove l'esito di fatturazione è ignoto, ferma la run come prima.
 
-## Pilot Qwen e ordine dei passaggi
+## Schede Qwen e ordine dei passaggi
 
-La sequenza automatica è raccolta e normalizzazione, filtri locali, recupero descrizioni eleggibili, selezione e schede con Qwen. Importare annunci non avvia più la classificazione delle aziende. Le categorie locali sono state rimosse dalla mappa. Il comando CLI esplicito resta disponibile. Le statistiche restano nella tab Metriche.
+La sequenza automatica è raccolta e normalizzazione, filtri locali, recupero descrizioni, giudice Jev e schede Qwen. Jev decide ruoli e categorie; Qwen non giudica e scrive soltanto le schede degli annunci compatibili di Tier A e B e le schede delle aziende di Tier A e B.
 
-La card “Selezione e schede con Qwen” parte da 100 aziende distinte in ordine deterministico. Per ogni azienda valuta prima i ruoli non esclusi localmente, più un campione deterministico di cinque esclusi locali complessivi per controllare falsi negativi. Il limite è configurabile con remote_audit_excluded. Non riesamina a pagamento tutti gli esclusi.
+La card Qwen usa un ordine deterministico e una sola richiesta per azienda, che contiene tutte le schede ancora mancanti di quell'azienda. I risultati validi vengono riutilizzati: una parte respinta resta da completare senza riscrivere le parti già salvate. Le aziende oltre `max_jobs` o `max_input_chars` vengono differite intere, senza troncamento.
 
-Solo quando esiste almeno un ruolo con decisione attuale keep o review, una singola chiamata company-summary produce categoria e descrizione aziendale. Seguono le sintesi dei soli ruoli sopravvissuti. Una selezione respinta dalla validazione, mancante o saltata per dimensione non autorizza l’arricchimento: viene contata in awaiting_selection. Le categorie assegnate in chat restano protette.
-
-L’anteprima è offline: dove manca la selezione, gli arricchimenti indicati sono un limite superiore, non una previsione degli esiti del modello. I report distinguono esclusi locali, audit, esclusi remoti, risultati validi, risposte respinte e aziende senza sopravvissuti. I token includono le risposte respinte; il costo monetario potrebbe non essere restituito dal provider.
-
-Le esclusioni Qwen governano la spesa di arricchimento ma restano proposte nella dashboard. Gli originali, i giudizi e le sintesi restano separati e recuperabili.
+L’anteprima è offline e conta chiamate, schede e aziende differite senza leggere la chiave. I token delle esecuzioni includono anche le risposte respinte; il costo monetario potrebbe non essere restituito dal provider. Gli originali, i giudizi e le sintesi restano separati e recuperabili.
 
 ## Stato, persistenza e interruzioni
 
@@ -48,7 +44,7 @@ Ogni card operativa e la sua finestra hanno Interrompi, abilitato solo per il la
 
 Il recupero descrizioni cancella i task ancora in coda e salva le risposte dei worker già attivi. Le fasi di normalizzazione si interrompono tramite la raccolta cui appartengono. Feedback e dettagli informativi non sono processi da interrompere. I worker avviati prima dell’aggiornamento del codice non possono riconoscere il nuovo protocollo: riavviare il server quando non ci sono lavori in corso.
 
-Le chiamate Qwen restano sequenziali, con pausa configurata in remote_llm.json. Il parallelismo è già presente nel recupero HTTP delle descrizioni, non nell’inferenza remota.
+Le chiamate Qwen sono parallele. `company_batch.workers` stabilisce quante richieste possono restare in volo; appena una termina, il pool viene rifornito senza aspettare le altre. Preparazione e scrittura SQLite restano sul thread principale. `request_delay_seconds` cadenzia le partenze fra i worker, non limita il numero di chiamate al minuto.
 
 
 ### Progresso remoto
@@ -70,7 +66,7 @@ Gli esiti dei modelli sono quelli salvati da tutte le esecuzioni: sono proposte,
 ### Unita di misura
 
 Una azienda e esclusa localmente solo se non ha annunci rimasti. Cache locale mancante o scaduta non causa esclusioni implicite.
-I giudizi Qwen salvati sui soli annunci rimasti formano quattro gruppi disgiunti: keep, review, exclude, senza giudizio. La loro somma coincide con gli annunci rimasti. Sono risultati storici salvati, non una certificazione di validita con il prompt corrente; la UI esplicita questo limite. Gli audit di annunci esclusi localmente non rientrano nella partizione. La presenza di schede aziendali non misura la selezione.
+I giudizi Jev salvati sui soli annunci passati dal regex formano quattro gruppi disgiunti: keep, review, exclude, senza giudizio. La loro somma coincide con gli annunci affidati al secondo giudice. Sono risultati storici salvati, non una certificazione di validità con le domande correnti; la UI esplicita questo limite. La presenza di schede Qwen non misura la selezione.
 La run corrente rimane separata: aziende attraversate includono quelle saltate; risultati in cache nelle vecchie run possono comprendere piu elaborazioni dello stesso annuncio. Token input/output riguardano solo la run. Nessuna operazione di filtraggio o API viene avviata dal monitor.
 
 ### Salvate: la scelta a mano, dopo la pipeline

@@ -66,8 +66,31 @@ class BatchTests(unittest.TestCase):
         self.assertNotIn('enum', schema['$defs']['job-summary']['properties']['facts']['items']['properties']['quote'])
         # Nessun giudizio: una riga porta il suo riassunto e basta.
         self.assertEqual(schema['$defs']['role']['required'], ['id', 'summary'])
+        self.assertEqual(schema['$defs']['role']['properties']['summary'], {'$ref': '#/$defs/job-summary'})
         self.assertNotIn('selection', schema['$defs'])
         self.assertNotIn('category', company['properties'])
+
+    def test_summary_payload_never_contains_candidate_profile(self):
+        """A descriptive card must not receive personal data that can turn it into a match review."""
+        with tempfile.TemporaryDirectory() as folder:
+            arc, cfg = workspace(folder, [SURVIVOR])
+            original, config_read = redirect(cfg)
+            try:
+                captured = []
+
+                def response(config, prompt, payload, key):
+                    captured.append(payload)
+                    oid = next(iter(payload['jobs']))
+                    return {'company': None, 'jobs': [{'id': oid, 'summary': card(payload, oid)}]}, {'total_tokens': 1}, []
+
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='dummy'), \
+                        patch('jobhunter.evaluation.remote_llm.request', side_effect=response), \
+                        patch('jobhunter.evaluation.company_batch.time.sleep'):
+                    run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
+                self.assertNotIn('candidate_profile', captured[0])
+                self.assertIn('field_labels', captured[0])
+            finally:
+                arc.close()
 
     def test_batch_resume_and_invalid_ids(self):
         """Two cards share one paid request; invalid responses persist usage but no derivatives."""
@@ -249,7 +272,10 @@ class BatchTests(unittest.TestCase):
                 # Azienda interessante e nessun ruolo compatibile: Tier B-attesa, la presentazione si paga.
                 cid = arc.db.execute('SELECT id FROM companies').fetchone()[0]
                 with arc.db:
-                    arc.db.execute('INSERT INTO categories VALUES(?,?,?,?,?)', (cid, 'Energia', 'jev', 'Settore «Energia» al 90%', '2026-09-20'))
+                    arc.db.execute('''INSERT INTO categories
+                        (company_id,category,rank,confidence,method,reason,updated_at)
+                        VALUES(?,?,?,?,?,?,?)''',
+                                   (cid, 'Energia', 1, 0.9, 'jev', 'Settore «Energia» al 90%', '2026-09-20'))
 
                 def card_only(config, prompt, payload, key):
                     """Return only the company card; no role survived to be summarised."""
