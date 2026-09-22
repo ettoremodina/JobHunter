@@ -31,6 +31,14 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(evaluate(dict(self.rows[0], description="5 years of experience preferred"))["status"], "potential")
         self.assertEqual(evaluate(dict(self.rows[0], description="At least 5 years of experience required"))["status"], "excluded")
 
+    def test_a_mandatory_range_starting_at_the_limit_is_out_of_profile(self):
+        """«2-3 anni» obbligatori escludono; «0-3» e «1-4» restano aperti ai junior (scelta del 22/09/2026)."""
+        role = dict(self.rows[0])
+        self.assertEqual(evaluate(dict(role, description="Mindestens 2-3 Jahre Erfahrung in Data Science"))["status"], "excluded")
+        for open_range in ("Junior (0-3 years of experience) required", "At least 1-4 years of experience",
+                           "2-3 years of experience are a plus"):
+            self.assertEqual(evaluate(dict(role, description=open_range))["status"], "potential", open_range)
+
     def test_calibrated_boundaries(self):
         """Reject physical specializations while preserving software and computational exceptions."""
         for title in ("Mechanical Engineer", "PCB Design Engineer", "Manufacturing Engineer"):

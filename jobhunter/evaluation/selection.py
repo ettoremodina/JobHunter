@@ -35,7 +35,11 @@ def evaluate(job, rules=None):
     reasons = [key for key, pattern in rules["exclude_title_patterns"].items() if re.search(pattern, title, re.I)
                and (key not in exceptions or not re.search(exceptions[key], title, re.I))]
     facts = requirements(job.get("description", ""))
-    if facts["required_years"] is not None and facts["required_years"] > rules.get("max_required_years", 2):
+    limit = rules.get("max_required_years", 2)
+    # Una forbice obbligatoria che parte gia' dal limite e lo supera («2-3 anni») e' fuori profilo;
+    # una che parte sotto («0-3», «1-4») resta aperta ai junior. Scelta dell'utente, 22/09/2026.
+    if (facts["required_years"] is not None and facts["required_years"] > limit
+            or any(low >= limit and high > limit for low, high in facts["required_ranges"])):
         reasons.append("required_experience")
     if facts["people_management"]:
         reasons.append("people_management")
@@ -148,7 +152,7 @@ def requirements(text):
     """Extract explicit requirements with quotes; absent, waived or ambiguous clauses stay unknown."""
     from jobhunter.evaluation.enrichment import lines
     text = "\n".join(lines(text))
-    mandatory, preferred, quotes = [], [], []
+    mandatory, preferred, quotes, ranges = [], [], [], []
     management = False
     restrictions = []
     section = None
@@ -161,7 +165,7 @@ def requirements(text):
             section = "preferred"
         elif re.fullmatch(r"responsibilities|benefits|about (?:us|the role|you)|what we offer|responsabilità", heading):
             section = None
-        match = re.search(r"\b(\d{1,2})(?:\s*[-–]\s*\d{1,2})?\s*\+?\s*(?:years?|anni|ans|jahre[n]?|jaar|lat|lata)\s+(?:[^\W\d_]+(?:[-’'][^\W\d_]+)*\s+){0,6}(?:d['’])?(?:experience|esperienza|expérience|erfahrung|ervaring|doświadczenia)\b", lower)
+        match = re.search(r"\b(\d{1,2})(?:\s*[-–]\s*(\d{1,2}))?\s*\+?\s*(?:years?|anni|ans|jahre[n]?|jaar|lat|lata)\s+(?:[^\W\d_]+(?:[-’'][^\W\d_]+)*\s+){0,6}(?:d['’])?(?:experience|esperienza|expérience|erfahrung|ervaring|doświadczenia)\b", lower)
         if not match:
             match = re.search(r"\bexperience\s*\((\d{1,2})\s*years?\s+or more\)", lower)
         if match:
@@ -174,6 +178,8 @@ def requirements(text):
                 preferred.append(int(match[1]))
             elif not negated and required:
                 mandatory.append(int(match[1]))
+                if match.re.groups > 1 and match[2]:
+                    ranges.append([int(match[1]), int(match[2])])
             quotes.append(sentence.strip())
         if re.search(r"(?:you will|responsibilities include|must)\s+(?:manage|lead)\s+(?:a |the |our )?team|direct reports|people management (?:is )?required", lower) and not re.search(r"no |not required|without", lower):
             management = True
@@ -181,7 +187,8 @@ def requirements(text):
         if re.search(r"must (?:reside|be based)|right to work|work authori[sz]ation|no visa sponsorship|remote (?:within|only)|residenza obbligatoria", lower):
             restrictions.append(sentence.strip())
     return {"description_usable": bool(text),
-            "required_years": max(mandatory) if mandatory else None, "preferred_years": max(preferred) if preferred else None,
+            "required_years": max(mandatory) if mandatory else None, "required_ranges": ranges,
+            "preferred_years": max(preferred) if preferred else None,
             "people_management": management, "eligibility_quotes": restrictions, "evidence": list(dict.fromkeys(quotes)),
             "unknown": [] if mandatory else ["Esperienza obbligatoria non determinata"]}
 
