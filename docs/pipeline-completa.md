@@ -82,7 +82,9 @@ giudicato.
 
 **3 · Filtro regex.** Legge **solo l'annuncio**: il titolo con i pattern di
 `config/role_filters.json`, la descrizione per anni di esperienza richiesti, gestione di
-persone e requisiti di lingua. La descrizione dell'azienda non la guarda mai.
+persone e requisiti di lingua. La descrizione dell'azienda non la guarda mai. Una forbice
+obbligatoria di anni che parte già da `max_required_years` e lo supera («2-3 anni») esclude il
+ruolo; una che parte sotto («0-3», «1-4») resta aperta ai junior (scelta del 22 settembre 2026).
 
 Può produrre un solo esito definitivo: **scarto**. Se non trova un'esclusione certa,
 l'annuncio passa a Jev. Un titolo nella famiglia preferita conserva la priorità di carriera,

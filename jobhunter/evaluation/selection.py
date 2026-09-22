@@ -118,7 +118,12 @@ def verdicts(archive, cid=None):
                              llm_judgement(saved.get(oid), "jev")) if j]
         # Sopra la cascata: tu, poi l'agente. Restano nella catena per mostrare cosa hanno cambiato.
         overrides = [j for j in (users.get(oid), agents.get(oid)) if j]
-        roles[oid] = {**tier.role_verdict(chain, overrides), "primary": chain[0]["primary"],
+        final = tier.role_verdict(chain, overrides)
+        # Un «tieni» del livello di revisione vale come ruolo prioritario: e' gia' un giudizio sul
+        # singolo ruolo, quindi fa salire anche un'azienda fuori dalle categorie preferite a
+        # B-esperienza. Senza, tenere un ruolo non spostava quasi mai il tier (utente, 22/09/2026).
+        reviewed_keep = final["giudice"] in ("utente", "agente") and final["verdetto"] == tier.KEEP
+        roles[oid] = {**final, "primary": chain[0]["primary"] or reviewed_keep,
                       "catena": chain + overrides[::-1]}
     if cid is None:
         scope, own_scope, arguments = "", "", ()

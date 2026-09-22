@@ -35,7 +35,6 @@
     "max_categories": 2,
     "category_min_score": 0.4,
     "category_single_accept": 0.6,
-    "category_pair_min_sum": 0.8,
-    "seniority_review_above": 0.5
+    "category_pair_min_sum": 0.8
   }
 }

@@ -273,9 +273,9 @@ def verdict(limits, scores, quote):
     elif excluded:
         decision, motive = 'exclude', 'Mansioni della famiglia esclusa «%s»' % family.replace('_', ' ')
     elif compatible >= limits['keep_above'] and too_senior >= limits.get('seniority_review_above', limits['flag_above']):
-        # Fra questa soglia e `flag_above` il modello non sa se il ruolo e' troppo senior: nel
-        # primo giro completo erano 91 keep su 1.114. Un ruolo adatto per mansioni non si scarta
-        # su un dubbio, ma non si tiene nemmeno: lo decidi tu (scelta dell'utente, 22/09/2026).
+        # Fra questa soglia e `flag_above` il modello non sa se il ruolo e' troppo senior. Manopola
+        # facoltativa: senza `seniority_review_above` in config il ruolo si tiene. Accesa il
+        # 22/09/2026 (121 ruoli in review), spenta lo stesso giorno dopo averli visti: l'utente li tiene.
         decision, motive = 'review', 'Mansioni compatibili ma seniority incerta (%.0f%%)' % (too_senior * 100)
         unknown = [f'Seniority incerta: {too_senior:.0%}']
     elif compatible >= limits['keep_above']:

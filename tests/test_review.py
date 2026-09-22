@@ -72,6 +72,16 @@ class ReviewLayerTests(unittest.TestCase):
         self.archive.feedback(cid, "contacted", opportunity_id=oid)
         self.assertEqual(self.role(cid, oid)["giudice"], "agente")
 
+    def test_a_reviewed_keep_counts_as_priority_and_lifts_an_outside_company(self):
+        """Un «tieni» tuo o dell'agente porta a B-esperienza anche un'azienda fuori categoria."""
+        cid, oid = self.add_job("Bank Co", "Systems Engineer", "Develop grid models", "review")
+        with self.archive.db:
+            self.archive.db.execute("UPDATE categories SET category='Finanza' WHERE company_id=?", (cid,))
+        self.assertEqual(verdicts(self.archive, cid)[cid]["tier"], "scarto")
+        self.archive.feedback(cid, "saved", opportunity_id=oid)
+        self.assertTrue(self.role(cid, oid)["primary"])
+        self.assertEqual(verdicts(self.archive, cid)[cid]["tier"], "B-esperienza")
+
     def test_an_agent_verdict_expires_with_its_rule_or_its_text(self):
         """Cambiare la regola citata o il testo dell'annuncio rimette il ruolo in coda."""
         cid, oid = self.add_job("Energy Co", "Systems Engineer", "Develop grid models", "review")

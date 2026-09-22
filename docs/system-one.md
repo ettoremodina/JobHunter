@@ -142,10 +142,11 @@ una compatibilità almeno pari a 0,60 producono `review` per segnali in conflitt
 inequivocabili, limitati a produzione, installazione, manutenzione, officina e ricambi, possono
 invece essere esclusi anche da una descrizione breve quando la compatibilità non supera 0,20. La
 domanda sulla seniority copre titoli senior o manageriali ed esperienza obbligatoria oltre due
-anni, anche in annunci non inglesi. Da `flag_above` (0,75) il ruolo è escluso. Fra
-`seniority_review_above` (0,50) e 0,75 un ruolo che sarebbe tenuto va invece in `review` con
-«Seniority incerta»: nel primo giro completo erano 91 keep su 1.114. Un ruolo non compatibile
-resta escluso anche in quella fascia.
+anni, anche in annunci non inglesi. Da `flag_above` (0,75) il ruolo è escluso. La soglia
+facoltativa `seniority_review_above` manda in `review` con «Seniority incerta» un ruolo che
+sarebbe tenuto quando la probabilità sta fra lei e 0,75. È stata accesa a 0,50 e spenta lo
+stesso giorno (22 settembre 2026), dopo che l'utente ha visto i 121 casi e ha scelto di
+tenerli: oggi non è in configurazione e quei ruoli si tengono.
 
 Un datore che opera come
 agenzia, staffing o recruiting viene classificato in `Consulenza e servizi`; non eredita il settore

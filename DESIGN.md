@@ -90,7 +90,10 @@ stanno due giudici che la **sovrascrivono** senza cancellarla. L'ordine, dal pi�
   almeno una regola che l'utente ha confermato in `user_context/selection/regole.md`. Conta
   finché il testo dell'annuncio e quello delle regole citate restano identici.
 
-La catena conserva tutti i verdetti: cambia solo quale conta. Tier, schede Qwen e sessioni
+La catena conserva tutti i verdetti: cambia solo quale conta. Un «tieni» dell'utente o
+dell'agente vale anche come ruolo **prioritario**, quindi porta a B-esperienza un'azienda fuori
+dalle categorie preferite. Senza questa regola tenere un ruolo non spostava quasi mai il tier:
+nella prima passata, 16 «tieni» dell'agente non avevano mosso nessuna azienda. Tier, schede Qwen e sessioni
 leggono il verdetto finale, quindi seguono da soli. Codice: `jobhunter/evaluation/review.py`,
 `tier.role_verdict(chain, overrides)`. Questo supera la regola dell'11 settembre per cui una
 scelta manuale restava accanto ai verdetti senza cambiarli: la tab «Salvate» resta separata e

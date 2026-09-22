@@ -66,7 +66,10 @@ class ThresholdTests(unittest.TestCase):
         self.assertEqual(self.judge(0.05, described=0.05)['decision'], 'review')
 
     def test_uncertain_seniority_sends_a_compatible_role_to_review(self):
-        """Fra `seniority_review_above` e `flag_above` il dubbio sulla seniority lo scioglie l'utente."""
+        """La fascia e' una manopola: spenta si tiene il ruolo, accesa lo si rivede a mano."""
+        # Spenta di default dal 22/09/2026: l'utente ha scelto di tenere i ruoli con seniority incerta.
+        self.assertEqual(self.judge(0.94, too_senior=0.6)['decision'], 'keep')
+        self.cfg['thresholds']['seniority_review_above'] = 0.5
         self.assertEqual(self.judge(0.94, too_senior=0.49)['decision'], 'keep')
         uncertain = self.judge(0.94, too_senior=0.6)
         self.assertEqual(uncertain['decision'], 'review')
@@ -242,7 +245,7 @@ class CombinedPassTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             old = system_one.config()
             old.update(model='jev-latest')
-            old['thresholds'].pop('seniority_review_above')
+            old['thresholds'].pop('seniority_review_above', None)
             old['decision_versions']['selection'] = '4'
             archive, path = workspace(folder, **{k: old[k] for k in ('model', 'thresholds', 'decision_versions')})
             try:
@@ -256,6 +259,8 @@ class CombinedPassTests(unittest.TestCase):
                 self.assertEqual(first['counts']['keep'], 1)
                 current = system_one.config()
                 current['output_directory'] = folder
+                # Accendere la fascia sulla seniority e' un cambio di sola regola: nessuna chiamata.
+                current['thresholds']['seniority_review_above'] = 0.5
                 path.write_text(json.dumps(current), encoding='utf-8')
                 with patch('jobhunter.evaluation.system_one.ask') as again:
                     rerun = system_one.run(archive, {'all': True}, config_path=path)

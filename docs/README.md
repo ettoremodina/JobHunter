@@ -4,6 +4,7 @@ Questo indice è l'ingresso unico alla documentazione corrente. I report di espe
 
 ## Capire il sistema
 
+- [Panoramica illustrata](jobhunter-overview.html) presenta il funzionamento ad alto livello, con diagrammi e numeri dell'archivio; è in inglese, con un pulsante per l'italiano.
 - [DESIGN.md](../DESIGN.md) definisce le decisioni di prodotto e gli invarianti della pipeline.
 - [PRODUCT.md](../PRODUCT.md) descrive l'esperienza utente e il significato delle viste.
 - [Mappa del codice e dei dati](mappa-codice-dati.md) indica dove vive ogni responsabilità.

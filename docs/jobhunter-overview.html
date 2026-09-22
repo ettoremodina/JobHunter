@@ -1,0 +1,1597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Inside JobHunter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,300..800&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,300..700;1,8..60,400&display=swap">
+<style>
+:root{
+  --paper:#F2F4F1; --panel:#FFFFFF; --panel-2:#E7ECE6; --ink:#132029; --ink-2:#43505B; --ink-3:#6B7782;
+  --rule:#D2D9D1; --grid:rgba(19,32,41,.065);
+  --co:#0F766E; --co-soft:#D2ECE7; --ro:#5B3FD9; --ro-soft:#E5E0FB;
+  --keep:#1A7F45; --keep-soft:#D4EEDD; --drop:#C23B36; --drop-soft:#F6D9D7;
+  --hold:#94600E; --hold-mark:#DE9F2B; --hold-soft:#FBE9C8; --idle:#8A949D; --idle-soft:#E0E5E8;
+  --focus:#2458D6; --tip-bg:#132029; --tip-fg:#F2F4F1;
+  --f-display:'Bricolage Grotesque',ui-sans-serif,system-ui,'Segoe UI',sans-serif;
+  --f-body:'Source Serif 4',Georgia,'Times New Roman',serif;
+  --f-mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --paper:#0E1418; --panel:#151D22; --panel-2:#1C262C; --ink:#E6ECEA; --ink-2:#AAB6BB; --ink-3:#818E97;
+    --rule:#29353C; --grid:rgba(230,236,234,.055);
+    --co:#3CC3B2; --co-soft:#123430; --ro:#A193FF; --ro-soft:#272049;
+    --keep:#4CC27E; --keep-soft:#12321F; --drop:#EF7A71; --drop-soft:#3B1C1A;
+    --hold:#F1B650; --hold-mark:#E3A637; --hold-soft:#3A2B0F; --idle:#7A8790; --idle-soft:#242F36;
+    --focus:#86A6FF; --tip-bg:#E6ECEA; --tip-fg:#0E1418;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#0E1418; --panel:#151D22; --panel-2:#1C262C; --ink:#E6ECEA; --ink-2:#AAB6BB; --ink-3:#818E97;
+  --rule:#29353C; --grid:rgba(230,236,234,.055);
+  --co:#3CC3B2; --co-soft:#123430; --ro:#A193FF; --ro-soft:#272049;
+  --keep:#4CC27E; --keep-soft:#12321F; --drop:#EF7A71; --drop-soft:#3B1C1A;
+  --hold:#F1B650; --hold-mark:#E3A637; --hold-soft:#3A2B0F; --idle:#7A8790; --idle-soft:#242F36;
+  --focus:#86A6FF; --tip-bg:#E6ECEA; --tip-fg:#0E1418;
+}
+html:not([data-lang="it"]) body [lang="it"],html[data-lang="it"] body [lang="en"]{display:none!important}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:3px;border-radius:4px}
+h1,h2,h3,h4{font-family:var(--f-display);text-wrap:balance;margin:0;color:var(--ink)}
+p{margin:0}
+b,strong{font-weight:600}
+
+/* ---------- shell ---------- */
+.shell{display:grid;grid-template-columns:268px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:env(safe-area-inset-top,0px);height:100vh;overflow-y:auto;border-right:1px solid var(--rule);padding:30px 22px;display:flex;flex-direction:column;gap:24px;background:var(--paper)}
+.brand{display:flex;flex-direction:column;gap:6px;text-decoration:none}
+.brand-name{font-family:var(--f-display);font-weight:750;font-size:26px;letter-spacing:-.02em;font-variation-settings:"wdth" 85;display:flex;align-items:center;gap:10px}
+.brand-mark{width:26px;height:26px;flex:none}
+.brand-sub{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);letter-spacing:.02em;line-height:1.45}
+.lang{display:inline-flex;align-self:flex-start;border:1px solid var(--rule);border-radius:8px;padding:2px;gap:2px;background:var(--panel)}
+.lang button{font-family:var(--f-mono);font-size:12px;font-weight:600;letter-spacing:.06em;padding:4px 11px;border:0;border-radius:6px;background:transparent;color:var(--ink-3);cursor:pointer}
+.lang button:hover{color:var(--ink)}
+.lang button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.toc{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.toc a{display:grid;grid-template-columns:28px 1fr;align-items:baseline;gap:4px;padding:7px 10px;border-radius:7px;text-decoration:none;color:var(--ink-2);font-family:var(--f-display);font-size:15.5px;font-weight:500;line-height:1.3}
+.toc a>span:first-child{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3)}
+.toc a:hover{background:var(--panel-2);color:var(--ink)}
+.toc a[aria-current="page"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--rule)}
+.toc a[aria-current="page"]>span:first-child{color:var(--ro)}
+.side-foot{margin-top:auto;font-family:var(--f-mono);font-size:11px;color:var(--ink-3);line-height:1.5}
+.axis-key{display:flex;flex-direction:column;gap:6px;font-family:var(--f-mono);font-size:11.5px;color:var(--ink-2)}
+.axis-key div{display:flex;align-items:center;gap:8px}
+.sw{display:inline-block;width:11px;height:11px;border-radius:3px;background:var(--c);flex:none}
+
+main{min-width:0;padding-inline:clamp(16px,4.5vw,64px);padding-block:44px 90px}
+.page{max-width:1080px}
+.page[hidden]{display:none!important}
+
+/* ---------- type ---------- */
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);display:flex;gap:10px;align-items:center}
+.eyebrow i{width:22px;height:1px;background:var(--ink-3);display:inline-block}
+.page-head{display:flex;flex-direction:column;gap:18px;margin-bottom:42px}
+.page-head h1{font-size:clamp(34px,4.6vw,56px);line-height:1.02;font-weight:720;letter-spacing:-.028em;font-variation-settings:"wdth" 88,"opsz" 96;max-width:18ch}
+.lede{font-size:clamp(18px,1.6vw,21px);line-height:1.55;color:var(--ink-2);max-width:62ch}
+section.block{margin-top:60px;display:flex;flex-direction:column;gap:18px}
+section.block>h2{font-size:clamp(24px,2.4vw,31px);font-weight:680;letter-spacing:-.018em;font-variation-settings:"wdth" 92;line-height:1.12;max-width:28ch}
+.prose{max-width:68ch;display:flex;flex-direction:column;gap:14px}
+.muted{color:var(--ink-2)}
+em.term{font-style:normal;font-family:var(--f-mono);font-size:.84em;background:var(--panel-2);padding:1px 6px;border-radius:4px}
+
+/* ---------- figures ---------- */
+figure{margin:0;display:flex;flex-direction:column;gap:12px}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:clamp(14px,2.2vw,26px)}
+figcaption{font-size:14.5px;line-height:1.55;color:var(--ink-2);max-width:78ch}
+figcaption b{color:var(--ink)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.scroll>svg{min-width:640px}
+.dg{width:100%;height:auto;display:block;color:var(--ink-3);overflow:visible}
+.dg text{font-family:var(--f-mono);font-size:12px;fill:var(--ink-2)}
+.dg .h{font-family:var(--f-display);font-size:15.5px;font-weight:650;fill:var(--ink)}
+.dg .s{font-size:11.5px;fill:var(--ink-3)}
+.dg .b{font-weight:600;fill:var(--ink)}
+.dg .box{fill:var(--paper);stroke:var(--rule);stroke-width:1.2}
+.dg .box-2{fill:var(--panel-2);stroke:none}
+.dg .ln{fill:none;stroke:var(--ink-3);stroke-width:1.5}
+.dg .dash{stroke-dasharray:4 5}
+.dg .t-co{fill:var(--co)} .dg .t-ro{fill:var(--ro)} .dg .t-keep{fill:var(--keep)} .dg .t-drop{fill:var(--drop)} .dg .t-hold{fill:var(--hold)}
+.dg .f-co{fill:var(--co-soft);stroke:var(--co);stroke-width:1.2} .dg .f-ro{fill:var(--ro-soft);stroke:var(--ro);stroke-width:1.2}
+.dg .f-keep{fill:var(--keep-soft);stroke:var(--keep);stroke-width:1.2} .dg .f-drop{fill:var(--drop-soft);stroke:var(--drop);stroke-width:1.2}
+.dg .f-hold{fill:var(--hold-soft);stroke:var(--hold-mark);stroke-width:1.2} .dg .f-idle{fill:var(--idle-soft);stroke:var(--idle);stroke-width:1.2}
+.dg .s-co{stroke:var(--co)} .dg .s-ro{stroke:var(--ro)} .dg .s-hold{stroke:var(--hold-mark)}
+.ah{fill:var(--ink-3)} .ah-co{fill:var(--co)} .ah-ro{fill:var(--ro)} .ah-hold{fill:var(--hold-mark)}
+.hatch-ln{stroke:var(--idle);stroke-width:1.4}
+.flow{stroke-dasharray:5 6;animation:flow 1.1s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-11}}
+
+/* ---------- hero ---------- */
+.hero{position:relative;border:1px solid var(--rule);border-radius:14px;overflow:hidden;background:
+  linear-gradient(var(--grid) 1px,transparent 1px) 0 0/24px 24px,
+  linear-gradient(90deg,var(--grid) 1px,transparent 1px) 0 0/24px 24px,var(--panel)}
+.sieve-wrap{position:relative;height:330px}
+#sieve{position:absolute;inset:0;width:100%;height:100%;display:block}
+.sv-lab{position:absolute;font-family:var(--f-mono);font-size:11.5px;line-height:1.35;color:var(--ink-2);white-space:nowrap;transform:translateX(-50%);text-align:center;pointer-events:none}
+.sv-lab b{display:block;font-family:var(--f-display);font-size:14px;font-weight:650;color:var(--ink)}
+.sv-lab.top{top:12px} .sv-lab.bot{bottom:10px}
+.sv-lab.right{transform:none;text-align:right;right:14px}
+.sv-lab.left{transform:none;text-align:left;left:14px}
+.sv-n{font-family:var(--f-display);font-size:18px;font-weight:700}
+
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+.kpi{background:var(--panel);padding:20px 20px 18px;display:flex;flex-direction:column;gap:4px}
+.kpi .k-n{font-family:var(--f-display);font-size:clamp(30px,3.6vw,46px);font-weight:720;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums;font-variation-settings:"wdth" 85}
+.kpi .k-l{font-family:var(--f-mono);font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3)}
+.kpi p{font-size:14px;color:var(--ink-2);line-height:1.45;margin-top:6px}
+
+.principles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:26px 30px}
+.pr{display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid var(--rule)}
+.pr svg{width:34px;height:34px;color:var(--ink-3)}
+.pr h3{font-size:18px;font-weight:650;letter-spacing:-.01em;line-height:1.2}
+.pr p{font-size:15px;line-height:1.55;color:var(--ink-2)}
+
+/* ---------- pipeline steps ---------- */
+.steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.step{background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:16px 16px 14px;display:flex;flex-direction:column;gap:9px;position:relative}
+.step:not(:last-child)::after{content:"";position:absolute;right:-10px;top:30px;width:8px;height:8px;border-top:1.5px solid var(--ink-3);border-right:1.5px solid var(--ink-3);transform:rotate(45deg)}
+.step-n{font-family:var(--f-mono);font-size:12px;color:var(--ink-3)}
+.step h3{font-size:18px;font-weight:680;letter-spacing:-.01em}
+.step p{font-size:14.5px;line-height:1.5;color:var(--ink-2)}
+.step dl{margin:auto 0 0;display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:13px;padding-top:10px;border-top:1px dashed var(--rule)}
+.step dt{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);padding-top:2px}
+.step dd{margin:0;color:var(--ink);line-height:1.4}
+
+/* ---------- bars & strips ---------- */
+.bars{display:flex;flex-direction:column;gap:7px}
+.bar-row{display:grid;grid-template-columns:minmax(120px,32%) minmax(0,1fr) 64px;align-items:center;gap:12px;padding:3px 0;border-radius:4px}
+.bar-row:hover{background:var(--panel-2)}
+.bar-l{font-family:var(--f-display);font-size:14.5px;font-weight:500;line-height:1.25;color:var(--ink)}
+.bar-l small{display:block;font-family:var(--f-mono);font-size:11px;font-weight:400;color:var(--ink-3)}
+.bar-t{height:16px;position:relative}
+.bar-t i{position:absolute;left:0;top:0;bottom:0;background:var(--c);border-radius:0 4px 4px 0;min-width:3px}
+.bar-v{font-family:var(--f-mono);font-size:13px;text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+.hatch{background:repeating-linear-gradient(135deg,var(--idle) 0 1.5px,transparent 1.5px 5px),var(--idle-soft)!important}
+.strip-bar{display:flex;gap:2px;height:30px;border-radius:6px;overflow:hidden}
+.strip-bar i{background:var(--c);min-width:3px;display:block}
+.strip-key{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:8px 22px;font-size:14.5px}
+.strip-key li{display:flex;align-items:baseline;gap:7px}
+.strip-key .sw{transform:translateY(1px)}
+.strip-key b{font-family:var(--f-mono);font-weight:500;font-variant-numeric:tabular-nums}
+.strip-key em{font-style:normal;font-family:var(--f-mono);font-size:12px;color:var(--ink-3)}
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+
+/* ---------- chips, pills ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--f-mono);font-size:12.5px;padding:3px 10px;border-radius:999px;border:1px solid var(--rule);color:var(--ink-2);background:var(--paper);line-height:1.5}
+.chip.co{background:var(--co-soft);color:var(--co);border-color:transparent}
+.chip.ro{background:var(--ro-soft);color:var(--ro);border-color:transparent}
+.chip.drop{background:var(--drop-soft);color:var(--drop);border-color:transparent}
+.pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:12px;font-weight:600;padding:2px 9px;border-radius:5px;letter-spacing:.02em;white-space:nowrap}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.p-keep{background:var(--keep-soft);color:var(--keep)} .p-drop{background:var(--drop-soft);color:var(--drop)}
+.p-hold{background:var(--hold-soft);color:var(--hold)} .p-idle{background:var(--idle-soft);color:var(--ink-2)}
+
+/* ---------- cards ---------- */
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:8px}
+.card h3{font-size:17px;font-weight:660;letter-spacing:-.01em}
+.card p{font-size:15px;line-height:1.52;color:var(--ink-2)}
+.card .tag{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3)}
+.note{border-left:2px solid var(--ink-3);padding:4px 0 4px 16px;font-size:15.5px;color:var(--ink-2);max-width:70ch}
+.note b{color:var(--ink)}
+.callout{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center;background:var(--panel-2);border-radius:12px;padding:18px 22px}
+.callout .big{font-family:var(--f-display);font-size:40px;font-weight:720;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+.callout p{font-size:15.5px;color:var(--ink-2)}
+
+/* ---------- questions ---------- */
+.qgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.q{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:7px}
+.q-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.q-name{font-family:var(--f-display);font-size:15px;font-weight:650;color:var(--ink)}
+.q-type{font-family:var(--f-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;padding:2px 7px;border-radius:4px;background:var(--ro-soft);color:var(--ro);white-space:nowrap}
+.q-type.ch{background:var(--co-soft);color:var(--co)}
+.q p{font-size:14.5px;line-height:1.48;color:var(--ink-2)}
+
+/* ---------- simulator ---------- */
+.sim{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.2fr);gap:28px}
+.sim-ctrl{display:flex;flex-direction:column;gap:14px}
+.sim-h{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3)}
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+.presets button{font-family:var(--f-mono);font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);cursor:pointer}
+.presets button:hover{border-color:var(--ink-3)}
+.presets button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.slider{display:grid;grid-template-columns:1fr 46px;gap:2px 10px;align-items:center}
+.slider label{font-family:var(--f-display);font-size:14.5px;font-weight:550;grid-column:1/-1}
+.slider input{width:100%;accent-color:var(--ro)}
+.slider output{font-family:var(--f-mono);font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
+.sim select{font:inherit;font-size:14.5px;padding:6px 8px;border-radius:7px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);width:100%;grid-column:1/-1}
+.sim-out{display:flex;flex-direction:column;gap:16px}
+.verdict{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;border-radius:10px;background:var(--panel-2)}
+.verdict small{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3)}
+.verdict .pill{font-size:15px;padding:5px 12px}
+.verdict span:last-child{font-size:15px;color:var(--ink-2);flex-basis:100%}
+.ruler{display:flex;flex-direction:column;gap:6px}
+.ruler-track{position:relative;padding-top:4px}
+.ruler-bar{display:flex;gap:2px;height:12px;border-radius:6px;overflow:hidden}
+.ruler-bar i{display:block}
+.ruler-mark{position:absolute;top:0;width:3px;height:20px;background:var(--ink);border-radius:2px;transform:translateX(-1.5px);transition:left .15s}
+.ruler-lab{display:flex;gap:2px;font-family:var(--f-mono);font-size:11px;color:var(--ink-3)}
+.ruler-lab span{text-align:center}
+.ladder{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;counter-reset:l}
+.ladder li{display:grid;grid-template-columns:20px 1fr auto auto;gap:10px;align-items:center;padding:7px 10px;border-radius:7px;font-size:14.2px;line-height:1.35;color:var(--ink-2);counter-increment:l}
+.ladder li::before{content:counter(l);font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3)}
+.ladder .st{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);text-align:right;min-width:56px}
+.ladder li.fired{background:var(--panel-2);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--ink)}
+.ladder li.fired .st{color:var(--ink);font-weight:600}
+.ladder li.passed .pill{opacity:.4}
+.ladder li.skip{opacity:.38}
+
+/* ---------- tier matrix ---------- */
+.matrix{display:grid;grid-template-columns:150px repeat(3,minmax(0,1fr));gap:6px}
+.mx-h{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);display:flex;align-items:flex-end;padding:6px 4px;line-height:1.35}
+.mx-r{font-family:var(--f-display);font-size:15px;font-weight:600;display:flex;flex-direction:column;justify-content:center;padding-right:8px;line-height:1.25}
+.mx-r small{display:block;font-family:var(--f-mono);font-size:11px;font-weight:400;color:var(--ink-3)}
+.cell{border-radius:9px;padding:14px 14px 12px;min-height:92px;display:flex;flex-direction:column;justify-content:space-between;gap:6px;background:var(--c-soft);color:var(--c)}
+.cell b{font-family:var(--f-display);font-size:18px;font-weight:720;letter-spacing:-.01em}
+.cell span{font-size:13px;line-height:1.35;color:var(--ink-2)}
+.c-A{--c:var(--keep);--c-soft:var(--keep-soft)} .c-Ba{--c:var(--co);--c-soft:var(--co-soft)} .c-Be{--c:var(--ro);--c-soft:var(--ro-soft)}
+.c-E{--c:var(--ink-2);--c-soft:var(--idle-soft);background:repeating-linear-gradient(135deg,transparent 0 6px,var(--grid) 6px 7.5px),var(--idle-soft)} .c-S{--c:var(--ink-3);--c-soft:var(--panel-2)}
+
+/* ---------- override stack ---------- */
+.stack{display:flex;flex-direction:column;gap:6px}
+.lvl{display:grid;grid-template-columns:120px minmax(0,1fr) 170px;gap:16px;align-items:center;background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px 16px}
+.lvl h3{font-size:18px;font-weight:700;display:flex;flex-direction:column}
+.lvl h3 small{font-family:var(--f-mono);font-size:11px;font-weight:400;color:var(--ink-3);letter-spacing:.04em}
+.lvl p{font-size:14.5px;color:var(--ink-2);line-height:1.48}
+.lvl .ex{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-family:var(--f-mono);font-size:11px;color:var(--ink-3)}
+.lvl.win{box-shadow:inset 0 0 0 2px var(--ink)}
+.lvl:nth-child(2){margin-inline:14px} .lvl:nth-child(3){margin-inline:28px} .lvl:nth-child(4){margin-inline:42px}
+
+/* ---------- routes ---------- */
+.routes{display:flex;flex-direction:column;border-top:1px solid var(--rule)}
+.route{display:grid;grid-template-columns:minmax(0,1fr) 34px minmax(0,1fr) minmax(0,.9fr);gap:14px;align-items:center;padding:13px 4px;border-bottom:1px solid var(--rule)}
+.route .from{font-size:15.5px}
+.route .arrow{height:2px;background:var(--ink-3);position:relative}
+.route .arrow::after{content:"";position:absolute;right:-1px;top:-4px;border:5px solid transparent;border-left:7px solid var(--ink-3);border-right:0}
+.route .to{font-family:var(--f-display);font-weight:620;font-size:15.5px}
+.route .fx{font-family:var(--f-mono);font-size:12px;color:var(--ink-3);line-height:1.45}
+.rules{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.rule{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:13px 14px;display:flex;flex-direction:column;gap:7px}
+.rule-id{font-family:var(--f-mono);font-size:12px;font-weight:600;color:var(--ro)}
+.rule h4{font-size:15px;font-weight:650;line-height:1.25}
+.rule p{font-size:13.5px;line-height:1.45;color:var(--ink-2)}
+
+/* ---------- mocks ---------- */
+.docs{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.doc{background:var(--paper);border:1px solid var(--rule);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;font-size:13.5px;line-height:1.45}
+.doc .d-title{font-family:var(--f-display);font-weight:650;font-size:15px}
+.doc .d-role{background:var(--ro-soft);border-radius:6px;padding:8px 10px;color:var(--ink)}
+.doc .d-co{background:var(--co-soft);border-radius:6px;padding:8px 10px;color:var(--ink);outline:1.5px dashed var(--co);outline-offset:-1.5px}
+.doc small{font-family:var(--f-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3)}
+.chain{display:flex;flex-wrap:wrap;align-items:stretch}
+.link{background:var(--panel);border:1px solid var(--rule);padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:150px;flex:1}
+.link:first-child{border-radius:10px 0 0 10px}
+.link:last-child{border-radius:0 10px 10px 0;background:var(--panel-2)}
+.link+.link{border-left:0}
+.link small{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3)}
+.link p{font-size:13px;line-height:1.4;color:var(--ink-2)}
+.link.won{box-shadow:inset 0 0 0 2px var(--ink);position:relative;z-index:1}
+.qcard{background:var(--paper);border:1px solid var(--rule);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+.qcard h4{font-size:19px;font-weight:700}
+.qcard ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:14.5px}
+.ref{font-family:var(--f-mono);font-size:10.5px;background:var(--panel-2);color:var(--ink-2);border-radius:4px;padding:0 5px;margin-left:4px;vertical-align:1px}
+.kick{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.saved-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.saved-grid ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column}
+.saved-grid li{padding:9px 0;border-top:1px solid var(--rule);font-size:15px;display:flex;gap:10px;align-items:baseline}
+.saved-grid li::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--c);flex:none;transform:translateY(-1px)}
+table.t{border-collapse:collapse;width:100%;font-size:14.5px}
+table.t th{text-align:left;font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:500;padding:8px 10px;border-bottom:1px solid var(--rule)}
+table.t td{padding:11px 10px;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.45}
+table.t td:first-child{font-family:var(--f-display);font-weight:600}
+.fallback{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.fb{padding:16px 18px;border:1px solid var(--rule);background:var(--panel);display:flex;flex-direction:column;gap:6px}
+.fb:first-child{border-radius:10px 0 0 10px} .fb:last-child{border-radius:0 10px 10px 0}
+.fb+.fb{border-left:0}
+.fb small{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.07em}
+.fb h4{font-size:16px;font-weight:650}
+.fb p{font-size:14px;color:var(--ink-2);line-height:1.45}
+.fb .miss{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);margin-top:auto;padding-top:6px}
+.pager{display:flex;justify-content:space-between;gap:12px;margin-top:80px;padding-top:22px;border-top:1px solid var(--rule)}
+.pager a{display:flex;flex-direction:column;gap:3px;text-decoration:none;padding:10px 14px;border-radius:9px;max-width:48%}
+.pager a:hover{background:var(--panel-2)}
+.pager a small{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase}
+.pager a span{font-family:var(--f-display);font-size:18px;font-weight:650}
+.pager a.next{text-align:right;margin-left:auto}
+.catplot{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:26px;align-items:start}
+.catplot svg{touch-action:none}
+.catplot .knob{cursor:grab}
+.checks{display:flex;flex-direction:column;gap:8px;font-size:15px}
+.checks label{display:flex;gap:9px;align-items:center;cursor:pointer}
+.checks input{accent-color:var(--co);width:16px;height:16px;flex:none}
+.cat-out{background:var(--panel-2);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.cat-out b{font-family:var(--f-display);font-size:19px;font-weight:700}
+.cat-out span{font-family:var(--f-mono);font-size:12.5px;color:var(--ink-2)}
+.tip{position:fixed;z-index:60;pointer-events:none;background:var(--tip-bg);color:var(--tip-fg);font-family:var(--f-mono);font-size:12.5px;line-height:1.4;padding:6px 10px;border-radius:6px;max-width:300px;box-shadow:0 6px 20px -8px rgba(0,0,0,.4)}
+
+@media (max-width:1100px){
+  .steps{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .step::after{display:none}
+  .rules{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .qgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr}
+  .side{height:auto;flex-direction:row;align-items:center;gap:12px;padding:10px 16px;border-right:0;border-bottom:1px solid var(--rule);z-index:20}
+  .brand-sub,.side-foot,.axis-key{display:none}
+  .brand-name{font-size:19px}
+  .brand-mark{width:20px;height:20px}
+  .toc{flex-direction:row;overflow-x:auto;gap:2px;scrollbar-width:none;flex:1;min-width:0;order:2}
+  .lang{order:3;align-self:center;flex:none}
+  .toc a{grid-template-columns:auto auto;white-space:nowrap;font-size:14px;padding:6px 9px}
+  main{padding-block:28px 70px}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .principles,.three{grid-template-columns:1fr 1fr}
+  .sim,.catplot,.two,.saved-grid{grid-template-columns:minmax(0,1fr)}
+  .sim-ctrl,.sim-out{min-width:0}
+  .lvl{grid-template-columns:100px minmax(0,1fr)}
+  .lvl .ex{display:none}
+}
+@media (max-width:620px){
+  body{font-size:16px}
+  .brand-name span{display:none}
+  .steps,.principles,.three,.qgrid,.rules,.docs,.fallback{grid-template-columns:1fr}
+  .fb:first-child{border-radius:10px 10px 0 0} .fb:last-child{border-radius:0 0 10px 10px} .fb+.fb{border-left:1px solid var(--rule);border-top:0}
+  .matrix{grid-template-columns:92px repeat(3,minmax(0,1fr));gap:4px}
+  .cell{padding:9px;min-height:78px} .cell b{font-size:14px} .cell span{display:none}
+  .mx-r{font-size:13px}
+  .route{grid-template-columns:1fr;gap:4px}
+  .route .arrow{display:none}
+  .route .to::before{content:"→ ";color:var(--ink-3)}
+  .lvl{grid-template-columns:1fr;gap:6px}
+  .lvl:nth-child(n){margin-inline:0}
+  .bar-row{grid-template-columns:minmax(0,40%) minmax(0,1fr) 54px;gap:8px}
+  .sieve-wrap{height:300px}
+  .sv-lab.hide-sm{display:none}
+  .link{min-width:0;flex-basis:100%}
+  .link:first-child{border-radius:10px 10px 0 0} .link:last-child{border-radius:0 0 10px 10px}
+  .link+.link{border-left:1px solid var(--rule);border-top:0}
+  .callout{grid-template-columns:1fr}
+  .kpis[data-cols="3"]{grid-template-columns:1fr}
+  .ladder li{grid-template-columns:20px minmax(0,1fr) auto}
+  .ladder .st{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  .flow{animation:none}
+  *{transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+    <marker id="ah-co" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-co"/></marker>
+    <marker id="ah-ro" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-ro"/></marker>
+    <marker id="ah-hold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-hold"/></marker>
+    <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" class="hatch-ln"/></pattern>
+  </defs>
+</svg>
+
+<div class="shell">
+  <aside class="side">
+    <a class="brand" href="#overview">
+      <span class="brand-name">
+        <svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="6" fill="none" stroke="var(--ink)" stroke-width="1.6"/><line x1="6" y1="20" x2="20" y2="20" stroke="var(--ro)" stroke-width="2.2" stroke-linecap="round"/><line x1="6" y1="20" x2="6" y2="6" stroke="var(--co)" stroke-width="2.2" stroke-linecap="round"/><circle cx="17" cy="9" r="2.6" fill="var(--keep)"/></svg>
+        <span>JobHunter</span>
+      </span>
+      <span class="brand-sub" data-it="Come funziona, dall'annuncio alla scelta finale">How it works, from job ad to final choice</span>
+    </a>
+    <div class="lang" role="group" aria-label="Language" data-aria-it="Lingua">
+      <button type="button" data-l="en" aria-pressed="true">EN</button>
+      <button type="button" data-l="it" aria-pressed="false">IT</button>
+    </div>
+    <ol class="toc" id="toc">
+      <li><a href="#overview"><span>01</span><span data-it="Panoramica">Overview</span></a></li>
+      <li><a href="#pipeline"><span>02</span><span data-it="La pipeline">The pipeline</span></a></li>
+      <li><a href="#collection"><span>03</span><span data-it="Raccolta dei dati">Data collection</span></a></li>
+      <li><a href="#profile"><span>04</span><span data-it="Profilo utente">User profile</span></a></li>
+      <li><a href="#roles"><span>05</span><span data-it="Valutazione dei ruoli">Role evaluation</span></a></li>
+      <li><a href="#companies"><span>06</span><span data-it="Classificazione aziende">Company classification</span></a></li>
+      <li><a href="#tiers"><span>07</span><span data-it="I Tier">Tiers</span></a></li>
+      <li><a href="#review"><span>08</span><span data-it="Revisione manuale">Manual review</span></a></li>
+      <li><a href="#traceability"><span>09</span><span data-it="Tracciabilità">Traceability</span></a></li>
+    </ol>
+    <div class="axis-key">
+      <div><span class="sw" style="--c:var(--co)"></span><span data-it="asse azienda">company axis</span></div>
+      <div><span class="sw" style="--c:var(--ro)"></span><span data-it="asse ruolo · annunci">role axis · job ads</span></div>
+      <div><span class="sw" style="--c:var(--keep)"></span><span data-it="tieni">keep</span></div>
+      <div><span class="sw" style="--c:var(--hold-mark)"></span><span data-it="non so">unsure</span></div>
+      <div><span class="sw" style="--c:var(--drop)"></span><span data-it="scarta">discard</span></div>
+    </div>
+    <p class="side-foot" data-it="Numeri misurati sull'archivio il 22 settembre 2026.">Figures measured on the archive on 22 September 2026.</p>
+  </aside>
+
+<main id="main">
+
+<!-- ======================= 01 OVERVIEW ======================= -->
+<article class="page" id="overview" data-en="Overview" data-it-title="Panoramica">
+  <header class="page-head">
+    <p class="eyebrow"><i></i><span data-it="Capitolo 01 · Panoramica">Chapter 01 · Overview</span></p>
+    <h1 data-it="Da 23.049 annunci a una lista corta di aziende">From 23,049 job ads to a short list of companies</h1>
+    <p class="lede" lang="en">JobHunter is a personal archive of companies and job ads. It collects broadly from several job boards, groups everything by company, and runs each ad past a series of judges, from the cheapest to the most careful. What remains is a short list, and the final say stays with the user.</p>
+    <p class="lede" lang="it">JobHunter è un archivio personale di aziende e annunci di lavoro. Raccoglie in modo largo da più bacheche, raggruppa tutto per azienda e fa passare ogni annuncio davanti a una serie di giudici, dal più economico al più attento. Alla fine resta una lista corta, e la decisione finale resta all'utente.</p>
+  </header>
+
+  <figure>
+    <div class="hero">
+      <div class="sieve-wrap">
+        <canvas id="sieve" aria-hidden="true"></canvas>
+        <div class="sv-lab left top hide-sm"><b data-it="23.049 annunci">23,049 job ads</b><span data-it="da 4 fonti">from 4 sources</span></div>
+        <div class="sv-lab top" style="left:31%"><b data-it="Filtro a regole">Rule filter</b><span data-it="esclusioni certe">clear exclusions</span></div>
+        <div class="sv-lab top hide-sm" style="left:52%"><b data-it="C'è un testo?">Any text?</b><span data-it="senza, nessun giudizio">if not, no judgement</span></div>
+        <div class="sv-lab top" style="left:73%"><b>Jev</b><span data-it="legge le mansioni">reads the duties</span></div>
+        <div class="sv-lab bot" style="left:31%"><span class="sv-n" style="color:var(--drop)" data-it="14.272">14,272</span><br><span data-it="scartati">discarded</span></div>
+        <div class="sv-lab bot hide-sm" style="left:52%"><span class="sv-n" style="color:var(--ink-3)" data-it="2.247">2,247</span><br><span data-it="in attesa">on hold</span></div>
+        <div class="sv-lab bot" style="left:73%"><span class="sv-n" style="color:var(--drop)" data-it="4.211">4,211</span><br><span data-it="scartati">discarded</span></div>
+        <div class="sv-lab right" style="top:64px"><span class="sv-n" style="color:var(--hold)">810</span><br><span data-it="non so, all'utente">unsure, to the user</span></div>
+        <div class="sv-lab right" style="top:150px"><span class="sv-n" style="color:var(--keep)" data-it="1.509">1,509</span><br><span data-it="compatibili">compatible</span></div>
+      </div>
+    </div>
+    <figcaption lang="en"><b>The sieve.</b> Each dot is a job ad, in the archive's real proportions. The rule filter discards 62%; a quarter of the rest waits because there is no text to read; of the ads Jev judges, about one in four is compatible. Uncertain ads are not thrown away: they go to the user.</figcaption>
+    <figcaption lang="it"><b>Il setaccio.</b> Ogni punto è un annuncio, con le proporzioni reali dell'archivio. Il filtro a regole ne scarta il 62%; un quarto dei rimanenti resta in attesa perché manca il testo da leggere; di quelli che Jev giudica, circa uno su quattro è compatibile. Gli annunci incerti non vengono buttati: arrivano all'utente.</figcaption>
+  </figure>
+
+  <section class="block">
+    <div class="kpis">
+      <div class="kpi"><span class="k-l" data-it="annunci raccolti">job ads collected</span><span class="k-n" data-it="23.049">23,049</span><p data-it="da quattro bacheche">from four job boards</p></div>
+      <div class="kpi"><span class="k-l" data-it="aziende">companies</span><span class="k-n" style="color:var(--co)" data-it="5.908">5,908</span><p data-it="ognuna una volta sola, con i suoi annunci">each listed once, with its ads inside</p></div>
+      <div class="kpi"><span class="k-l" data-it="ruoli compatibili">compatible roles</span><span class="k-n" style="color:var(--ro)" data-it="1.509">1,509</span><p data-it="tenuti dopo aver letto le mansioni">kept after reading the duties</p></div>
+      <div class="kpi"><span class="k-l" data-it="aziende in Tier A">Tier A companies</span><span class="k-n" style="color:var(--keep)">198</span><p data-it="settore preferito e un ruolo adatto">preferred sector and a fitting role</p></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Due domande separate: azienda e ruolo">Two separate questions: company and role</h2>
+    <div class="prose">
+      <p lang="en">The tool answers two questions that don't coincide: <b style="color:var(--co)">which companies are interesting</b>, whether or not they are hiring now, and <b style="color:var(--ro)">which job ads fit the profile</b>. A company can be interesting with no open positions; a role can fit in a company that isn't. So JobHunter judges company and role on two separate <b>axes</b> and combines them only at the end, into a <b>Tier</b>.</p>
+      <p lang="it">Il tool risponde a due domande che non coincidono: <b style="color:var(--co)">quali aziende sono interessanti</b>, che stiano assumendo o no, e <b style="color:var(--ro)">quali annunci sono compatibili</b> con il profilo. Un'azienda può interessare senza posizioni aperte; un ruolo può essere adatto in un'azienda che non interessa. Per questo JobHunter giudica azienda e ruolo su due <b>assi</b> separati e li incrocia solo alla fine, in un <b>Tier</b>.</p>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Il sistema in sintesi">System overview</h2>
+    <figure class="fig">
+      <div class="scroll">
+      <svg class="dg" viewBox="0 0 1100 350" role="img" aria-label="Flow: sources, collection, rule filter, Jev, Tier, user. Summaries only for Tier A and B. Everything reads and writes a local archive. Rules confirmed in chat go back to the judges." data-aria-it="Flusso: fonti, raccolta, filtro a regole, Jev, Tier, utente. Schede solo per Tier A e B. Tutto legge e scrive in un archivio locale. Le regole confermate in chat tornano ai giudici.">
+        <path class="ln dash flow" d="M1035,92 V44 H463 V86" marker-end="url(#ah)"/>
+        <path class="ln dash" d="M657,44 V86" marker-end="url(#ah)"/>
+        <text x="700" y="36" class="s" data-it="le regole confermate in chat tornano ai giudici">rules confirmed in chat go back to the judges</text>
+        <rect class="box" x="10" y="96" width="130" height="84" rx="10"/>
+        <text class="h" x="24" y="120" data-it="Fonti">Sources</text>
+        <text class="s" x="24" y="141">ClimateTechList</text><text class="s" x="24" y="157">LinkedIn, Indeed</text><text class="s" x="24" y="173">Climatebase</text>
+        <rect class="box" x="204" y="96" width="130" height="84" rx="10"/>
+        <text class="h" x="218" y="120" data-it="Raccolta">Collection</text>
+        <text class="s" x="218" y="141" data-it="unifica i campi">unifies fields</text><text class="s" x="218" y="157" data-it="raggruppa per">groups by</text><text class="s" x="218" y="173" data-it="azienda">company</text>
+        <rect class="f-ro" x="398" y="96" width="130" height="84" rx="10"/>
+        <text class="h" x="412" y="120" data-it="Filtro">Filter</text>
+        <text class="s" x="412" y="141" data-it="a regole">rule-based</text><text class="s" x="412" y="157" data-it="scarta solo">discards only</text><text class="s" x="412" y="173" data-it="i casi certi">clear cases</text>
+        <rect class="f-ro" x="592" y="96" width="130" height="84" rx="10"/>
+        <text class="h" x="606" y="120">Jev</text>
+        <text class="s" x="606" y="141" data-it="legge mansioni">reads duties</text><text class="s" x="606" y="157" data-it="e settore">and sector</text><text class="s" x="606" y="173" data-it="in probabilità">as probabilities</text>
+        <rect class="f-keep" x="786" y="96" width="130" height="84" rx="10"/>
+        <text class="h" x="800" y="120">Tier</text>
+        <text class="s" x="800" y="141" data-it="incrocia i due">combines both</text><text class="s" x="800" y="157" data-it="assi, calcolato">axes, computed</text><text class="s" x="800" y="173" data-it="a ogni lettura">on every read</text>
+        <rect class="f-hold" x="980" y="96" width="110" height="84" rx="10"/>
+        <text class="h" x="994" y="120" data-it="Utente">User</text>
+        <text class="s" x="994" y="141" data-it="rivede i dubbi">reviews doubts</text><text class="s" x="994" y="157" data-it="e sceglie">and chooses</text>
+        <rect class="box" x="786" y="214" width="130" height="58" rx="10"/>
+        <text class="h" x="800" y="237" data-it="Schede">Summaries</text>
+        <text class="s" x="800" y="257" data-it="Qwen scrive">Qwen writes</text>
+        <line class="ln flow" x1="142" y1="138" x2="200" y2="138" marker-end="url(#ah)"/>
+        <line class="ln flow" x1="336" y1="138" x2="394" y2="138" marker-end="url(#ah)"/>
+        <line class="ln flow" x1="530" y1="138" x2="588" y2="138" marker-end="url(#ah)"/>
+        <line class="ln flow" x1="724" y1="138" x2="782" y2="138" marker-end="url(#ah)"/>
+        <line class="ln flow" x1="918" y1="138" x2="976" y2="138" marker-end="url(#ah)"/>
+        <text x="172" y="128" text-anchor="middle" class="s" data-it="annunci">raw</text><text x="172" y="156" text-anchor="middle" class="s" data-it="grezzi">ads</text>
+        <text x="366" y="128" text-anchor="middle" class="s b" data-it="23.049">23,049</text><text x="366" y="156" text-anchor="middle" class="s" data-it="righe">rows</text>
+        <text x="560" y="128" text-anchor="middle" class="s b" data-it="8.777">8,777</text><text x="560" y="156" text-anchor="middle" class="s" data-it="passano">pass</text>
+        <text x="754" y="128" text-anchor="middle" class="s" data-it="verdetti">verdicts</text><text x="754" y="156" text-anchor="middle" class="s" data-it="per asse">per axis</text>
+        <text x="948" y="128" text-anchor="middle" class="s" data-it="liste">lists</text><text x="948" y="156" text-anchor="middle" class="s" data-it="A e B">A and B</text>
+        <line class="ln" x1="851" y1="182" x2="851" y2="210" marker-end="url(#ah)"/>
+        <text x="860" y="201" class="s" data-it="solo A e B">A and B only</text>
+        <path class="ln" d="M918,243 H1035 V184" marker-end="url(#ah)"/>
+        <text x="930" y="236" class="s" data-it="non decide">decides nothing</text>
+        <rect class="box-2" x="10" y="302" width="1080" height="40" rx="9"/>
+        <text x="550" y="327" text-anchor="middle" class="b" style="font-family:var(--f-display);font-size:14px" data-it="Archivio locale · annunci, aziende, tentativi, giudizi e decisioni · nulla viene cancellato">Local archive · job ads, companies, attempts, judgements and decisions · nothing is deleted</text>
+        <line class="ln dash" x1="269" y1="182" x2="269" y2="300"/>
+        <line class="ln dash" x1="463" y1="182" x2="463" y2="300"/>
+        <line class="ln dash" x1="657" y1="182" x2="657" y2="300"/>
+        <line class="ln dash" x1="851" y1="274" x2="851" y2="300"/>
+        <line class="ln dash" x1="1035" y1="182" x2="1035" y2="300"/>
+        <text x="472" y="268" class="s" data-it="ogni passaggio legge e scrive qui">each step reads and writes here</text>
+      </svg>
+      </div>
+      <figcaption lang="en">Five stages in a row, one archive underneath. <b>The filter and Jev decide; Qwen only writes</b>, and only for companies the Tier has already admitted. Rules the user confirms in chat flow back to the judges.</figcaption>
+      <figcaption lang="it">Cinque stadi in fila, un archivio sotto a tutti. <b>Il filtro e Jev decidono, Qwen scrive soltanto</b>, e solo per le aziende che il Tier ha già ammesso. Le regole confermate dall'utente in chat tornano ai giudici.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Principi di progettazione">Design principles</h2>
+    <div class="principles">
+      <div class="pr">
+        <svg viewBox="0 0 34 34" aria-hidden="true"><line x1="6" y1="28" x2="30" y2="28" stroke="var(--ro)" stroke-width="2.4" stroke-linecap="round"/><line x1="6" y1="28" x2="6" y2="4" stroke="var(--co)" stroke-width="2.4" stroke-linecap="round"/><circle cx="23" cy="11" r="3.5" fill="var(--keep)"/></svg>
+        <h3 data-it="Due assi indipendenti">Two independent axes</h3>
+        <p data-it="Azienda e ruolo si giudicano separatamente. Nessuno dei due può cancellare l'altro.">Company and role are judged separately. Neither can cancel the other.</p>
+      </div>
+      <div class="pr">
+        <svg viewBox="0 0 34 34" aria-hidden="true"><rect x="3" y="7" width="12" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 10h11M20 17h11M20 24h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <h3 data-it="Chi decide non scrive">Deciding and writing are separate</h3>
+        <p data-it="Jev risponde con probabilità e non genera testo. Qwen scrive le schede e non decide nulla.">Jev answers with probabilities and writes no text. Qwen writes summaries and decides nothing.</p>
+      </div>
+      <div class="pr">
+        <svg viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="12" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 4"/><path d="M17 10v8l5 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+        <h3 data-it="Mancanza di prove non è un rifiuto">Missing evidence is not a rejection</h3>
+        <p data-it="Un annuncio senza testo resta in attesa. Un'azienda senza dati va in una coda di lavoro.">An ad without text waits. A company without data goes to a work queue.</p>
+      </div>
+      <div class="pr">
+        <svg viewBox="0 0 34 34" aria-hidden="true"><path d="M5 24l7-8 6 5 11-13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="29" cy="8" r="3" fill="var(--keep)"/></svg>
+        <h3 data-it="Niente di calcolato viene salvato">Nothing computed is stored</h3>
+        <p data-it="Il Tier si ricalcola a ogni lettura, così un'azienda sale appena pubblica il ruolo giusto.">The Tier is recomputed on every read, so a company moves up as soon as it posts the right role.</p>
+      </div>
+      <div class="pr">
+        <svg viewBox="0 0 34 34" aria-hidden="true"><path d="M4 8h26l-9 10v9l-8 3V18z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/></svg>
+        <h3 data-it="Si spende solo dove serve">Spend only where needed</h3>
+        <p data-it="Prima i controlli gratuiti e certi, poi quelli a pagamento. Le schede si scrivono solo dopo il Tier.">Free, certain checks first; paid ones after. Summaries are written only after the Tier.</p>
+      </div>
+      <div class="pr">
+        <svg viewBox="0 0 34 34" aria-hidden="true"><circle cx="9" cy="17" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="25" cy="9" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="25" cy="25" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M13 15l8-4M13 19l8 4" stroke="currentColor" stroke-width="2"/></svg>
+        <h3 data-it="Ogni verdetto è firmato">Every verdict is signed</h3>
+        <p data-it="Per ogni record resta scritto quale giudice ha deciso cosa, e con quale prova.">Each record keeps which judge decided what, and with which evidence.</p>
+      </div>
+    </div>
+  </section>
+</article>
+
+<!-- ======================= 02 PIPELINE ======================= -->
+<article class="page" id="pipeline" data-en="The pipeline" data-it-title="La pipeline" hidden>
+  <header class="page-head">
+    <p class="eyebrow"><i></i><span data-it="Capitolo 02 · La pipeline">Chapter 02 · The pipeline</span></p>
+    <h1 data-it="La pipeline in cinque passaggi">The pipeline in five steps</h1>
+    <p class="lede" data-it="Una catena di passaggi indipendenti. Ognuno lavora solo su ciò che il precedente non ha saputo decidere, e ognuno si può rilanciare dalla dashboard senza rifare il lavoro già valido.">A chain of independent steps. Each one works only on what the previous one couldn't decide, and each can be re-run from the dashboard without redoing valid work.</p>
+  </header>
+
+  <ol class="steps">
+    <li class="step"><span class="step-n" data-it="passaggio 1">step 1</span><h3 data-it="Raccolta">Collection</h3><p data-it="Scarica gli annunci, uniforma i campi e raggruppa per azienda.">Downloads job ads, unifies their fields and groups them by company.</p>
+      <dl><dt data-it="esito">result</dt><dd data-it="annunci e aziende in archivio">ads and companies in the archive</dd><dt data-it="costo">cost</dt><dd data-it="nessuno">none</dd></dl></li>
+    <li class="step"><span class="step-n" data-it="passaggio 2">step 2</span><h3 data-it="Filtri">Filters</h3><p data-it="Regole su titolo e testo: esperienza, seniority, lingue, mansioni fuori perimetro.">Rules on title and text: experience, seniority, languages, out-of-scope work.</p>
+      <dl><dt data-it="esito">result</dt><dd><span class="pill p-drop" data-it="scarta">discard</span> <span data-it="o passa">or pass</span></dd><dt data-it="costo">cost</dt><dd data-it="nessuno">none</dd></dl></li>
+    <li class="step"><span class="step-n" data-it="passaggio 3">step 3</span><h3 data-it="Descrizioni">Descriptions</h3><p data-it="Apre la pagina dell'annuncio e ne recupera il testo.">Opens the ad's page and fetches its text.</p>
+      <dl><dt data-it="esito">result</dt><dd data-it="testo, o «riprova più tardi»">text, or “retry later”</dd><dt data-it="costo">cost</dt><dd data-it="tempo di rete">network time</dd></dl></li>
+    <li class="step"><span class="step-n" data-it="passaggio 4">step 4</span><h3>Jev</h3><p data-it="Legge le mansioni e decide il ruolo e, se manca, il settore dell'azienda.">Reads the duties and decides the role and, if missing, the company's sector.</p>
+      <dl><dt data-it="esito">result</dt><dd><span class="pill p-keep" data-it="tieni">keep</span> <span class="pill p-hold" data-it="non so">unsure</span> <span class="pill p-drop" data-it="scarta">discard</span></dd><dt data-it="costo">cost</dt><dd data-it="≈ 1,20 $ a passata">≈ $1.20 per run</dd></dl></li>
+    <li class="step"><span class="step-n" data-it="passaggio 5">step 5</span><h3 data-it="Schede">Summaries</h3><p data-it="Qwen scrive la scheda dell'azienda e dei ruoli compatibili, solo per Tier A e B.">Qwen writes a card for the company and its compatible roles, Tier A and B only.</p>
+      <dl><dt data-it="esito">result</dt><dd data-it="schede con fatti citati">cards with cited facts</dd><dt data-it="costo">cost</dt><dd data-it="una chiamata per azienda">one call per company</dd></dl></li>
+  </ol>
+
+  <section class="block">
+    <h2 data-it="Dove finisce ogni annuncio">Where each job ad ends up</h2>
+    <figure class="fig">
+      <div class="scroll"><svg class="dg" id="sankey" viewBox="0 0 980 410" role="img" aria-label="23,049 job ads collected; the rule filter discards 14,272 and 8,777 pass; 2,247 wait without text and 6,530 are judged by Jev; Jev keeps 1,509, leaves 810 unsure and discards 4,211." data-aria-it="23.049 annunci raccolti; il filtro a regole ne scarta 14.272 e ne passano 8.777; 2.247 restano in attesa senza testo e 6.530 vengono giudicati da Jev; Jev ne tiene 1.509, 810 restano incerti e 4.211 vengono scartati."></svg></div>
+      <figcaption lang="en">Flow width is proportional to the number of ads. <b>The rule filter does most of the work for free</b>, mostly on senior and management titles. Jev only sees ads with text to read: with just a title, a model would always answer “unsure”.</figcaption>
+      <figcaption lang="it">La larghezza dei flussi è proporzionale al numero di annunci. <b>Il filtro a regole fa gratis la maggior parte del lavoro</b>, soprattutto sui titoli senior e manageriali. Jev vede solo gli annunci con un testo da leggere: con il solo titolo, un modello risponderebbe sempre «non so».</figcaption>
+    </figure>
+    <div class="callout">
+      <span class="big" style="color:var(--co)" data-it="1.110">1,110</span>
+      <p lang="en">companies host the 1,509 compatible ads: <b>198</b> end up in Tier A, <b>288</b> in Tier B, and <b>550</b> are discarded because the company is outside the preferred sectors and the role isn't strong enough on its own. See <a href="#tiers">Tiers</a>.</p>
+      <p lang="it">aziende ospitano i 1.509 annunci compatibili: <b>198</b> finiscono in Tier A, <b>288</b> in Tier B e <b>550</b> vengono scartate perché l'azienda è fuori dai settori preferiti e il ruolo non basta da solo. Vedi <a href="#tiers">I Tier</a>.</p>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Rivalutazione automatica">Automatic re-evaluation</h2>
+    <div class="prose"><p data-it="Ogni verdetto del filtro è salvato con due impronte: il testo dell'annuncio e le regole attive. Se una delle due cambia, il verdetto si ricalcola da solo, solo per gli annunci toccati.">Each filter verdict is saved with two fingerprints: the ad text and the active rules. If either changes, the verdict is recomputed automatically, only for the ads affected.</p></div>
+    <figure class="fig">
+      <div class="scroll"><svg class="dg" viewBox="0 0 900 230" role="img" aria-label="New text or a rule change alters the fingerprints; on every read, changed fingerprints trigger a recompute, otherwise the saved verdict is used." data-aria-it="Un testo nuovo o una regola cambiata modificano le impronte; a ogni lettura, se sono cambiate il verdetto si ricalcola, altrimenti si usa quello salvato.">
+        <rect class="f-ro" x="20" y="34" width="190" height="50" rx="9"/><text class="h" x="36" y="57" data-it="Arriva il testo">Text arrives</text><text class="s" x="36" y="75" data-it="descrizione recuperata">description fetched</text>
+        <rect class="f-co" x="20" y="146" width="190" height="50" rx="9"/><text class="h" x="36" y="169" data-it="Cambia una regola">A rule changes</text><text class="s" x="36" y="187" data-it="in chat o in configurazione">in chat or in config</text>
+        <rect class="box" x="290" y="76" width="190" height="78" rx="9"/><text class="h" x="306" y="100" data-it="Due impronte">Two fingerprints</text><text class="s" x="306" y="121" data-it="del testo annuncio">of the ad text</text><text class="s" x="306" y="139" data-it="delle regole attive">of the active rules</text>
+        <path class="ln" d="M212,59 C250,59 250,100 286,100" marker-end="url(#ah)"/>
+        <path class="ln" d="M212,171 C250,171 250,132 286,132" marker-end="url(#ah)"/>
+        <polygon class="box" points="590,72 650,115 590,158 530,115"/>
+        <text x="590" y="112" text-anchor="middle" class="s" data-it="a ogni lettura:">on every read:</text><text x="590" y="127" text-anchor="middle" class="s b" data-it="cambiate?">changed?</text>
+        <line class="ln" x1="482" y1="115" x2="526" y2="115" marker-end="url(#ah)"/>
+        <rect class="box" x="700" y="30" width="180" height="50" rx="9"/><text class="h" x="716" y="53" data-it="Usa il verdetto">Use the saved</text><text class="s" x="716" y="71" data-it="già salvato">verdict</text>
+        <rect class="f-keep" x="700" y="150" width="180" height="50" rx="9"/><text class="h" x="716" y="173" data-it="Ricalcola">Recompute</text><text class="s" x="716" y="191" data-it="solo quell'annuncio">that ad only</text>
+        <path class="ln" d="M620,94 C660,60 670,55 696,55" marker-end="url(#ah)"/><text x="648" y="66" class="s">no</text>
+        <path class="ln" d="M620,136 C660,170 670,175 696,175" marker-end="url(#ah)"/><text x="648" y="176" class="s" data-it="sì">yes</text>
+      </svg></div>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Gestione degli errori">Error handling</h2>
+    <div class="fig" style="padding-block:6px">
+      <table class="t">
+        <tr><td data-it="La fonte blocca (403, 429)">Source blocks (403, 429)</td><td data-it="Nessuna nuova richiesta verso quel sito per il resto del giro. I risultati già salvati restano.">No more requests to that site for the rest of the run. Saved results stay.</td></tr>
+        <tr><td data-it="Pagina non trovata (404)">Page not found (404)</td><td data-it="Si riprova più tardi. Non viene mai letto come «posizione chiusa».">Retried later. Never read as “position closed”.</td></tr>
+        <tr><td data-it="Fatturazione incerta">Uncertain billing</td><td data-it="Se una chiamata a pagamento fallisce senza sapere se è stata addebitata, il passaggio si ferma e non ritenta da solo.">If a paid call fails and it's unclear whether it was charged, the step stops and doesn't retry on its own.</td></tr>
+        <tr><td data-it="Stop dalla dashboard">Stop from the dashboard</td><td data-it="Il lavoro si ferma al primo punto sicuro e si può riprendere da lì.">The job stops at the next safe point and can resume from there.</td></tr>
+      </table>
+    </div>
+  </section>
+</article>
+
+<!-- ======================= 03 COLLECTION ======================= -->
+<article class="page" id="collection" data-en="Data collection" data-it-title="Raccolta dei dati" hidden>
+  <header class="page-head">
+    <p class="eyebrow"><i></i><span data-it="Capitolo 03 · Raccolta dei dati">Chapter 03 · Data collection</span></p>
+    <h1 data-it="Raccolta dei dati">Data collection</h1>
+    <p class="lede" data-it="La raccolta non seleziona: porta dentro tutto quello che le fonti offrono. La selezione viene dopo, con criteri che si possono cambiare senza scaricare di nuovo nulla.">Collection doesn't select: it brings in everything the sources offer. Selection happens later, with criteria that can change without downloading anything again.</p>
+  </header>
+
+  <section class="block" style="margin-top:0">
+    <h2 data-it="Fonti">Sources</h2>
+    <figure class="fig">
+      <div class="bars" id="bars-sources"></div>
+      <figcaption lang="en">Job ads per source. <b>ClimateTechList</b> is a public board of climate companies and includes the sector; <b>LinkedIn</b> and <b>Indeed</b> come through the JobSpy library; <b>Climatebase</b> is read with an automated browser. <b>inClimate</b> is configured but paused: it requires a subscription.</figcaption>
+      <figcaption lang="it">Annunci per fonte. <b>ClimateTechList</b> è una bacheca pubblica di aziende climatiche e include il settore; <b>LinkedIn</b> e <b>Indeed</b> arrivano tramite la libreria JobSpy; <b>Climatebase</b> si legge con un browser automatico. <b>inClimate</b> è configurata ma sospesa: richiede un abbonamento.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Ricerche">Search queries</h2>
+    <figure class="fig">
+      <div class="scroll"><svg class="dg" id="querygrid" viewBox="0 0 850 210" role="img" aria-label="5 searches by 21 European countries; each dot is a search run on LinkedIn and Indeed." data-aria-it="5 ricerche per 21 paesi europei; ogni punto è una ricerca eseguita su LinkedIn e Indeed."></svg></div>
+      <figcaption data-it="Cinque titoli per ventuno paesi europei, ciascuno cercato su LinkedIn e Indeed, per annunci degli ultimi 7 giorni e fino a 30 risultati per ricerca.">Five job titles across 21 European countries, each searched on LinkedIn and Indeed, for ads from the last 7 days and up to 30 results per search.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Normalizzazione">Normalization</h2>
+    <figure class="fig">
+      <div class="scroll"><svg class="dg" viewBox="0 0 1000 300" role="img" aria-label="Different field names per source flow into one common record; company fields go to the company, role fields to the job ad." data-aria-it="Nomi di campo diversi per fonte confluiscono in una scheda comune; i campi aziendali vanno sull'azienda, quelli del ruolo sull'annuncio.">
+        <text class="s" x="20" y="22" data-it="come lo chiama la fonte">how the source names it</text>
+        <text class="h" x="20" y="60" data-it="Link dell'annuncio">Job link</text><text class="s" x="20" y="80">source_url · job_url · url · original_url</text>
+        <text class="h" x="20" y="125" data-it="Settore">Sector</text><text class="s" x="20" y="145">sectors · company_vertical · company_industry</text>
+        <text class="h" x="20" y="190" data-it="Sito aziendale">Company website</text><text class="s" x="20" y="210">website_url · company_url_direct</text>
+        <text class="h" x="20" y="255" data-it="Chi siamo">About us</text><text class="s" x="20" y="275">company_description · company_info</text>
+        <path class="ln" d="M352,76 C390,76 390,110 420,110" marker-end="url(#ah)"/>
+        <path class="ln" d="M362,141 C395,141 395,188 420,188" marker-end="url(#ah)"/>
+        <path class="ln" d="M292,206 C360,206 370,214 420,214" marker-end="url(#ah)"/>
+        <path class="ln" d="M322,271 C380,271 385,240 420,240" marker-end="url(#ah)"/>
+        <text class="s" x="440" y="22" data-it="scheda comune">common record</text>
+        <rect class="box" x="424" y="34" width="200" height="222" rx="10"/>
+        <circle cx="442" cy="54" r="4" class="t-co"/><text x="454" y="58" class="b" data-it="azienda *">company *</text>
+        <circle cx="442" cy="80" r="4" class="t-ro"/><text x="454" y="84" class="b" data-it="titolo *">title *</text>
+        <circle cx="442" cy="106" r="4" class="t-ro"/><text x="454" y="110" class="b">link *</text>
+        <circle cx="442" cy="132" r="4" class="t-ro"/><text x="454" y="136" data-it="descrizione">description</text>
+        <circle cx="442" cy="158" r="4" class="t-ro"/><text x="454" y="162" data-it="luogo · data · salario">place · date · salary</text>
+        <circle cx="442" cy="184" r="4" class="t-co"/><text x="454" y="188" data-it="settore">sector</text>
+        <circle cx="442" cy="210" r="4" class="t-co"/><text x="454" y="214" data-it="sito">website</text>
+        <circle cx="442" cy="236" r="4" class="t-co"/><text x="454" y="240" data-it="chi siamo">about us</text>
+        <text class="s" x="424" y="280" data-it="* obbligatori: senza, la riga è rifiutata">* required: without it, the row is rejected</text>
+        <path class="ln s-co" d="M626,90 H716" marker-end="url(#ah-co)"/>
+        <path class="ln s-ro" d="M626,200 C680,200 680,210 716,210" marker-end="url(#ah-ro)"/>
+        <text class="s" x="636" y="80" data-it="campi aziendali">company fields</text>
+        <text class="s" x="636" y="192" data-it="campi del ruolo">role fields</text>
+        <rect class="f-co" x="720" y="44" width="260" height="92" rx="10"/>
+        <text class="h" x="738" y="70" data-it="Azienda">Company</text><text class="s" x="738" y="92" data-it="nome, sito, settore, chi siamo">name, website, sector, about us</text><text class="s" x="738" y="112" data-it="salvata una volta sola">stored once</text>
+        <rect class="f-ro" x="720" y="164" width="260" height="92" rx="10"/>
+        <text class="h" x="738" y="190" data-it="Annunci">Job ads</text><text class="s" x="738" y="212" data-it="titolo, testo, luogo, data">title, text, place, date</text><text class="s" x="738" y="232" data-it="molti per azienda">many per company</text>
+        <line class="ln" x1="850" y1="138" x2="850" y2="162"/><text x="858" y="155" class="s" data-it="1 → molti">1 → many</text>
+      </svg></div>
+      <figcaption lang="en">Each source names its fields differently; they are mapped to one common record. <b>Company data goes on the company, never on the ad</b>, so a company with twenty ads has one description and one sector. Duplicates are recognised, a richer description is never overwritten by a shorter one, and dates are recorded as sightings, not as proof the job is still open.</figcaption>
+      <figcaption lang="it">Ogni fonte chiama i campi a modo suo; vengono ricondotti a una scheda comune. <b>I dati aziendali vanno sull'azienda, mai sull'annuncio</b>, così un'azienda con venti annunci ha una sola descrizione e un solo settore. I duplicati vengono riconosciuti, una descrizione ricca non viene mai sovrascritta da una più scarna, e le date sono avvistamenti, non la prova che il ruolo sia ancora aperto.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Recupero delle descrizioni">Fetching job descriptions</h2>
+    <div class="prose">
+      <p lang="en">Many sources give only a title and a link. This step opens the ad page and reads the text from the formats job sites publish for search engines. Each attempt is logged with its result and a date to retry. <b>It never excludes anything</b>: it only decides how much evidence the next judges will have.</p>
+      <p lang="it">Molte fonti danno solo titolo e link. Questo passaggio apre la pagina dell'annuncio e legge il testo dai formati che i siti pubblicano per i motori di ricerca. Ogni tentativo viene registrato con l'esito e una data per riprovare. <b>Non esclude mai nulla</b>: decide solo quanta evidenza avranno i giudici successivi.</p>
+    </div>
+    <figure class="fig">
+      <div id="strip-desc"></div>
+      <figcaption data-it="Stato del testo per tutti gli annunci. «Bloccati» sono pagine senza un formato leggibile o fonti che rifiutano l'accesso.">Text status for all job ads. “Blocked” means pages without a readable format, or sources that refuse access.</figcaption>
+    </figure>
+    <p class="note" lang="en"><b>Fetching follows company coverage, not the filters.</b> At least one ad is fetched for every company with no other evidence, even if all its roles were discarded; otherwise the company would stay invisible.</p>
+    <p class="note" lang="it"><b>Il recupero segue la copertura aziendale, non i filtri.</b> Si scarica almeno un annuncio per ogni azienda senza altra evidenza, anche se tutti i suoi ruoli sono stati scartati; altrimenti l'azienda resterebbe invisibile.</p>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Informazioni sull'azienda">Company information</h2>
+    <div class="fallback">
+      <div class="fb"><small data-it="strada a">route a</small><h4 data-it="Scheda dell'aggregatore">Job board profile</h4><p data-it="La pagina dell'azienda sulla bacheca: spesso ha settore, sito e descrizione.">The company's page on the job board: often has sector, website and description.</p><span class="miss" data-it="se non trova nulla →">if nothing found →</span></div>
+      <div class="fb"><small data-it="strada b">route b</small><h4 data-it="Sito aziendale">Company website</h4><p data-it="Dati strutturati, poi meta-descrizione, poi la pagina «chi siamo».">Structured data, then meta description, then the “about us” page.</p><span class="miss" data-it="se non trova nulla →">if nothing found →</span></div>
+      <div class="fb"><small data-it="strada c">route c</small><h4 data-it="Testo dell'annuncio">Ad text</h4><p data-it="Il «chi siamo» dentro l'annuncio. Per LinkedIn è l'unica strada.">The “about us” part inside the ad. For LinkedIn it's the only route.</p><span class="miss" data-it="evidenza per Jev">evidence for Jev</span></div>
+    </div>
+    <figure class="fig">
+      <div class="docs">
+        <div class="doc"><small data-it="annuncio 1 · esempio">ad 1 · example</small><span class="d-title">Data Scientist</span>
+          <div class="d-role" data-it="Costruirai modelli di previsione della produzione eolica e solare…">You will build forecasting models for wind and solar output…</div>
+          <div class="d-co" data-it="Siamo una società che progetta sistemi di accumulo per la rete elettrica…">We are a company designing storage systems for the power grid…</div></div>
+        <div class="doc"><small data-it="annuncio 2 · esempio">ad 2 · example</small><span class="d-title">Simulation Engineer</span>
+          <div class="d-role" data-it="Svilupperai simulazioni termiche di celle e moduli batteria…">You will develop thermal simulations of battery cells and modules…</div>
+          <div class="d-co" data-it="Siamo una società che progetta sistemi di accumulo per la rete elettrica…">We are a company designing storage systems for the power grid…</div></div>
+      </div>
+      <figcaption lang="en"><b>The overlap rule.</b> Text repeated word for word across several ads from the same company is, by definition, the company's own description, not the role's. No model needed.</figcaption>
+      <figcaption lang="it"><b>La regola dell'intersezione.</b> Il testo ripetuto identico su più annunci della stessa azienda è per definizione la sua presentazione, non la descrizione del ruolo. Nessun modello necessario.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Geografia">Geography</h2>
+    <div class="two">
+      <figure class="fig"><div class="bars" id="bars-continents"></div><figcaption data-it="Annunci per continente. Un annuncio con più sedi conta una volta per ciascuna.">Job ads per continent. An ad with several locations counts once for each.</figcaption></figure>
+      <figure class="fig"><div class="bars" id="bars-countries"></div><figcaption data-it="I paesi con più annunci. Le ricerche su LinkedIn e Indeed coprono solo l'Europa: gli annunci negli Stati Uniti arrivano quasi tutti da ClimateTechList.">Countries with the most ads. LinkedIn and Indeed searches cover Europe only: US ads come almost entirely from ClimateTechList.</figcaption></figure>
+    </div>
+  </section>
+</article>
+
+<!-- ======================= 04 PROFILE ======================= -->
+<article class="page" id="profile" data-en="User profile" data-it-title="Profilo utente" hidden>
+  <header class="page-head">
+    <p class="eyebrow"><i></i><span data-it="Capitolo 04 · Profilo utente">Chapter 04 · User profile</span></p>
+    <h1 data-it="Profilo utente">User profile</h1>
+    <p class="lede" data-it="Il profilo descrive chi cerca lavoro e che cosa cerca. Non viene dato intero a un modello: viene tradotto in una forma diversa per ogni giudice. Ciò che si può scrivere come regola va ai giudici economici; ai modelli arriva solo ciò che richiede di capire il testo.">The profile says who is looking for work and what they want. It isn't handed whole to one model: it's translated into a different form for each judge. Whatever can be written as a rule goes to the cheap judges; only what needs real understanding reaches a model.</p>
+  </header>
+
+  <figure class="fig">
+    <div class="scroll"><svg class="dg" viewBox="0 0 1000 400" role="img" aria-label="The portfolio feeds a condensed profile, translated into five forms: rule filter, preferred sectors, Jev questions, summary context, agent rules." data-aria-it="Il portfolio alimenta un profilo condensato, tradotto in cinque forme: filtro a regole, settori preferiti, domande di Jev, contesto delle schede, regole dell'agente.">
+      <rect class="box" x="16" y="150" width="170" height="100" rx="10"/>
+      <text class="h" x="32" y="176">Portfolio</text><text class="s" x="32" y="198" data-it="esperienze e progetti">experience, projects</text><text class="s" x="32" y="216" data-it="con le prove">with evidence</text><text class="s" x="32" y="234" data-it="fonte di verità">source of truth</text>
+      <line class="ln" x1="188" y1="200" x2="240" y2="200" marker-end="url(#ah)"/>
+      <text x="214" y="190" text-anchor="middle" class="s" data-it="condensa">condenses</text>
+      <rect class="box" x="244" y="136" width="196" height="128" rx="10"/>
+      <text class="h" x="260" y="162" data-it="Profilo">Profile</text>
+      <text class="s" x="260" y="186" data-it="chi è">who they are</text><text class="s" x="260" y="206" data-it="cosa cerca">what they want</text><text class="s" x="260" y="226" data-it="cosa escludere">what to exclude</text><text class="s" x="260" y="246" data-it="vincoli">constraints</text>
+      <path class="ln s-ro" d="M442,200 C500,200 500,46 556,46" marker-end="url(#ah-ro)"/>
+      <path class="ln s-co" d="M442,200 C500,200 500,122 556,122" marker-end="url(#ah-co)"/>
+      <path class="ln s-ro" d="M442,200 C500,200 500,198 556,198" marker-end="url(#ah-ro)"/>
+      <path class="ln" d="M442,200 C500,200 500,274 556,274" marker-end="url(#ah)"/>
+      <path class="ln s-hold" d="M442,200 C500,200 500,350 556,350" marker-end="url(#ah-hold)"/>
+      <rect class="f-ro" x="560" y="18" width="424" height="56" rx="9"/><text class="h" x="576" y="41" data-it="Filtro a regole">Rule filter</text><text class="s" x="576" y="61" data-it="titoli esclusi · esperienza ≤ 2 anni · lingue">excluded titles · max 2 years required · languages</text><text class="s" x="968" y="41" text-anchor="end" data-it="gratis">free</text>
+      <rect class="f-co" x="560" y="94" width="424" height="56" rx="9"/><text class="h" x="576" y="117" data-it="Settori preferiti">Preferred sectors</text><text class="s" x="576" y="137" data-it="Energia · Clima · Mobilità · Aerospazio">Energy · Climate · Mobility · Aerospace</text><text class="s" x="968" y="117" text-anchor="end" data-it="gratis">free</text>
+      <rect class="f-ro" x="560" y="170" width="424" height="56" rx="9"/><text class="h" x="576" y="193" data-it="Domande di Jev">Jev questions</text><text class="s" x="576" y="213" data-it="mansioni compatibili · famiglie escluse · seniority">compatible duties · excluded job families · seniority</text><text class="s" x="968" y="193" text-anchor="end" data-it="≈ 1 $ a passata">≈ $1 per run</text>
+      <rect class="box" x="560" y="246" width="424" height="56" rx="9"/><text class="h" x="576" y="269" data-it="Contesto delle schede">Summary context</text><text class="s" x="576" y="289" data-it="quali fatti vale la pena estrarre">which facts are worth extracting</text><text class="s" x="968" y="269" text-anchor="end">Qwen</text>
+      <rect class="f-hold" x="560" y="322" width="424" height="56" rx="9"/><text class="h" x="576" y="345" data-it="Regole dell'agente">Agent rules</text><text class="s" x="576" y="365" data-it="R1 … R9, confermate in chat">R1 … R9, confirmed in chat</text><text class="s" x="968" y="345" text-anchor="end">chat</text>
+    </svg></div>
+    <figcaption lang="en">One profile, five translations. The colour shows where each one acts: <b style="color:var(--ro)">role</b>, <b style="color:var(--co)">company</b> or <b style="color:var(--hold)">chat review</b>.</figcaption>
+    <figcaption lang="it">Un profilo, cinque traduzioni. Il colore indica dove agisce ciascuna: <b style="color:var(--ro)">ruolo</b>, <b style="color:var(--co)">azienda</b> o <b style="color:var(--hold)">revisione in chat</b>.</figcaption>
+  </figure>
+
+  <section class="block">
+    <h2 data-it="Il profilo attuale, come esempio">The current profile, as an example</h2>
+    <div class="two">
+      <div class="card"><span class="tag" data-it="ruoli compatibili">compatible roles</span>
+        <div class="chips">
+          <span class="chip ro">data scientist</span><span class="chip ro">machine learning engineer</span><span class="chip ro">research engineer / scientist</span><span class="chip ro" data-it="ricerca operativa e ottimizzazione">operations research, optimization</span><span class="chip ro" data-it="simulazione e modellazione">simulation and modelling</span><span class="chip ro" data-it="calcolo scientifico">scientific computing</span><span class="chip ro">AI, LLM, RAG, agents</span><span class="chip ro">MLOps</span><span class="chip ro">data engineering</span><span class="chip ro">data analytics, GIS</span><span class="chip ro" data-it="software engineering generalista">general software engineering</span>
+        </div></div>
+      <div class="card"><span class="tag" data-it="settori preferiti">preferred sectors</span>
+        <div class="chips"><span class="chip co" data-it="Energia">Energy</span><span class="chip co" data-it="Ambiente e clima">Environment & climate</span><span class="chip co" data-it="Mobilità e trasporti">Mobility & transport</span><span class="chip co" data-it="Aerospazio">Aerospace</span></div>
+        <p data-it="Data science e AI interessano anche fuori da questi settori.">Data science and AI are interesting outside these sectors too.</p></div>
+      <div class="card"><span class="tag" data-it="famiglie escluse">excluded job families</span>
+        <div class="chips"><span class="chip drop" data-it="amministrazione, HR, legale">admin, HR, legal</span><span class="chip drop" data-it="commerciale e marketing">sales & marketing</span><span class="chip drop" data-it="supporto clienti">customer support</span><span class="chip drop" data-it="annotazione manuale per AI">manual AI labelling</span><span class="chip drop" data-it="puro sviluppo web e mobile">pure web & mobile dev</span><span class="chip drop" data-it="puro coordinamento">pure coordination</span><span class="chip drop" data-it="produzione e installazione">manufacturing, installation</span><span class="chip drop" data-it="laboratorio sperimentale">wet-lab research</span></div></div>
+      <div class="card"><span class="tag" data-it="vincoli">constraints</span>
+        <table class="t">
+          <tr><td data-it="Esperienza">Experience</td><td data-it="al massimo 2 anni obbligatori; quella preferenziale non conta">at most 2 years required; “preferred” doesn't count</td></tr>
+          <tr><td data-it="Lingue">Languages</td><td data-it="italiano e inglese; altre escludono solo se obbligatorie">Italian and English; others exclude only if required</td></tr>
+          <tr><td data-it="Stage">Internships</td><td data-it="esclusi; un dottorato resta possibile">excluded; a PhD position is still possible</td></tr>
+          <tr><td data-it="Nessun vincolo">No limits</td><td data-it="di paese, salario, modalità di lavoro o tecnologie">on country, salary, remote policy or tech stack</td></tr>
+        </table></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Dove va una nuova preferenza">Where a new preference goes</h2>
+    <div class="two">
+      <figure class="fig">
+        <svg class="dg" viewBox="0 0 460 250" role="img" aria-label="A preference that can be a rule goes to the cheap judges; one that needs understanding goes to the model, collected for a single run." data-aria-it="Una preferenza esprimibile come regola va ai giudici economici; una che richiede di capire il testo va al modello, raccolta per una sola passata.">
+          <rect class="box" x="150" y="12" width="160" height="44" rx="9"/><text class="h" x="230" y="39" text-anchor="middle" data-it="Nuova preferenza">New preference</text>
+          <path class="ln" d="M200,58 C200,90 100,90 100,122" marker-end="url(#ah)"/>
+          <path class="ln" d="M260,58 C260,90 360,90 360,122" marker-end="url(#ah)"/>
+          <text x="104" y="92" class="s" text-anchor="middle" data-it="si scrive come regola">can be a rule</text>
+          <text x="364" y="92" class="s" text-anchor="middle" data-it="serve capire il testo">needs understanding</text>
+          <rect class="f-co" x="14" y="126" width="196" height="108" rx="9"/><text class="h" x="30" y="151" data-it="Giudici economici">Cheap judges</text><text class="s" x="30" y="173" data-it="regole sui titoli, liste">title rules, lists</text><text class="s" x="30" y="191" data-it="nessun giudizio pagato">no paid judgement</text><text class="s" x="30" y="209" data-it="va perso">is lost</text><text class="s b" x="30" y="226" data-it="scelta predefinita">default choice</text>
+          <rect class="f-ro" x="250" y="126" width="196" height="108" rx="9"/><text class="h" x="266" y="151" data-it="Domanda al modello">Question to the model</text><text class="s" x="266" y="173" data-it="si raccolgono e si">collected, then</text><text class="s" x="266" y="191" data-it="applicano in una">applied in</text><text class="s" x="266" y="209" data-it="sola passata">a single run</text>
+        </svg>
+      </figure>
+      <div class="prose">
+        <p lang="en">Changing what a model reads invalidates the judgements already paid for. So a preference goes to the cheap rules whenever it can be stated literally, and to the model only when it truly needs understanding.</p>
+        <p lang="en">The result: <b>the more the tool is used, the more the rules filter, and the less work reaches the model.</b> A choice about one company never becomes a rule for future ones.</p>
+        <p lang="it">Cambiare ciò che un modello legge invalida i giudizi già pagati. Per questo una preferenza va alle regole economiche quando si può scrivere in modo letterale, e al modello solo quando serve davvero capire il testo.</p>
+        <p lang="it">Il risultato: <b>più il tool viene usato, più le regole filtrano e meno lavoro arriva al modello.</b> Una scelta su una singola azienda non diventa mai una regola per quelle future.</p>
+      </div>
+    </div>
+    <p class="note" data-it="Ogni copia di JobHunter ha un solo profilo. Prepararla per un'altra persona significa scrivere il suo profilo, non ereditare questo.">Each copy of JobHunter has one profile. Setting it up for someone else means writing their own profile, not inheriting this one.</p>
+  </section>
+</article>
+
+<!-- ======================= 05 ROLES ======================= -->
+<article class="page" id="roles" data-en="Role evaluation" data-it-title="Valutazione dei ruoli" hidden>
+  <header class="page-head">
+    <p class="eyebrow"><i></i><span data-it="Capitolo 05 · Valutazione dei ruoli">Chapter 05 · Role evaluation</span></p>
+    <h1 data-it="Valutazione dei ruoli">Role evaluation</h1>
+    <p class="lede" data-it="Due giudici automatici guardano ogni ruolo. Il filtro a regole può solo scartare ciò che è chiaramente fuori profilo. Jev legge le mansioni e risponde a domande precise con probabilità. Se nessuno dei due è sicuro, il ruolo resta «non so» e passa all'utente.">Two automatic judges look at each role. The rule filter can only discard what is clearly out of scope. Jev reads the duties and answers precise questions with probabilities. When neither is sure, the role is marked “unsure” and goes to the user.</p>
+  </header>
+
+  <section class="block" style="margin-top:0">
+    <h2 data-it="Passo 1: filtro a regole">Step 1: rule filter</h2>
+    <div class="prose">
+      <p lang="en">The filter reads <b>only the ad</b>: the title, matched against lists of patterns, and the description, where it looks for required years of experience, people management and required languages. It has one possible outcome: <span class="pill p-drop">discard</span>. Everything else goes on to Jev.</p>
+      <p lang="it">Il filtro legge <b>solo l'annuncio</b>: il titolo, confrontato con elenchi di pattern, e la descrizione, dove cerca anni di esperienza obbligatori, gestione di persone e lingue richieste. Ha un solo esito possibile: <span class="pill p-drop">scarta</span>. Tutto il resto passa a Jev.</p>
+    </div>
+    <figure class="fig">
+      <div class="bars" id="bars-regex"></div>
+      <figcaption data-it="I 14.272 annunci scartati dal filtro, per motivo principale. Quasi metà sono titoli senior.">The 14,272 ads discarded by the filter, by main reason. Almost half are senior titles.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Requisiti di esperienza">Experience requirements</h2>
+    <figure class="fig">
+      <div class="scroll"><svg class="dg" id="years" viewBox="0 0 860 300" role="img" aria-label="Experience requirements on a 0 to 6 year scale with the threshold at 2: 0-3 and 1-4 stay open, at least 2 stays open, 2-3 and 3+ are excluded, 5 preferred doesn't count." data-aria-it="Requisiti di esperienza su una scala da 0 a 6 anni con soglia 2: 0-3 e 1-4 restano aperti, almeno 2 resta aperto, 2-3 e 3+ vengono esclusi, 5 preferibili non conta."></svg></div>
+      <figcaption data-it="La soglia è 2 anni obbligatori. Una forbice che parte sotto la soglia resta aperta ai junior; una che parte dalla soglia e la supera esclude. Un requisito solo preferenziale non conta.">The threshold is 2 required years. A range that starts below it stays open to juniors; one that starts at the threshold and goes above it excludes. A merely preferred requirement doesn't count.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Passo 2: Jev">Step 2: Jev</h2>
+    <div class="prose">
+      <p lang="en">Jev is a “System One” model by TypeSafe. It receives a text and a list of questions, and for each one returns a <b>probability</b> (yes/no) or a <b>choice</b> among fixed options. It writes no text, so a missing answer or an invented quote is impossible. It sees every ad the filter didn't discard, as long as there is text to read.</p>
+      <p lang="it">Jev è un modello «System One» di TypeSafe. Riceve un testo e un elenco di domande, e per ciascuna restituisce una <b>probabilità</b> (sì/no) o una <b>scelta</b> fra opzioni fisse. Non scrive testo, quindi una risposta mancante o una citazione inventata sono impossibili. Vede ogni annuncio non scartato dal filtro, purché ci sia un testo da leggere.</p>
+    </div>
+    <div class="qgrid">
+      <div class="q"><div class="q-top"><span class="q-name" data-it="Mansioni descritte">Duties described</span><span class="q-type" data-it="sì / no">yes / no</span></div><p data-it="Il testo dice che cosa farà la persona, o presenta solo l'azienda?">Does the text say what the person will do, or only present the company?</p></div>
+      <div class="q"><div class="q-top"><span class="q-name" data-it="Mansioni compatibili">Compatible duties</span><span class="q-type" data-it="sì / no">yes / no</span></div><p data-it="Il lavoro è soprattutto analisi quantitativa, modellazione o software su dati e modelli?">Is the work mainly quantitative analysis, modelling, or software on data and models?</p></div>
+      <div class="q"><div class="q-top"><span class="q-name" data-it="Famiglia esclusa">Excluded family</span><span class="q-type ch" data-it="scelta">choice</span></div><p data-it="Il lavoro principale appartiene a una delle famiglie escluse, o a nessuna?">Does the main work belong to one of the excluded job families, or to none?</p></div>
+      <div class="q"><div class="q-top"><span class="q-name" data-it="Posto per studenti">Student post</span><span class="q-type" data-it="sì / no">yes / no</span></div><p data-it="È uno stage, un tirocinio, una tesi o un posto per studenti?">Is it an internship, a thesis, or a post for enrolled students?</p></div>
+      <div class="q"><div class="q-top"><span class="q-name" data-it="Troppo senior">Too senior</span><span class="q-type" data-it="sì / no">yes / no</span></div><p data-it="Chiede seniority, management o più di due anni obbligatori, anche in un'altra lingua?">Does it ask for seniority, management or over two required years, in any language?</p></div>
+      <div class="q"><div class="q-top"><span class="q-name" data-it="Prova">Evidence</span><span class="q-type ch" data-it="scelta">choice</span></div><p data-it="Quale frase dell'annuncio descrive meglio il lavoro? Le opzioni sono le frasi vere.">Which sentence of the ad best describes the work? The options are its real sentences.</p></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Come le risposte di Jev diventano un verdetto">How Jev's answers become a verdict</h2>
+    <div class="prose">
+      <p lang="en">Jev doesn't give the verdict itself. It answers each question with a probability from <b>0</b> (certainly no) to <b>1</b> (certainly yes). A fixed checklist then turns those answers into <span class="pill p-keep">keep</span>, <span class="pill p-hold">unsure</span> or <span class="pill p-drop">discard</span>. The checklist is read <b>from top to bottom, and the first line that applies decides</b>. Pick an example or move the sliders.</p>
+      <p lang="it">Jev non dà il verdetto. Risponde a ogni domanda con una probabilità da <b>0</b> (sicuramente no) a <b>1</b> (sicuramente sì). Poi una checklist fissa trasforma le risposte in <span class="pill p-keep">tieni</span>, <span class="pill p-hold">non so</span> o <span class="pill p-drop">scarta</span>. La checklist si legge <b>dall'alto in basso, e decide la prima riga che vale</b>. Scegli un esempio o muovi i cursori.</p>
+    </div>
+    <figure class="fig">
+      <div class="sim">
+        <div class="sim-ctrl">
+          <span class="sim-h" data-it="1 · Risposte di Jev">1 · Jev's answers</span>
+          <div class="presets" id="presets" role="group" aria-label="Examples" data-aria-it="Esempi">
+            <button type="button" data-p="junior" data-it="Data scientist junior">Junior data scientist</button>
+            <button type="button" data-p="lead">Lead ML engineer</button>
+            <button type="button" data-p="vague" data-it="Annuncio vago">Vague ad</button>
+          </div>
+          <div class="slider"><label for="jv-desc" data-it="Le mansioni sono descritte?">Are the duties described?</label><input id="jv-desc" type="range" min="0" max="1" step="0.01" value="0.92"><output for="jv-desc"></output></div>
+          <div class="slider"><label for="jv-comp" data-it="Le mansioni sono compatibili?">Are the duties compatible?</label><input id="jv-comp" type="range" min="0" max="1" step="0.01" value="0.88"><output for="jv-comp"></output></div>
+          <div class="slider"><label for="jv-sen" data-it="È troppo senior?">Is it too senior?</label><input id="jv-sen" type="range" min="0" max="1" step="0.01" value="0.18"><output for="jv-sen"></output></div>
+          <div class="slider"><label for="jv-stud" data-it="È uno stage o un posto per studenti?">Is it an internship or student post?</label><input id="jv-stud" type="range" min="0" max="1" step="0.01" value="0.03"><output for="jv-stud"></output></div>
+          <div class="slider"><label for="jv-fam" data-it="Famiglia del lavoro">Job family</label>
+            <select id="jv-fam">
+              <option value="nessuna" data-it="nessuna famiglia esclusa">no excluded family</option>
+              <option value="amministrazione_hr_legale" data-it="amministrazione, HR, legale">admin, HR, legal</option>
+              <option value="commerciale_marketing" data-it="commerciale e marketing">sales & marketing</option>
+              <option value="supporto_clienti" data-it="supporto clienti">customer support</option>
+              <option value="coordinamento_processi" data-it="coordinamento e processi">coordination & processes</option>
+              <option value="produzione_manutenzione" data-it="produzione e manutenzione (manuale)">manufacturing & maintenance (manual)</option>
+              <option value="laboratorio_sperimentale" data-it="laboratorio sperimentale">wet-lab research</option>
+            </select></div>
+        </div>
+        <div class="sim-out">
+          <span class="sim-h" data-it="2 · Verdetto">2 · Verdict</span>
+          <div class="verdict" aria-live="polite"><span class="pill p-keep" id="jv-pill">keep</span><span id="jv-why"></span></div>
+          <div class="ruler" aria-hidden="true">
+            <span class="sim-h" id="jv-rcap" style="text-transform:none;letter-spacing:.02em"></span>
+            <div class="ruler-track">
+              <div class="ruler-bar"><i style="flex:20 1 0;background:var(--drop-soft)"></i><i style="flex:55 1 0;background:var(--hold-soft)"></i><i style="flex:25 1 0;background:var(--keep-soft)"></i></div>
+              <b class="ruler-mark" id="jv-mark"></b>
+            </div>
+            <div class="ruler-lab"><span style="flex:20 1 0" data-it="scarta ≤ 0,20">discard ≤ 0.20</span><span style="flex:55 1 0" data-it="non so">unsure</span><span style="flex:25 1 0" data-it="tieni ≥ 0,75">keep ≥ 0.75</span></div>
+          </div>
+          <span class="sim-h" data-it="3 · Checklist, dall'alto: decide la prima riga che vale">3 · Checklist, top to bottom: the first line that applies decides</span>
+          <ol class="ladder" id="jv-ladder">
+            <li><span data-it="È uno stage o un posto per studenti (≥ 0,75)">It's an internship or student post (≥ 0.75)</span><span class="st"></span><span class="pill p-drop" data-it="scarta">discard</span></li>
+            <li><span data-it="È troppo senior (≥ 0,75)">It's too senior (≥ 0.75)</span><span class="st"></span><span class="pill p-drop" data-it="scarta">discard</span></li>
+            <li><span data-it="Famiglia esclusa, ma mansioni compatibili (≥ 0,60)">Excluded family, but duties look compatible (≥ 0.60)</span><span class="st"></span><span class="pill p-hold" data-it="non so">unsure</span></li>
+            <li><span data-it="Lavoro manuale e mansioni non compatibili (≤ 0,20)">Manual work and duties not compatible (≤ 0.20)</span><span class="st"></span><span class="pill p-drop" data-it="scarta">discard</span></li>
+            <li><span data-it="Le mansioni non sono descritte (&lt; 0,60)">Duties are not described (&lt; 0.60)</span><span class="st"></span><span class="pill p-hold" data-it="non so">unsure</span></li>
+            <li><span data-it="Famiglia esclusa">Excluded job family</span><span class="st"></span><span class="pill p-drop" data-it="scarta">discard</span></li>
+            <li><span data-it="Mansioni compatibili (≥ 0,75)">Compatible duties (≥ 0.75)</span><span class="st"></span><span class="pill p-keep" data-it="tieni">keep</span></li>
+            <li><span data-it="Mansioni non compatibili (≤ 0,20)">Duties not compatible (≤ 0.20)</span><span class="st"></span><span class="pill p-drop" data-it="scarta">discard</span></li>
+            <li><span data-it="Nessuna riga precedente vale">None of the above applies</span><span class="st"></span><span class="pill p-hold" data-it="non so">unsure</span></li>
+          </ol>
+        </div>
+      </div>
+      <figcaption data-it="«Non so» non è un errore: è la fascia in cui nessuna soglia viene raggiunta. Le soglie decidono quanto lavoro resta all'utente.">“Unsure” isn't an error: it's the band where no threshold is reached. The thresholds decide how much work is left to the user.</figcaption>
+    </figure>
+    <figure class="fig">
+      <div id="strip-jev"></div>
+      <figcaption data-it="Esito degli 8.777 annunci che superano il filtro. I 2.247 senza mansioni leggibili non vengono inviati a Jev e restano in attesa del testo.">Outcome for the 8,777 ads that pass the filter. The 2,247 with no readable duties are not sent to Jev and wait for their text.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Jev decide, Qwen scrive">Jev decides, Qwen writes</h2>
+    <div class="two">
+      <div class="card"><span class="tag" data-it="giudice">judge</span><h3 style="color:var(--ro)">Jev</h3>
+        <p data-it="Risponde a domande con probabilità. Decide il ruolo e il settore dell'azienda. Può citare solo frasi vere dell'annuncio. Circa 1,20 $ per una passata sull'intero archivio.">Answers questions with probabilities. Decides the role and the company's sector. Can only quote real sentences from the ad. About $1.20 for a run over the whole archive.</p></div>
+      <div class="card"><span class="tag" data-it="scrittore">writer</span><h3>Qwen</h3>
+        <p data-it="Scrive le schede con fatti citati, solo per le aziende di Tier A e B, una chiamata per azienda. Non decide nulla: una scheda mancante non cambia nessun verdetto.">Writes summary cards with cited facts, only for Tier A and B companies, one call per company. Decides nothing: a missing card changes no verdict.</p></div>
+    </div>
+  </section>
+</article>
+
+<!-- ======================= 06 COMPANIES ======================= -->
+<article class="page" id="companies" data-en="Company classification" data-it-title="Classificazione aziende" hidden>
+  <header class="page-head">
+    <p class="eyebrow"><i></i><span data-it="Capitolo 06 · Classificazione aziende">Chapter 06 · Company classification</span></p>
+    <h1 data-it="Classificazione delle aziende">Company classification</h1>
+    <p class="lede" data-it="Per le aziende non c'è un verdetto a parte: un'azienda è interessante se almeno una delle sue categorie è fra quelle preferite. Il lavoro sta nel darle le categorie giuste: al massimo due, e solo con prove sufficienti.">There is no separate verdict for companies: a company is interesting if at least one of its categories is a preferred one. The work is giving it the right categories: at most two, and only with enough evidence.</p>
+  </header>
+
+  <figure class="fig">
+    <div class="bars" id="bars-cats"></div>
+    <figcaption data-it="17 settori, di cui 4 preferiti. Le barre contano gli annunci per categoria principale dell'azienda. «Da classificare» non è un settore: significa prove insufficienti.">17 sectors, 4 of them preferred. Bars count job ads by their company's main category. “Unclassified” is not a sector: it means not enough evidence.</figcaption>
+  </figure>
+
+  <section class="block">
+    <h2 data-it="Chi assegna la categoria">Who assigns the category</h2>
+    <figure class="fig">
+      <div class="scroll"><svg class="dg" viewBox="0 0 960 250" role="img" aria-label="Keyword rules assign clear categories; when they find nothing, Jev decides with one question per sector and two checks; a choice made in chat always wins." data-aria-it="Le regole a parole chiave assegnano le categorie certe; se non trovano nulla decide Jev con una domanda per settore e due controlli; una scelta fatta in chat vince sempre.">
+        <rect class="box" x="16" y="30" width="270" height="130" rx="10"/>
+        <text class="s" x="32" y="52" data-it="1 · gratis, solo certezze">1 · free, clear cases only</text>
+        <text class="h" x="32" y="76" data-it="Regole a parole chiave">Keyword rules</text>
+        <text class="s" x="32" y="100" data-it="«solar», «battery» → Energia">“solar”, “battery” → Energy</text>
+        <text class="s" x="32" y="118" data-it="su settore e descrizione">on sector and description</text>
+        <text class="s b" x="32" y="148" data-it="1.359 assegnazioni">1,359 assignments</text>
+        <path class="ln" d="M288,95 H336" marker-end="url(#ah)"/>
+        <text class="s" x="312" y="86" text-anchor="middle" data-it="nulla">none</text>
+        <rect class="f-ro" x="340" y="30" width="300" height="130" rx="10"/>
+        <text class="s" x="356" y="52" data-it="2 · nella stessa richiesta del ruolo">2 · same request as the role</text>
+        <text class="h" x="356" y="76">Jev</text>
+        <text class="s" x="356" y="100" data-it="una domanda sì/no per settore">one yes/no question per sector</text>
+        <text class="s" x="356" y="118" data-it="+ «descrive chi assume?»">+ “does it describe the employer?”</text>
+        <text class="s" x="356" y="136" data-it="+ «è un'agenzia di selezione?»">+ “is it a recruiting agency?”</text>
+        <text class="s b" x="356" y="153" data-it="6.186 assegnazioni">6,186 assignments</text>
+        <rect class="f-hold" x="700" y="30" width="244" height="130" rx="10"/>
+        <text class="s" x="716" y="52" data-it="3 · vince sempre">3 · always wins</text>
+        <text class="h" x="716" y="76" data-it="L'utente, in chat">The user, in chat</text>
+        <text class="s" x="716" y="100" data-it="una categoria scelta in chat">a category chosen in chat</text>
+        <text class="s" x="716" y="118" data-it="non viene mai sovrascritta">is never overwritten</text>
+        <path class="ln dash" d="M822,162 V210 H152 V164" marker-end="url(#ah-hold)"/>
+        <path class="ln dash" d="M490,210 V164" marker-end="url(#ah-hold)"/>
+        <text x="490" y="232" text-anchor="middle" class="s" data-it="prevale su entrambi · le regole non riscrivono mai Jev">overrides both · rules never overwrite Jev</text>
+      </svg></div>
+      <figcaption data-it="Per ogni categoria resta scritto chi l'ha messa. Jev legge il testo vero degli annunci dell'azienda, e chiede il settore nella stessa richiesta del ruolo per pagare il testo una volta sola.">Every category records who assigned it. Jev reads the company's real ad texts, and asks about the sector in the same request as the role, so the text is paid for once.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Una, due o nessuna categoria">One, two or no categories</h2>
+    <figure class="fig">
+      <div class="catplot">
+        <svg class="dg" id="catplot" viewBox="0 0 380 380" role="img" aria-label="Plane of the first and second sector scores. Second above 0.40: two categories. Second below 0.40 and first from 0.60: one category. Otherwise unclassified." data-aria-it="Piano dei punteggi del primo e del secondo settore. Secondo sopra 0,40: due categorie. Secondo sotto 0,40 e primo da 0,60: una categoria. Altrimenti da classificare."></svg>
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div class="cat-out" aria-live="polite"><span id="cat-scores"></span><b id="cat-result"></b><span id="cat-why"></span></div>
+          <div class="checks">
+            <label><input type="checkbox" id="cat-emp" checked> <span data-it="Il testo descrive chi assume, non solo il cliente">The text describes the employer, not just the client</span></label>
+            <label><input type="checkbox" id="cat-agy"> <span data-it="È un'agenzia di selezione">It's a recruiting agency</span></label>
+          </div>
+          <p style="font-size:15.5px;max-width:60ch" lang="en">Each sector gets its own probability. A sector counts from <b>0.40</b>; a single sector needs <b>0.60</b>. Two sectors above 0.40 are both kept.</p>
+          <p style="font-size:15.5px;max-width:60ch" lang="it">Ogni settore riceve una probabilità indipendente. Un settore conta da <b>0,40</b>; da solo ne servono <b>0,60</b>. Due settori sopra 0,40 vengono tenuti entrambi.</p>
+        </div>
+      </div>
+      <figcaption data-it="Trascina il punto (o usa le frecce). La metà in alto a sinistra è irraggiungibile: il primo settore è per definizione il più probabile.">Drag the point (or use the arrow keys). The top-left half is unreachable: the first sector is by definition the more likely one.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Agenzie di selezione">Recruiting agencies</h2>
+    <figure class="fig">
+      <div class="scroll"><svg class="dg" viewBox="0 0 900 220" role="img" aria-label="An agency posting for an energy client is classified as Consulting and services, not Energy; a text that doesn't describe the employer gets no category." data-aria-it="Un'agenzia che pubblica per un cliente energetico viene classificata come Consulenza e servizi, non Energia; un testo che non descrive chi assume non riceve categoria.">
+        <rect class="box" x="16" y="60" width="250" height="100" rx="10"/>
+        <text class="s" x="32" y="82" data-it="annuncio · esempio">job ad · example</text>
+        <text class="h" x="32" y="106" data-it="«Per importante cliente">“For a major client</text>
+        <text class="h" x="32" y="126" data-it="del settore energetico…»">in the energy sector…”</text>
+        <text class="s" x="32" y="148" data-it="pubblicato da un'agenzia">posted by an agency</text>
+        <path class="ln" d="M268,110 H320" marker-end="url(#ah)"/>
+        <polygon class="box" points="400,60 480,110 400,160 320,110"/>
+        <text x="400" y="106" text-anchor="middle" class="s" data-it="agenzia?">agency?</text><text x="400" y="122" text-anchor="middle" class="s b" data-it="≥ 0,75">≥ 0.75</text>
+        <path class="ln s-co" d="M462,96 C520,60 540,48 590,48" marker-end="url(#ah-co)"/><text x="512" y="60" class="s" data-it="sì">yes</text>
+        <path class="ln" d="M462,124 C520,160 540,172 590,172" marker-end="url(#ah)"/><text x="512" y="168" class="s">no</text>
+        <rect class="f-co" x="594" y="20" width="290" height="58" rx="9"/><text class="h" x="610" y="45" data-it="Consulenza e servizi">Consulting & services</text><text class="s" x="610" y="65" data-it="non eredita il settore del cliente">doesn't inherit the client's sector</text>
+        <rect class="box" x="594" y="140" width="290" height="66" rx="9"/><text class="h" x="610" y="164" data-it="Descrive chi assume?">Describes the employer?</text><text class="s" x="610" y="184" data-it="sì: settori · no: nessuna categoria">yes: sectors · no: no category</text><text class="s" x="610" y="199" data-it="niente tentativi a caso">no guessing</text>
+      </svg></div>
+    </figure>
+    <figure class="fig">
+      <div id="strip-coaxis"></div>
+      <figcaption data-it="Verdetto sulle 5.908 aziende. «Evidenza mancante» si riduce recuperando dati aziendali, non scartando.">Verdict on the 5,908 companies. “Missing evidence” shrinks by fetching company data, not by discarding.</figcaption>
+    </figure>
+  </section>
+</article>
+
+<!-- ======================= 07 TIERS ======================= -->
+<article class="page" id="tiers" data-en="Tiers" data-it-title="I Tier" hidden>
+  <header class="page-head">
+    <p class="eyebrow"><i></i><span data-it="Capitolo 07 · I Tier">Chapter 07 · Tiers</span></p>
+    <h1 data-it="I Tier">Tiers</h1>
+    <p class="lede" data-it="Il Tier incrocia il verdetto sull'azienda con quello sui suoi ruoli. Non viene mai salvato: si ricalcola ogni volta, così un'azienda sale appena pubblica il ruolo giusto.">The Tier combines the company verdict with the verdict on its roles. It is never stored: it's recomputed every time, so a company moves up as soon as it posts the right role.</p>
+  </header>
+
+  <figure class="fig">
+    <div class="matrix" role="table" aria-label="Tier by company verdict and best role" data-aria-it="Tier per verdetto azienda e miglior ruolo">
+      <div class="mx-h" role="columnheader"></div>
+      <div class="mx-h" role="columnheader" data-it="nessun ruolo compatibile">no compatible role</div>
+      <div class="mx-h" role="columnheader" data-it="ruolo compatibile">compatible role</div>
+      <div class="mx-h" role="columnheader" data-it="ruolo compatibile e prioritario">compatible priority role</div>
+      <div class="mx-r" role="rowheader"><span data-it="Azienda interessante">Interesting company</span><small data-it="settore preferito">preferred sector</small></div>
+      <div class="cell c-Ba"><b data-it="B · attesa">B · waiting</b><span data-it="da tenere d'occhio">keep an eye on it</span></div>
+      <div class="cell c-A"><b>A</b><span data-it="da guardare adesso">look now</span></div>
+      <div class="cell c-A"><b>A</b><span data-it="da guardare adesso">look now</span></div>
+      <div class="mx-r" role="rowheader"><span data-it="Evidenza mancante">Missing evidence</span><small data-it="nessuna categoria">no category</small></div>
+      <div class="cell c-E"><b data-it="Evidenza mancante">Missing evidence</b><span data-it="coda di lavoro">work queue</span></div>
+      <div class="cell c-E"><b data-it="Evidenza mancante">Missing evidence</b><span data-it="coda di lavoro">work queue</span></div>
+      <div class="cell c-Be"><b data-it="B · esperienza">B · strong role</b><span data-it="il ruolo vale da solo">the role is worth it alone</span></div>
+      <div class="mx-r" role="rowheader"><span data-it="Non interessante">Not interesting</span><small data-it="altro settore">other sector</small></div>
+      <div class="cell c-S"><b data-it="Scarto">Discarded</b><span data-it="né azienda né ruolo">neither company nor role</span></div>
+      <div class="cell c-S"><b data-it="Scarto">Discarded</b><span data-it="ruolo non abbastanza forte">role not strong enough</span></div>
+      <div class="cell c-Be"><b data-it="B · esperienza">B · strong role</b><span data-it="il ruolo vale da solo">the role is worth it alone</span></div>
+    </div>
+    <figcaption lang="en"><b>Two different bars for the role, on purpose.</b> For an interesting company, any compatible role is enough. For any other company the role must be a <i>priority</i> one: its title is in the main career family, or the user or the agent kept it. Otherwise Tier B would fill up with average roles at companies that don't matter.</figcaption>
+    <figcaption lang="it"><b>Due soglie diverse per il ruolo, di proposito.</b> Per un'azienda interessante basta un ruolo compatibile qualsiasi. Per le altre il ruolo deve essere <i>prioritario</i>: il titolo è nella famiglia di carriera principale, oppure l'hanno tenuto l'utente o l'agente. Altrimenti il Tier B si riempirebbe di ruoli mediocri in aziende che non interessano.</figcaption>
+  </figure>
+
+  <section class="block">
+    <h2 data-it="Distribuzione attuale">Current distribution</h2>
+    <figure class="fig">
+      <div id="strip-tier"></div>
+      <figcaption lang="en">Tier A and B form the <b>eligible set</b>: 1,446 companies available for the final choice. Tier A is the list to look at this week, because ads expire; Tier B is a map with no urgency, because interest in a company doesn't.</figcaption>
+      <figcaption lang="it">Tier A e B formano l'<b>insieme idoneo</b>: 1.446 aziende disponibili per la scelta finale. Il Tier A è la lista da guardare questa settimana, perché gli annunci scadono; il Tier B è una mappa senza urgenza, perché l'interesse per un'azienda non scade.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Perché il Tier non viene salvato">Why the Tier is never stored</h2>
+    <figure class="fig">
+      <div class="scroll"><svg class="dg" viewBox="0 0 900 200" role="img" aria-label="With a stored tier the company stays discarded even after posting a fitting role; computed on every read, it moves to Tier B." data-aria-it="Con il tier salvato l'azienda resta scartata anche dopo aver pubblicato un ruolo adatto; calcolato a ogni lettura, passa al Tier B.">
+        <text class="h" x="16" y="66" data-it="Se il Tier fosse salvato">If the Tier were stored</text>
+        <text class="h" x="16" y="150" data-it="Calcolato a ogni lettura">Computed on every read</text>
+        <line class="ln" x1="250" y1="60" x2="880" y2="60"/>
+        <line class="ln" x1="250" y1="144" x2="880" y2="144"/>
+        <line class="ln dash" x1="560" y1="22" x2="560" y2="182"/>
+        <text x="570" y="24" class="s" data-it="giorno 12: pubblica «Optimization Engineer»,">day 12: posts “Optimization Engineer”,</text>
+        <text x="570" y="40" class="s" data-it="Jev lo tiene, il titolo è prioritario">Jev keeps it, the title is a priority</text>
+        <rect class="f-idle" x="290" y="46" width="100" height="28" rx="6"/><text x="340" y="65" text-anchor="middle" class="b" data-it="Scarto">Discarded</text>
+        <rect class="f-idle" x="700" y="46" width="100" height="28" rx="6"/><text x="750" y="65" text-anchor="middle" class="b" data-it="Scarto">Discarded</text>
+        <text x="750" y="94" text-anchor="middle" class="s" data-it="nessuno lo ricalcola">nobody recomputes it</text>
+        <rect class="f-idle" x="290" y="130" width="100" height="28" rx="6"/><text x="340" y="149" text-anchor="middle" class="b" data-it="Scarto">Discarded</text>
+        <rect class="f-ro" x="680" y="130" width="140" height="28" rx="6"/><text x="750" y="149" text-anchor="middle" class="b t-ro" data-it="B · esperienza">B · strong role</text>
+        <text x="340" y="186" text-anchor="middle" class="s" data-it="giorno 1: settore Industria">day 1: sector Industry</text>
+      </svg></div>
+      <figcaption data-it="Si salvano solo i fatti e i giudizi. Il Tier è una funzione di questi.">Only facts and judgements are stored. The Tier is a function of them.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Schede di sintesi">Summary cards</h2>
+    <div class="two">
+      <div class="prose">
+        <p data-it="Per ogni azienda di Tier A e B, Qwen riceve in una sola chiamata gli annunci compatibili e le informazioni sull'azienda, e scrive una scheda per ogni ruolo e una per l'azienda.">For each Tier A and B company, Qwen receives the compatible ads and the company information in a single call, and writes one card per role plus one for the company.</p>
+        <p data-it="Ogni fatto deve citare una frase della fonte. Ogni scheda viene controllata a parte: una citazione inventata scarta solo quella scheda.">Every fact must cite a sentence from the source. Each card is checked on its own: an invented quote rejects only that card.</p>
+      </div>
+      <div class="qcard" aria-label="Example company card" data-aria-it="Esempio di scheda aziendale">
+        <span class="kick" data-it="scheda azienda · esempio">company card · example</span>
+        <h4 data-it="Accumuli per la rete elettrica">Grid-scale energy storage</h4>
+        <p style="font-size:15px;color:var(--ink-2)" data-it="Progetta sistemi di accumulo a batteria. Il team dati costruisce modelli di previsione e ottimizzazione.">Designs battery storage systems. The data team builds forecasting and optimization models.</p>
+        <ul>
+          <li><span data-it="Due ruoli compatibili aperti, entrambi junior">Two compatible open roles, both junior</span><span class="ref">J0-S2</span><span class="ref">J1-S4</span></li>
+          <li><span data-it="Previsione della produzione eolica e solare">Forecasting of wind and solar output</span><span class="ref">J0-S5</span></li>
+        </ul>
+        <div class="chips"><span class="pill p-keep">Tier A</span><span class="chip co" data-it="Energia">Energy</span></div>
+      </div>
+    </div>
+  </section>
+</article>
+
+<!-- ======================= 08 REVIEW ======================= -->
+<article class="page" id="review" data-en="Manual review" data-it-title="Revisione manuale" hidden>
+  <header class="page-head">
+    <p class="eyebrow"><i></i><span data-it="Capitolo 08 · Revisione manuale">Chapter 08 · Manual review</span></p>
+    <h1 data-it="Il giudizio manuale ha la priorità">Manual judgement comes first</h1>
+    <p class="lede" data-it="La pipeline automatica si ferma a Jev. I casi incerti e la scelta finale fra le aziende idonee passano da una chat con un agente (Codex o Claude), che lavora a piccoli lotti e registra solo ciò che l'utente conferma.">The automatic pipeline stops at Jev. Uncertain cases and the final choice among eligible companies go through a chat with an agent (Codex or Claude), which works in small batches and records only what the user confirms.</p>
+  </header>
+
+  <section class="block" style="margin-top:0">
+    <h2 data-it="Ordine di priorità">Priority order</h2>
+    <div class="stack">
+      <div class="lvl"><h3><span data-it="Utente">User</span><small data-it="decisione">decision</small></h3><p data-it="Salva o scarta un ruolo. Vince su tutto e non scade mai.">Saves or discards a role. Overrides everything and never expires.</p><div class="ex"><span data-it="nell'esempio">in the example</span><span class="pill p-idle" data-it="nessuna">none</span></div></div>
+      <div class="lvl win"><h3><span data-it="Agente">Agent</span><small data-it="in chat">in chat</small></h3><p data-it="Decide citando almeno una regola confermata. Scade se cambia il testo dell'annuncio o della regola.">Decides by citing at least one confirmed rule. Expires if the ad text or the rule changes.</p><div class="ex"><span data-it="nell'esempio">in the example</span><span class="pill p-drop" data-it="scarta · R5">discard · R5</span></div></div>
+      <div class="lvl"><h3>Jev<small data-it="automatico">automatic</small></h3><p data-it="Tieni, scarta o non so, dalle probabilità sulle mansioni.">Keep, discard or unsure, from the probabilities on the duties.</p><div class="ex"><span data-it="nell'esempio">in the example</span><span class="pill p-keep" data-it="tieni · 0,91">keep · 0.91</span></div></div>
+      <div class="lvl"><h3><span data-it="Filtro">Filter</span><small data-it="automatico">automatic</small></h3><p data-it="Solo scarti certi; tutto il resto è «non so».">Only clear discards; everything else is “unsure”.</p><div class="ex"><span data-it="nell'esempio">in the example</span><span class="pill p-hold" data-it="non so">unsure</span></div></div>
+    </div>
+    <p class="note" lang="en">The highest judge that has decided wins. <b>The chain keeps every verdict</b>; only which one counts changes. Tiers, summaries and sessions all read the final verdict and update on their own.</p>
+    <p class="note" lang="it">Vince il giudice più in alto che ha deciso. <b>La catena conserva tutti i verdetti</b>; cambia solo quale conta. Tier, schede e sessioni leggono il verdetto finale e si aggiornano da soli.</p>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Tre tipi di sessione">Three kinds of chat session</h2>
+    <div class="three">
+      <div class="card"><span class="tag" data-it="indecisi">unsure cases</span><h3 data-it="Revisione degli indecisi">Review unsure cases</h3><p data-it="Sui ruoli che Jev ha lasciato a «non so». L'agente raggruppa i casi, fa domande e propone regole, mostrando prima quanti annunci sposterebbero.">On roles Jev left “unsure”. The agent groups cases, asks questions and proposes rules, showing first how many ads they would move.</p></div>
+      <div class="card"><span class="tag" data-it="regole">rules</span><h3 data-it="Applicazione delle regole">Apply the rules</h3><p data-it="Sugli indecisi e sui ruoli compatibili di Tier A e B. L'agente decide ruolo per ruolo, sempre citando una regola confermata.">On unsure cases and compatible Tier A and B roles. The agent decides role by role, always citing a confirmed rule.</p></div>
+      <div class="card"><span class="tag" data-it="selezione">selection</span><h3 data-it="Esplorazione della selezione">Explore the selection</h3><p data-it="Sulle aziende di Tier A e B, filtrate per paese, città o categoria. Aiuta a confrontare e a scegliere; non cambia la pipeline.">On Tier A and B companies, filtered by country, city or category. Helps compare and choose; doesn't change the pipeline.</p></div>
+    </div>
+    <p class="note" data-it="La lista «Salvate» è separata: contiene solo ciò che l'utente mette da parte. Un Tier A non equivale a un salvataggio.">The “Saved” list is separate: it holds only what the user sets aside. Tier A does not mean saved.</p>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Dove va una risposta">Where an answer goes</h2>
+    <div class="routes">
+      <div class="route"><span class="from" data-it="Un criterio letterale e verificabile nel testo">A literal criterion, checkable in the text</span><span class="arrow"></span><span class="to" style="color:var(--ro)" data-it="Regola del filtro">Filter rule</span><span class="fx" data-it="gratis, nessun giudizio perso">free, no judgement lost</span></div>
+      <div class="route"><span class="from" data-it="Una distinzione che richiede di capire le mansioni">A distinction that needs understanding the duties</span><span class="arrow"></span><span class="to" style="color:var(--ro)" data-it="Domanda o soglia di Jev">Jev question or threshold</span><span class="fx" data-it="rigiudica solo i casi toccati">re-judges only affected cases</span></div>
+      <div class="route"><span class="from" data-it="Un giudizio valido solo per quel caso">A judgement valid for that case only</span><span class="arrow"></span><span class="to" data-it="Decisione sul singolo record">Decision on that record</span><span class="fx" data-it="nessuna regola per il futuro">no rule for the future</span></div>
+      <div class="route"><span class="from" data-it="Un gusto per scegliere fra alternative valide">A taste for choosing among valid options</span><span class="arrow"></span><span class="to" style="color:var(--hold)" data-it="Memoria di selezione">Selection memory</span><span class="fx" data-it="orienta, non filtra">guides, doesn't filter</span></div>
+      <div class="route"><span class="from" data-it="Un'informazione che manca nella fonte">Information missing from the source</span><span class="arrow"></span><span class="to" style="color:var(--co)" data-it="Coda di recupero dati">Data-fetching queue</span><span class="fx" data-it="non è una preferenza">not a preference</span></div>
+    </div>
+    <p class="muted" style="max-width:70ch" data-it="Solo una conferma esplicita cambia le regole.">Only an explicit confirmation changes the rules.</p>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Regole confermate">Confirmed rules</h2>
+    <div class="rules">
+      <div class="rule"><span class="rule-id">R1</span><h4 data-it="Test automatico = software">Test automation is software</h4><p data-it="Framework e suite di test sono compatibili; test manuale e collaudo al banco no.">Test frameworks and suites are compatible; manual testing and bench testing are not.</p></div>
+      <div class="rule"><span class="rule-id">R5</span><h4 data-it="Business, finanza, pricing">Business, finance, pricing</h4><p data-it="Fuori profilo, anche quando il pricing usa modelli quantitativi.">Out of profile, even when pricing uses quantitative models.</p></div>
+      <div class="rule"><span class="rule-id">R7</span><h4 data-it="Cloud e DevOps">Cloud and DevOps</h4><p data-it="Fuori profilo; costruire pipeline e modelli sopra le piattaforme resta compatibile.">Out of profile; building pipelines and models on top of platforms is still compatible.</p></div>
+      <div class="rule"><span class="rule-id">R9</span><h4 data-it="Ricerca computazionale">Computational research</h4><p data-it="ML, AI e dati sì; laboratorio, campo e policy no.">ML, AI and data yes; lab, field and policy research no.</p></div>
+    </div>
+    <p class="note" data-it="Quattro delle regole attive. Modificare o cancellare una regola fa scadere i verdetti che la citano.">Four of the active rules. Editing or deleting a rule expires the verdicts that cite it.</p>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Il ciclo di miglioramento">The feedback loop</h2>
+    <figure class="fig">
+      <div class="scroll"><svg class="dg" viewBox="0 0 700 330" role="img" aria-label="Loop: chat on unsure cases, classified answer, rule or question in the cheap judges, fewer unsure cases." data-aria-it="Ciclo: chat sugli indecisi, risposta classificata, regola o domanda nei giudici economici, meno casi incerti.">
+        <rect class="f-hold" x="245" y="16" width="210" height="52" rx="10"/><text class="h" x="350" y="39" text-anchor="middle" data-it="Conversazione">Chat session</text><text class="s" x="350" y="57" text-anchor="middle" data-it="sugli indecisi">on unsure cases</text>
+        <rect class="box" x="470" y="138" width="210" height="52" rx="10"/><text class="h" x="575" y="161" text-anchor="middle" data-it="Risposta classificata">Classified answer</text><text class="s" x="575" y="179" text-anchor="middle" data-it="confermata dall'utente">confirmed by the user</text>
+        <rect class="f-ro" x="245" y="260" width="210" height="52" rx="10"/><text class="h" x="350" y="283" text-anchor="middle" data-it="Regola o domanda">Rule or question</text><text class="s" x="350" y="301" text-anchor="middle" data-it="nei giudici economici">in the cheap judges</text>
+        <rect class="f-keep" x="20" y="138" width="210" height="52" rx="10"/><text class="h" x="125" y="161" text-anchor="middle" data-it="Meno casi incerti">Fewer unsure cases</text><text class="s" x="125" y="179" text-anchor="middle" data-it="meno lavoro al modello">less work for the model</text>
+        <path class="ln flow" d="M457,42 Q575,42 575,134" marker-end="url(#ah)"/>
+        <path class="ln flow" d="M575,192 Q575,286 459,286" marker-end="url(#ah)"/>
+        <path class="ln flow" d="M243,286 Q125,286 125,194" marker-end="url(#ah)"/>
+        <path class="ln flow" d="M125,136 Q125,42 241,42" marker-end="url(#ah)"/>
+        <text x="350" y="160" text-anchor="middle" class="s" data-it="a ogni giro">each round</text>
+        <text x="350" y="178" text-anchor="middle" class="h" data-it="domande più mirate">sharper questions</text>
+      </svg></div>
+      <figcaption data-it="Le sessioni non caricano l'archivio in chat: lavorano su piccoli lotti di schede compatte e salvano l'avanzamento su disco, così si possono riprendere.">Sessions don't load the archive into the chat: they work on small batches of compact cards and save progress to disk, so they can be resumed.</figcaption>
+    </figure>
+  </section>
+</article>
+
+<!-- ======================= 09 TRACEABILITY ======================= -->
+<article class="page" id="traceability" data-en="Traceability" data-it-title="Tracciabilità" hidden>
+  <header class="page-head">
+    <p class="eyebrow"><i></i><span data-it="Capitolo 09 · Tracciabilità">Chapter 09 · Traceability</span></p>
+    <h1 data-it="Tracciabilità">Traceability</h1>
+    <p class="lede" data-it="Per ogni azienda e ogni annuncio resta scritto chi ha deciso cosa, con quale prova e su quale versione del testo. Ciò che si può ricalcolare non viene salvato; ciò che costa, o che l'utente ha scritto, non va mai perso.">For every company and job ad, the archive records who decided what, with which evidence and on which version of the text. What can be recomputed isn't stored; what costs money or was written by the user is never lost.</p>
+  </header>
+
+  <figure class="fig">
+    <div class="chain">
+      <div class="link"><small data-it="filtro">filter</small><span class="pill p-hold" data-it="non so">unsure</span><p data-it="nessuna esclusione certa">no clear exclusion</p></div>
+      <div class="link"><small>Jev</small><span class="pill p-keep" data-it="tieni">keep</span><p data-it="compatibilità 0,91 · prova: «costruirai modelli di pricing dinamico…»">compatibility 0.91 · evidence: “you will build dynamic pricing models…”</p></div>
+      <div class="link won"><small data-it="agente">agent</small><span class="pill p-drop" data-it="scarta">discard</span><p data-it="cita R5: pricing fuori profilo">cites R5: pricing is out of profile</p></div>
+      <div class="link"><small data-it="utente">user</small><span class="pill p-idle" data-it="nessuna">none</span><p data-it="nessuna decisione">no decision</p></div>
+      <div class="link"><small data-it="verdetto finale">final verdict</small><span class="pill p-drop" data-it="scarta">discard</span><p data-it="deciso dall'agente">decided by the agent</p></div>
+    </div>
+    <figcaption data-it="La catena dei giudici per un annuncio di esempio, come la mostra la dashboard: ogni giudice con verdetto e prova, e in evidenza quello che conta.">The chain of judges for an example ad, as the dashboard shows it: each judge with its verdict and evidence, and the one that counts highlighted.</figcaption>
+  </figure>
+
+  <section class="block">
+    <h2 data-it="Salvato o calcolato">Stored vs computed</h2>
+    <div class="saved-grid">
+      <div class="card"><span class="tag" data-it="salvato, mai cancellato">stored, never deleted</span>
+        <ul style="--c:var(--co)">
+          <li data-it="snapshot originali delle fonti">original source snapshots</li>
+          <li data-it="annunci, aziende e dove sono stati visti">job ads, companies and where they were seen</li>
+          <li data-it="ogni tentativo di recupero, con l'esito">every fetch attempt, with its result</li>
+          <li data-it="risposte di Jev e schede di Qwen">Jev answers and Qwen summaries</li>
+          <li data-it="decisioni dell'utente e regole confermate">user decisions and confirmed rules</li>
+        </ul></div>
+      <div class="card"><span class="tag" data-it="calcolato a ogni lettura">computed on every read</span>
+        <ul style="--c:var(--ro)">
+          <li data-it="esito del filtro (cache che si aggiorna da sola)">filter result (self-updating cache)</li>
+          <li data-it="verdetto sull'azienda">company verdict</li>
+          <li data-it="verdetto sul ruolo">role verdict</li>
+          <li data-it="catena dei giudici">chain of judges</li>
+          <li>Tier</li>
+        </ul></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Cache e rivalutazione">Cache and re-evaluation</h2>
+    <div class="prose"><p data-it="Ogni risposta di Jev è salvata con un'impronta di ciò che l'ha prodotta: testo, domande, soglie, settori e versione del modello. Quando qualcosa cambia, torna in coda solo ciò che quel cambiamento tocca.">Every Jev answer is saved with a fingerprint of what produced it: text, questions, thresholds, sectors and model version. When something changes, only what that change affects goes back in the queue.</p></div>
+    <figure class="fig">
+      <div class="scroll">
+      <table class="t" style="min-width:560px">
+        <thead><tr><th data-it="Cosa cambia">What changes</th><th data-it="Cosa succede">What happens</th><th data-it="Costo">Cost</th></tr></thead>
+        <tbody>
+          <tr><td data-it="Il testo di un annuncio">An ad's text</td><td data-it="si rigiudica solo quell'annuncio">only that ad is re-judged</td><td><span class="pill p-hold" data-it="una chiamata">one call</span></td></tr>
+          <tr><td data-it="Solo una soglia">Only a threshold</td><td data-it="il verdetto si ricalcola dalle probabilità già salvate">the verdict is recomputed from saved probabilities</td><td><span class="pill p-keep" data-it="zero chiamate">zero calls</span></td></tr>
+          <tr><td data-it="Il testo di una domanda">A question's wording</td><td data-it="tutti i giudizi che la usano tornano in coda">all judgements using it go back in the queue</td><td><span class="pill p-drop" data-it="una passata">a full run</span></td></tr>
+          <tr><td data-it="La versione del modello">The model version</td><td data-it="è fissata: nessun cambio silenzioso">it's pinned: no silent changes</td><td><span class="pill p-idle" data-it="scelta esplicita">explicit choice</span></td></tr>
+        </tbody>
+      </table>
+      </div>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Costo della pipeline completa">Cost of a full pipeline run</h2>
+    <div class="kpis" data-cols="3" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      <div class="kpi"><span class="k-l" data-it="filtro a regole">rule filter</span><span class="k-n" data-it="0 $">$0</span><p data-it="gira in locale">runs locally</p></div>
+      <div class="kpi"><span class="k-l" data-it="Jev, tutto l'archivio">Jev, whole archive</span><span class="k-n" style="color:var(--ro)" data-it="≈ 1,20 $">≈ $1.20</span><p data-it="ruoli e settori insieme, circa dieci minuti">roles and sectors together, about ten minutes</p></div>
+      <div class="kpi"><span class="k-l" data-it="schede Qwen">Qwen summaries</span><span class="k-n" data-it="1 per azienda">1 per company</span><p data-it="solo Tier A e B">Tier A and B only</p></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 data-it="Dati protetti">Protected data</h2>
+    <p class="prose" data-it="Nessun passaggio cancella o riscrive i dati d'origine, il contesto personale dell'utente (profilo, regole, note) o le chiavi di accesso, che restano in un file locale fuori dal controllo di versione.">No step deletes or rewrites the source data, the user's personal context (profile, rules, notes) or the access keys, which stay in a local file outside version control.</p>
+  </section>
+</article>
+
+</main>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+(function(){
+const root=document.documentElement;
+let LANG='en';
+try{const s=localStorage.getItem('jh-lang');if(s==='it'||s==='en')LANG=s;}catch(e){}
+const fE=n=>n.toLocaleString('en-US'),fI=n=>String(n).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+const pE=x=>(x*100).toFixed(x<0.1?1:0)+'%',pI=x=>pE(x).replace('.',',');
+const dE=x=>x.toFixed(2),dI=x=>dE(x).replace('.',',');
+const L=(en,it)=>LANG==='it'?it:en;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const NS='http://www.w3.org/2000/svg';
+function el(tag,attrs,parent,text){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;if(parent)parent.appendChild(e);return e;}
+function tx(parent,attrs,en,it){return el('text',Object.assign({'data-it':it==null?en:it},attrs),parent,en);}
+const onLang=[];
+
+/* ---------- language ---------- */
+function applyLang(){
+  root.dataset.lang=LANG;root.lang=LANG;
+  document.querySelectorAll('[data-it]').forEach(e=>{if(!('en' in e.dataset))e.dataset.en=e.textContent;e.textContent=LANG==='it'?e.dataset.it:e.dataset.en;});
+  document.querySelectorAll('[data-aria-it]').forEach(e=>{if(!('ariaEn' in e.dataset))e.dataset.ariaEn=e.getAttribute('aria-label')||'';e.setAttribute('aria-label',LANG==='it'?e.dataset.ariaIt:e.dataset.ariaEn);});
+  document.querySelectorAll('.lang button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.l===LANG)));
+  document.title=L('Inside JobHunter','Dentro JobHunter');
+  onLang.forEach(f=>f());
+}
+document.querySelectorAll('.lang button').forEach(b=>b.addEventListener('click',()=>{
+  LANG=b.dataset.l;try{localStorage.setItem('jh-lang',LANG);}catch(e){}applyLang();
+}));
+
+/* ---------- router ---------- */
+const pages=[...document.querySelectorAll('.page')];
+const links=[...document.querySelectorAll('#toc a')];
+pages.forEach((p,i)=>{
+  const nav=document.createElement('nav');nav.className='pager';nav.setAttribute('aria-label','Chapters');
+  const prev=pages[i-1],next=pages[i+1],n=k=>String(k).padStart(2,'0');
+  if(prev)nav.insertAdjacentHTML('beforeend',`<a href="#${prev.id}"><small data-it="← capitolo ${n(i)}">← chapter ${n(i)}</small><span data-it="${esc(prev.dataset.itTitle)}">${esc(prev.dataset.en)}</span></a>`);
+  if(next)nav.insertAdjacentHTML('beforeend',`<a class="next" href="#${next.id}"><small data-it="capitolo ${n(i+2)} →">chapter ${n(i+2)} →</small><span data-it="${esc(next.dataset.itTitle)}">${esc(next.dataset.en)}</span></a>`);
+  p.appendChild(nav);
+});
+function show(id,scroll){
+  const t=pages.find(p=>p.id===id)||pages[0];
+  pages.forEach(p=>p.hidden=p!==t);
+  links.forEach(a=>{const on=a.getAttribute('href')==='#'+t.id;if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');if(on&&innerWidth<=900)a.scrollIntoView({block:'nearest',inline:'center'});});
+  if(scroll)window.scrollTo(0,0);
+  if(t.id==='overview')sieveStart();
+}
+addEventListener('hashchange',()=>show(location.hash.slice(1),true));
+addEventListener('keydown',e=>{
+  if(e.target.closest('input,select,textarea,button,#catplot'))return;
+  if(e.key!=='ArrowRight'&&e.key!=='ArrowLeft')return;
+  const i=pages.findIndex(p=>!p.hidden),j=i+(e.key==='ArrowRight'?1:-1);
+  if(pages[j])location.hash=pages[j].id;
+});
+
+/* ---------- tooltip ---------- */
+const tip=document.getElementById('tip');
+document.addEventListener('pointermove',e=>{
+  const t=e.target.closest&&e.target.closest('[data-tip]');
+  if(!t){tip.hidden=true;return;}
+  tip.textContent=(LANG==='it'&&t.getAttribute('data-tip-it'))||t.getAttribute('data-tip');tip.hidden=false;
+  const x=Math.min(e.clientX+14,innerWidth-tip.offsetWidth-8),y=e.clientY+18+tip.offsetHeight>innerHeight?e.clientY-tip.offsetHeight-12:e.clientY+18;
+  tip.style.left=x+'px';tip.style.top=y+'px';
+});
+document.addEventListener('pointerleave',()=>tip.hidden=true);
+
+/* ---------- bars & strips ---------- */
+function bars(id,rows,o={}){
+  const box=document.getElementById(id);if(!box)return;
+  const max=Math.max(...rows.map(r=>r.v)),tot=o.total||rows.reduce((a,r)=>a+r.v,0);
+  const u=o.unit||['',''];
+  box.innerHTML=rows.map(r=>{
+    const [le,li]=r.l,[se,si]=r.s||[];
+    return `<div class="bar-row" data-tip="${esc(le)} · ${fE(r.v)} ${u[0]} · ${pE(r.v/tot)}" data-tip-it="${esc(li)} · ${fI(r.v)} ${u[1]} · ${pI(r.v/tot)}"><div class="bar-l"><span data-it="${esc(li)}">${esc(le)}</span>${se?`<small data-it="${esc(si)}">${esc(se)}</small>`:''}</div><div class="bar-t"><i class="${r.hatch?'hatch':''}" style="width:${r.v/max*100}%;--c:var(--${r.c||o.c||'ro'})"></i></div><div class="bar-v" data-it="${fI(r.v)}">${fE(r.v)}</div></div>`;
+  }).join('');
+}
+function strip(id,segs){
+  const box=document.getElementById(id);if(!box)return;
+  const tot=segs.reduce((a,s)=>a+s.v,0);
+  box.innerHTML=`<div class="strip-bar">${segs.map(s=>`<i class="${s.hatch?'hatch':''}" data-tip="${esc(s.l[0])} · ${fE(s.v)} · ${pE(s.v/tot)}" data-tip-it="${esc(s.l[1])} · ${fI(s.v)} · ${pI(s.v/tot)}" style="flex:${s.v} 1 0;--c:var(--${s.c})"></i>`).join('')}</div><ul class="strip-key">${segs.map(s=>`<li><span class="sw ${s.hatch?'hatch':''}" style="--c:var(--${s.c})"></span><b data-it="${fI(s.v)}">${fE(s.v)}</b><span data-it="${esc(s.l[1])}">${esc(s.l[0])}</span><em data-it="${pI(s.v/tot)}">${pE(s.v/tot)}</em></li>`).join('')}</ul>`;
+}
+const ADS=['job ads','annunci'];
+bars('bars-sources',[
+  {l:['ClimateTechList','ClimateTechList'],s:['public Airtable board','bacheca Airtable pubblica'],v:11031},
+  {l:['LinkedIn','LinkedIn'],s:['via JobSpy','via JobSpy'],v:6403},
+  {l:['Indeed','Indeed'],s:['via JobSpy','via JobSpy'],v:5516},
+  {l:['Climatebase','Climatebase'],s:['automated browser','browser automatico'],v:99}],{unit:ADS});
+bars('bars-continents',[
+  {l:['Europe','Europa'],v:13779},{l:['North America','America del Nord'],v:7152},{l:['Unknown','Non determinato'],v:1138,c:'idle'},{l:['Asia','Asia'],v:515},{l:['Africa','Africa'],v:285},{l:['South America','America del Sud'],v:110},{l:['Oceania','Oceania'],v:64}],{unit:ADS,total:23049});
+bars('bars-countries',[
+  {l:['United States','Stati Uniti'],v:6784},{l:['United Kingdom','Regno Unito'],v:2999},{l:['Germany','Germania'],v:2022},{l:['France','Francia'],v:1380},{l:['Poland','Polonia'],v:1148},{l:['Netherlands','Paesi Bassi'],v:962},{l:['Sweden','Svezia'],v:697},{l:['Spain','Spagna'],v:605}],{unit:ADS,total:23049});
+bars('bars-regex',[
+  {l:['Seniority in title','Seniority nel titolo'],s:['senior, lead, principal, head','senior, lead, principal, head'],v:6944},
+  {l:['Management in title','Management nel titolo'],v:2362},
+  {l:['Required experience','Esperienza obbligatoria'],s:['over 2 years','oltre 2 anni'],v:1000},
+  {l:['Internships, student posts','Stage e posti per studenti'],v:817},
+  {l:['Sales and marketing','Commerciale e marketing'],v:709},
+  {l:['Out-of-scope technical work','Mansioni tecniche fuori perimetro'],s:['hardware, mechanics, manufacturing','hardware, meccanica, produzione'],v:706},
+  {l:['User title rules','Regole dell\'utente sui titoli'],s:['added after reviews','aggiunte dopo le revisioni'],v:682},
+  {l:['Required language','Lingua obbligatoria'],s:['not Italian or English','non italiano né inglese'],v:633},
+  {l:['Coordination','Coordinamento'],v:406},
+  {l:['People management','Gestione di persone'],s:['from the description','dalla descrizione'],v:13}],{c:'drop',unit:ADS});
+const CATS=[['Energy','Energia',4919,1],['Mobility & transport','Mobilità e trasporti',3610,1],['Software & technology','Software e tecnologia',2802],['Consulting & services','Consulenza e servizi',2520],['Environment & climate','Ambiente e clima',1164,1],['Industry & materials','Industria e materiali',1152],['Unclassified','Da classificare',1116,0,1],['Finance & insurance','Finanza e assicurazioni',1094],['Construction & real estate','Edilizia e immobili',777],['Agriculture & food','Agricoltura e alimentazione',721],['Health & biotech','Salute e biotecnologie',693],['Aerospace','Aerospazio',666,1],['Research & education','Ricerca e formazione',632],['Retail & consumer goods','Commercio e beni di consumo',403],['Defence & security','Difesa e sicurezza',279],['Public administration','Pubblica amministrazione',220],['Hospitality & tourism','Ospitalità e turismo',160],['Media & entertainment','Media e intrattenimento',121]];
+bars('bars-cats',CATS.map(([e,i,v,p,h])=>({l:[e,i],v,s:p?['preferred','preferito']:null,c:p?'co':'idle',hatch:h})),{unit:ADS});
+strip('strip-desc',[{l:['usable text','testo utilizzabile'],v:18997,c:'keep'},{l:['to fetch','da recuperare'],v:3305,c:'hold-mark'},{l:['blocked','bloccati'],v:747,c:'idle'}]);
+strip('strip-jev',[{l:['keep','tieni'],v:1509,c:'keep'},{l:['unsure','non so'],v:810,c:'hold-mark'},{l:['discard','scarta'],v:4211,c:'drop'},{l:['on hold, no duties','in attesa, senza mansioni'],v:2247,c:'idle',hatch:1}]);
+strip('strip-coaxis',[{l:['interesting','interessante'],v:1158,c:'co'},{l:['missing evidence','evidenza mancante'],v:653,c:'idle',hatch:1},{l:['not interesting','non interessante'],v:4097,c:'ink-3'}]);
+strip('strip-tier',[{l:['Tier A','Tier A'],v:198,c:'keep'},{l:['Tier B · waiting','Tier B · attesa'],v:960,c:'co'},{l:['Tier B · strong role','Tier B · esperienza'],v:288,c:'ro'},{l:['missing evidence','evidenza mancante'],v:619,c:'idle',hatch:1},{l:['discarded','scarto'],v:3843,c:'ink-3'}]);
+
+/* ---------- sankey ---------- */
+(function(){
+  const svg=document.getElementById('sankey');if(!svg)return;
+  const k=300/23049,top=40,nw=14,X=[20,300,560,760];
+  const N={tot:{x:X[0],y:top,v:23049,c:'ro'},pass:{x:X[1],y:top,v:8777,c:'ro'},judg:{x:X[2],y:top,v:6530,c:'ro'},keep:{x:X[3],y:top,v:1509,c:'keep'}};
+  N.rx={x:X[1],y:top+8777*k+44,v:14272,c:'drop'};
+  N.blk={x:X[2],y:top+6530*k+28,v:2247,c:'idle'};
+  N.hold={x:X[3],y:top+1509*k+16,v:810,c:'hold-mark'};
+  N.jx={x:X[3],y:N.hold.y+810*k+16,v:4211,c:'drop'};
+  const F=[['tot','pass',8777,'ro','pass the filter','passano il filtro'],['tot','rx',14272,'drop','discarded by the rule filter','scartati dal filtro a regole'],['pass','judg',6530,'ro','have text to read','hanno un testo da leggere'],['pass','blk',2247,'idle','on hold: no readable duties','in attesa: nessuna mansione leggibile'],['judg','keep',1509,'keep','kept by Jev','tenuti da Jev'],['judg','hold',810,'hold-mark','left unsure by Jev','lasciati a «non so» da Jev'],['judg','jx',4211,'drop','discarded by Jev','scartati da Jev']];
+  const out={},inn={},g=el('g',{},svg);
+  for(const [a,b,v,c,le,li] of F){
+    const s=N[a],t=N[b],h=v*k,y0=s.y+(out[a]||0),y1=t.y+(inn[b]||0);out[a]=(out[a]||0)+h;inn[b]=(inn[b]||0)+h;
+    const x0=s.x+nw,x1=t.x,m=(x0+x1)/2;
+    const p=el('path',{d:`M${x0},${y0} C${m},${y0} ${m},${y1} ${x1},${y1} L${x1},${y1+h} C${m},${y1+h} ${m},${y0+h} ${x0},${y0+h} Z`,'data-tip':`${fE(v)} job ads ${le}`,'data-tip-it':`${fI(v)} annunci ${li}`},g);
+    p.style.fill=`var(--${c})`;p.style.fillOpacity=c==='ro'?.16:.3;
+  }
+  for(const key in N){const n=N[key];const r=el('rect',{x:n.x,y:n.y,width:nw,height:Math.max(2,n.v*k),rx:2,'data-tip':fE(n.v)+' job ads','data-tip-it':fI(n.v)+' annunci'},svg);r.style.fill=`var(--${n.c})`;}
+  [[X[0],'Collected','Raccolti'],[X[1],'Rule filter','Filtro a regole'],[X[2],'Any text?','C\'è un testo?'],[X[3],'Jev','Jev']].forEach(([x,e,i])=>tx(svg,{x,y:22,class:'h'},e,i));
+  const lab=(x,y,v,be,bi,se,si,cls)=>{tx(svg,{x,y,class:'b'+(cls?' '+cls:''),style:'font-family:var(--f-display);font-size:16px'},fE(v)+(be?' '+be:''),fI(v)+(bi?' '+bi:''));if(se)tx(svg,{x,y:y+17,class:'s'},se,si);};
+  lab(N.tot.x+nw+8,N.tot.y+20,23049,'','','job ads','annunci');
+  lab(N.pass.x+nw+8,N.pass.y+20,8777,'','','pass','passano');
+  lab(N.rx.x+nw+10,N.rx.y+N.rx.v*k/2,14272,'discarded','scartati','clear exclusions','esclusioni certe','t-drop');
+  lab(N.judg.x+nw+8,N.judg.y+20,6530,'','','judged','giudicati');
+  lab(N.blk.x,N.blk.y+N.blk.v*k+22,2247,'on hold','in attesa','no duties to read','senza mansioni da leggere');
+  lab(N.keep.x+nw+10,N.keep.y+14,1509,'compatible','compatibili','','','t-keep');
+  lab(N.hold.x+nw+10,N.hold.y+12,810,'unsure','non so','go to review','vanno in revisione','t-hold');
+  lab(N.jx.x+nw+10,N.jx.y+N.jx.v*k/2,4211,'discarded','scartati','duties out of profile','mansioni fuori profilo','t-drop');
+})();
+
+/* ---------- query grid ---------- */
+(function(){
+  const svg=document.getElementById('querygrid');if(!svg)return;
+  const Q=['Machine Learning Engineer','Data Scientist','Operations Research','Systems Modeler','Simulation Engineer'];
+  const C=[['AT','Austria','Austria'],['BE','Belgium','Belgio'],['CZ','Czechia','Cechia'],['DK','Denmark','Danimarca'],['FI','Finland','Finlandia'],['FR','France','Francia'],['DE','Germany','Germania'],['GR','Greece','Grecia'],['HU','Hungary','Ungheria'],['IE','Ireland','Irlanda'],['IT','Italy','Italia'],['LU','Luxembourg','Lussemburgo'],['NL','Netherlands','Paesi Bassi'],['NO','Norway','Norvegia'],['PL','Poland','Polonia'],['PT','Portugal','Portogallo'],['RO','Romania','Romania'],['ES','Spain','Spagna'],['SE','Sweden','Svezia'],['CH','Switzerland','Svizzera'],['UK','United Kingdom','Regno Unito']];
+  const x0=210,cw=30,y0=44,rh=32;
+  C.forEach(([c],j)=>el('text',{x:x0+j*cw+cw/2,y:26,'text-anchor':'middle',class:'s'},svg,c));
+  Q.forEach((q,i)=>{
+    el('text',{x:0,y:y0+i*rh+rh/2+4,class:'b',style:'font-family:var(--f-display);font-size:14px'},svg,q);
+    C.forEach(([c,ne,ni],j)=>{
+      const d=el('circle',{cx:x0+j*cw+cw/2,cy:y0+i*rh+rh/2,r:8,'data-tip':`“${q}” · ${ne} · LinkedIn + Indeed · last 7 days`,'data-tip-it':`«${q}» · ${ni} · LinkedIn + Indeed · ultimi 7 giorni`},svg);
+      d.style.fill='var(--ro)';d.style.fillOpacity=.82;
+    });
+  });
+  tx(svg,{x:x0,y:y0+5*rh+22,class:'s'},'5 titles × 21 countries = 105 searches · × 2 job boards · up to 30 results each','5 titoli × 21 paesi = 105 ricerche · × 2 bacheche · fino a 30 risultati ciascuna');
+})();
+
+/* ---------- years ---------- */
+(function(){
+  const svg=document.getElementById('years');if(!svg)return;
+  const x0=250,W=560,sx=v=>x0+v/6*W;
+  const rows=[['“0–3 years”','«0-3 anni»',0,3,'open','starts below the threshold: open','parte sotto la soglia: aperto'],['“1–4 years”','«1-4 anni»',1,4,'open','starts below the threshold: open','parte sotto la soglia: aperto'],['“at least 2 years”','«almeno 2 anni»',2,2,'open','doesn\'t exceed the threshold: open','non supera la soglia: aperto'],['“2–3 years”','«2-3 anni»',2,3,'drop','starts at the threshold and exceeds it: excluded','parte dalla soglia e la supera: escluso'],['“3+ years”','«3+ anni»',3,6,'drop','above the threshold: excluded','oltre la soglia: escluso'],['“5 years preferred”','«5 anni preferibili»',5,5,'pref','only preferred: doesn\'t count','solo preferenziale: non conta']];
+  for(let v=0;v<=6;v++){el('line',{x1:sx(v),y1:28,x2:sx(v),y2:262,class:'ln',style:'stroke:var(--rule);stroke-width:1'},svg);el('text',{x:sx(v),y:282,'text-anchor':'middle',class:'s'},svg,v+(v===6?'+':''));}
+  tx(svg,{x:sx(6)+14,y:282,class:'s'},'years','anni');
+  const band=el('rect',{x:sx(0),y:28,width:sx(2)-sx(0),height:234},svg);band.style.fill='var(--keep-soft)';band.style.opacity=.55;
+  const th=el('line',{x1:sx(2),y1:18,x2:sx(2),y2:266,class:'ln'},svg);th.style.stroke='var(--ink)';th.style.strokeWidth=2;
+  tx(svg,{x:sx(2)+6,y:18,class:'s b'},'threshold: 2 required years','soglia: 2 anni obbligatori');
+  rows.forEach(([le,li,a,b,kind,we,wi],i)=>{
+    const y=50+i*37;
+    tx(svg,{x:0,y:y+4,class:'b',style:'font-family:var(--f-display);font-size:14px'},le,li);
+    const col=kind==='drop'?'var(--drop)':kind==='pref'?'var(--idle)':'var(--keep)',tip={'data-tip':we,'data-tip-it':wi};
+    if(a===b){const c=el('circle',Object.assign({cx:sx(a),cy:y,r:7},tip),svg);c.style.fill=col;}
+    else{const l=el('line',Object.assign({x1:sx(a),y1:y,x2:sx(b),y2:y,'stroke-linecap':'round'},tip),svg);l.style.stroke=col;l.style.strokeWidth=10;}
+    tx(svg,{x:0,y:y+20,class:'s'},we,wi);
+  });
+})();
+
+/* ---------- Jev simulator ---------- */
+(function(){
+  const ids=['desc','comp','sen','stud'],inp={};
+  ids.forEach(i=>inp[i]=document.getElementById('jv-'+i));
+  const fam=document.getElementById('jv-fam');if(!fam)return;
+  const items=[...document.querySelectorAll('#jv-ladder li')];
+  const pill=document.getElementById('jv-pill'),why=document.getElementById('jv-why'),mark=document.getElementById('jv-mark'),rcap=document.getElementById('jv-rcap');
+  const T={keep:.75,excl:.20,conflict:.60,flag:.75,desc:.60},MANUAL=['produzione_manutenzione'];
+  const R=[['Internship or student post','Stage o posto per studenti'],['Too senior, management, or too much required experience','Troppo senior, management o troppa esperienza obbligatoria'],['Mixed signals: compatible duties but an excluded job family','Segnali contrastanti: mansioni compatibili ma famiglia esclusa'],['Clearly manual work','Lavoro manuale inequivocabile'],['The ad doesn\'t describe the duties','L\'annuncio non descrive le mansioni'],['The work belongs to an excluded job family','Il lavoro appartiene a una famiglia esclusa'],['Quantitative or software work on data and models','Lavoro quantitativo o software su dati e modelli'],['The duties are neither quantitative nor software','Le mansioni non sono né quantitative né software'],['Compatibility between 0.20 and 0.75: not sure','Compatibilità fra 0,20 e 0,75: incerto']];
+  const V=['discard','discard','unsure','discard','unsure','discard','keep','discard','unsure'];
+  function rule(s){
+    const ex=s.fam!=='nessuna';
+    if(s.stud>=T.flag)return 0;
+    if(s.sen>=T.flag)return 1;
+    if(ex&&s.comp>=T.conflict)return 2;
+    if(ex&&s.comp<=T.excl&&MANUAL.includes(s.fam))return 3;
+    if(s.desc<T.desc)return 4;
+    if(ex)return 5;
+    if(s.comp>=T.keep)return 6;
+    if(s.comp<=T.excl)return 7;
+    return 8;
+  }
+  function run(){
+    const s={fam:fam.value};ids.forEach(i=>{s[i]=+inp[i].value;inp[i].nextElementSibling.textContent=L(dE,dI)(s[i]);});
+    const i=rule(s),v=V[i];
+    items.forEach((li,j)=>{li.classList.toggle('fired',j===i);li.classList.toggle('passed',j<i);li.classList.toggle('skip',j>i);li.querySelector('.st').textContent=j===i?L('decides →','decide →'):j<i?L('no','no'):'';});
+    pill.textContent={keep:L('keep','tieni'),unsure:L('unsure','non so'),discard:L('discard','scarta')}[v];
+    pill.className='pill '+(v==='keep'?'p-keep':v==='discard'?'p-drop':'p-hold');
+    why.textContent=L(R[i][0],R[i][1])+L(` (line ${i+1})`,` (riga ${i+1})`);
+    mark.style.left=(s.comp*100)+'%';
+    rcap.textContent=L('Compatibility scale, used by lines 7–9: ','Scala di compatibilità, usata dalle righe 7–9: ')+L(dE,dI)(s.comp);
+  }
+  const P={junior:{desc:.92,comp:.88,sen:.18,stud:.03,fam:'nessuna'},lead:{desc:.9,comp:.91,sen:.93,stud:.02,fam:'nessuna'},vague:{desc:.25,comp:.5,sen:.2,stud:.05,fam:'nessuna'}};
+  const btns=[...document.querySelectorAll('#presets button')];
+  btns.forEach(b=>b.addEventListener('click',()=>{const p=P[b.dataset.p];ids.forEach(i=>inp[i].value=p[i]);fam.value=p.fam;btns.forEach(x=>x.setAttribute('aria-pressed',String(x===b)));run();}));
+  [...ids.map(i=>inp[i]),fam].forEach(x=>x.addEventListener('input',()=>{btns.forEach(b=>b.setAttribute('aria-pressed','false'));run();}));
+  btns[0].setAttribute('aria-pressed','true');
+  onLang.push(run);
+})();
+
+/* ---------- category plot ---------- */
+(function(){
+  const svg=document.getElementById('catplot');if(!svg)return;
+  const m={l:48,t:14,r:14,b:46},S=380-m.l-m.r,H=380-m.t-m.b;
+  const X=v=>m.l+v*S,Y=v=>m.t+(1-v)*H;
+  const poly=(pts,fill,op,te,ti)=>{const p=el('polygon',{points:pts.map(([a,b])=>X(a)+','+Y(b)).join(' ')},svg);p.style.fill=fill;p.style.fillOpacity=op;if(te){p.setAttribute('data-tip',te);p.setAttribute('data-tip-it',ti);}return p;};
+  poly([[0,0],[1,1],[0,1]],'url(#hatch)',1,'Unreachable: the second sector never beats the first','Irraggiungibile: il secondo settore non supera il primo');
+  const rNone=poly([[0,0],[.6,0],[.6,.4],[.4,.4]],'var(--idle-soft)',1,'Unclassified: no sector is strong enough','Da classificare: nessun settore basta');
+  const rOne=poly([[.6,0],[1,0],[1,.4],[.6,.4]],'var(--co)',.18,'One category: first sector from 0.60','Una categoria: primo settore da 0,60');
+  const rTwo=poly([[.4,.4],[1,.4],[1,1]],'var(--co)',.36,'Two categories: both from 0.40','Due categorie: entrambi da 0,40');
+  for(let k=0;k<=5;k++){
+    const t=k/5,e=t===0?'0':t===1?'1':t.toFixed(1),it=e.replace('.',',');
+    el('line',{x1:X(t),y1:Y(0),x2:X(t),y2:Y(0)+5,class:'ln'},svg);tx(svg,{x:X(t),y:Y(0)+19,'text-anchor':'middle',class:'s'},e,it);
+    el('line',{x1:X(0)-5,y1:Y(t),x2:X(0),y2:Y(t),class:'ln'},svg);tx(svg,{x:X(0)-9,y:Y(t)+4,'text-anchor':'end',class:'s'},e,it);
+  }
+  el('rect',{x:X(0),y:Y(1),width:S,height:H,class:'ln',style:'fill:none;stroke:var(--rule)'},svg);
+  el('line',{x1:X(0),y1:Y(0),x2:X(1),y2:Y(1),class:'ln dash'},svg);
+  tx(svg,{x:X(.5),y:374,'text-anchor':'middle',class:'s'},'score of the 1st sector','punteggio del 1° settore');
+  tx(svg,{x:12,y:Y(.5),'text-anchor':'middle',class:'s',transform:`rotate(-90 12 ${Y(.5)})`},'score of the 2nd sector','punteggio del 2° settore');
+  tx(svg,{x:X(.8),y:Y(.72),'text-anchor':'middle',class:'b'},'two','due');
+  tx(svg,{x:X(.8),y:Y(.2),'text-anchor':'middle',class:'b'},'one','una');
+  tx(svg,{x:X(.36),y:Y(.12),'text-anchor':'middle',class:'b'},'none','nessuna');
+  tx(svg,{x:X(.2),y:Y(.8),'text-anchor':'middle',class:'s'},'unreachable','irraggiungibile');
+  const knob=el('circle',{r:9,class:'knob',tabindex:0,role:'slider','aria-label':'Sector scores'},svg);
+  knob.style.fill='var(--ink)';knob.style.stroke='var(--panel)';knob.style.strokeWidth=3;
+  const emp=document.getElementById('cat-emp'),agy=document.getElementById('cat-agy');
+  const out={s:document.getElementById('cat-scores'),r:document.getElementById('cat-result'),w:document.getElementById('cat-why')};
+  let a=.72,b=.31;
+  function upd(){
+    a=Math.max(0,Math.min(1,a));b=Math.max(0,Math.min(b,a));
+    knob.setAttribute('cx',X(a));knob.setAttribute('cy',Y(b));
+    const P=L(pE,pI);
+    knob.setAttribute('aria-label',L('Sector scores','Punteggi dei settori'));
+    knob.setAttribute('aria-valuetext',`${P(a)}, ${P(b)}`);
+    out.s.textContent=L(`Energy ${P(a)} · Environment & climate ${P(b)}`,`Energia ${P(a)} · Ambiente e clima ${P(b)}`);
+    const dim=agy.checked||!emp.checked;[rNone,rOne,rTwo].forEach(r=>r.style.opacity=dim?.35:1);
+    let r,w,none=false;
+    if(agy.checked){r=L('Consulting & services','Consulenza e servizi');w=L('An agency is classified by its own business, not its clients\'','Un\'agenzia si classifica per la sua attività, non per i clienti');}
+    else if(!emp.checked){none=true;r=L('Unclassified','Da classificare');w=L('The text doesn\'t say who the employer is','Il testo non distingue chi assume');}
+    else if(b>=.4){r=L('Energy + Environment & climate','Energia + Ambiente e clima');w=L('Two sectors above 0.40','Due settori sopra 0,40');}
+    else if(a>=.6){r=L('Energy','Energia');w=L('One sector above 0.60','Un settore sopra 0,60');}
+    else{none=true;r=L('Unclassified','Da classificare');w=L('No sector reaches the thresholds','Nessun settore raggiunge le soglie');}
+    out.r.textContent=r;out.w.textContent=w;out.r.style.color=none?'var(--ink-2)':'var(--co)';
+  }
+  function fromEvent(e){const p=svg.createSVGPoint();p.x=e.clientX;p.y=e.clientY;const q=p.matrixTransform(svg.getScreenCTM().inverse());a=(q.x-m.l)/S;b=1-(q.y-m.t)/H;upd();}
+  let drag=false;
+  svg.addEventListener('pointerdown',e=>{drag=true;svg.setPointerCapture(e.pointerId);fromEvent(e);});
+  svg.addEventListener('pointermove',e=>{if(drag)fromEvent(e);});
+  svg.addEventListener('pointerup',()=>drag=false);svg.addEventListener('pointercancel',()=>drag=false);
+  knob.addEventListener('keydown',e=>{const d=e.shiftKey?.1:.02;if(e.key==='ArrowRight')a+=d;else if(e.key==='ArrowLeft')a-=d;else if(e.key==='ArrowUp')b+=d;else if(e.key==='ArrowDown')b-=d;else return;e.preventDefault();upd();});
+  emp.addEventListener('change',upd);agy.addEventListener('change',upd);
+  onLang.push(upd);
+})();
+
+/* ---------- sieve (hero) ---------- */
+let sieveRunning=false,sieveStart=()=>{};
+(function(){
+  const cv=document.getElementById('sieve');if(!cv)return;
+  const ctx=cv.getContext('2d'),page=document.getElementById('overview');
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const G={regex:.31,text:.52,jev:.73};
+  let W=0,H=0,col={},P=[],acc=0,last=0,frame=0;
+  function colors(){const s=getComputedStyle(root);['ink-3','drop','idle','hold-mark','keep','ro','rule'].forEach(k=>col[k]=s.getPropertyValue('--'+k).trim());}
+  function size(){const d=Math.min(2,devicePixelRatio||1);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0);}
+  function spawn(){
+    const r=Math.random();let f;
+    if(r<14272/23049)f='regex';else{const r2=Math.random();if(r2<2247/8777)f='text';else{const r3=Math.random();f=r3<1509/6530?'keep':r3<2319/6530?'hold':'jev';}}
+    P.push({x:-4,y:H*(.3+Math.random()*.42),v:70+Math.random()*40,vy:0,f,st:'go',a:1,c:'ro'});
+  }
+  function step(dt){
+    if(!W)return;
+    acc+=dt*46;while(acc>1){spawn();acc--;}
+    for(const p of P){
+      if(p.st==='go'){
+        p.x+=p.v*dt;
+        const gx=W*(p.f==='regex'?G.regex:p.f==='text'?G.text:G.jev);
+        if(p.x>=gx&&p.f!=='keep'&&p.f!=='hold'){
+          if(p.f==='text'){p.st='park';p.c='idle';p.x=gx-3-Math.random()*16;}
+          else{p.st='fall';p.c='drop';}
+        }else if(p.x>=W*G.jev){
+          if(p.f==='hold'){p.st='hold';p.c='hold-mark';}
+          if(p.f==='keep'){p.c='keep';p.y+=(H*.52-p.y)*dt*1.4;if(p.x>W*.9)p.a-=dt*1.6;}
+        }
+      }else if(p.st==='fall'){p.vy+=260*dt;p.y+=p.vy*dt;p.x+=p.v*.25*dt;if(p.y>H*.84)p.a-=dt*3;}
+      else if(p.st==='park'){p.a-=dt*.22;}
+      else if(p.st==='hold'){p.x+=p.v*.8*dt;p.y+=(H*.22-p.y)*dt*1.6;if(p.x>W*.9)p.a-=dt*1.6;}
+    }
+    P=P.filter(p=>p.a>0&&p.x<W+6);
+  }
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle=col.rule;ctx.lineWidth=1.5;ctx.setLineDash([4,5]);
+    for(const k in G){const x=Math.round(W*G[k])+.5;ctx.beginPath();ctx.moveTo(x,58);ctx.lineTo(x,H-58);ctx.stroke();}
+    ctx.setLineDash([]);
+    for(const p of P){ctx.globalAlpha=Math.max(0,p.a)*(p.c==='ro'?.75:.95);ctx.fillStyle=col[p.c];ctx.beginPath();ctx.arc(p.x,p.y,p.c==='keep'?2.8:2.2,0,6.283);ctx.fill();}
+    ctx.globalAlpha=1;
+  }
+  function loop(t){
+    if(page.hidden||document.hidden){sieveRunning=false;return;}
+    const dt=Math.min(.05,(t-last)/1000||0);last=t;
+    if(++frame%90===0)colors();
+    step(dt);draw();requestAnimationFrame(loop);
+  }
+  function warm(n){if(!P.length)for(let i=0;i<n;i++)step(1/60);}
+  sieveStart=function(){
+    size();colors();
+    if(reduce){warm(900);draw();return;}
+    if(!sieveRunning){warm(500);sieveRunning=true;last=performance.now();requestAnimationFrame(loop);}
+  };
+  // Il canvas può nascere a larghezza zero (pagina nascosta, pannello non ancora misurato).
+  new ResizeObserver(()=>{if(page.hidden)return;const w=W;size();if(!w&&W)P=[];warm(reduce?900:500);if(reduce)draw();}).observe(cv);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!page.hidden)sieveStart();});
+  new MutationObserver(()=>{colors();if(reduce)draw();}).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();
+
+applyLang();
+show(location.hash.slice(1),false);
+})();
+</script>
+
+</body>
+</html>
