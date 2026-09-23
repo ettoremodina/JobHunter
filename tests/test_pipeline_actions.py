@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from jobhunter.workspace import Archive, settings
-from jobhunter.operations.pipeline_actions import controls, parameters, start, stop, execute, configuration
+from jobhunter.operations.pipeline_actions import active, controls, parameters, start, stop, execute, configuration
 
 
 class ActionTests(unittest.TestCase):
@@ -137,7 +137,11 @@ class ActionTests(unittest.TestCase):
         self.archive.db.commit()
         with patch('jobhunter.operations.pipeline_actions.process_alive', return_value=False):
             result = controls(self.archive, self.cfg)
+            self.assertIsNone(active(self.archive))
         self.assertIsNone(result['active'])
+        # Il controllo leggero che la dashboard ripete mentre un passaggio lavora vede lo stesso job.
+        with patch('jobhunter.operations.pipeline_actions.process_alive', return_value=True):
+            self.assertEqual(active(self.archive)['id'], controls(self.archive, self.cfg)['active']['id'])
         self.assertEqual(result['actions']['remote']['last_run']['status'], 'interrupted')
         self.archive.db.execute("UPDATE pipeline_jobs SET status='success',parameters=?", (json.dumps({'mode': 'preview'}),))
         self.archive.db.commit()

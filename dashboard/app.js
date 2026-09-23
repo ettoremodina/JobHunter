@@ -1607,11 +1607,29 @@ async function loadPipeline() {
     throw error;
   } finally {
     button.disabled = false;
-    clearTimeout(pipelineTimer);
-    if (!$('pipeline-view').hidden || $('pipeline-dialog').open) pipelineTimer = setTimeout(() => {
-      if (!$('pipeline-view').hidden || $('pipeline-dialog').open) loadPipeline().catch(error => message(error.message, true));
-    }, (pipelineData?.controls.poll_seconds || 5) * 1000);
+    const live = Boolean(pipelineData?.controls.active || pipelineData?.collection_running);
+    schedulePipeline(live ? watchPipeline : loadPipeline, live ? PIPELINE_WATCH_MS : (pipelineData?.controls.poll_seconds || 5) * 1000);
   }
+}
+
+/** Mentre un passaggio lavora basta rileggere la sua riga: progresso ogni due secondi, pagina intera alla fine. */
+const PIPELINE_WATCH_MS = 2000;
+
+function schedulePipeline(next, delay) {
+  clearTimeout(pipelineTimer);
+  const visible = () => !$('pipeline-view').hidden || $('pipeline-dialog').open;
+  if (visible()) pipelineTimer = setTimeout(() => {
+    if (visible()) next().catch(error => message(error.message, true));
+  }, delay);
+}
+
+async function watchPipeline() {
+  const {active, collection_running} = await api('/api/pipeline/active');
+  if (!active && !collection_running) return loadPipeline();
+  pipelineData.controls.active = active;
+  pipelineData.collection_running = collection_running;
+  renderPipelineActivity();
+  schedulePipeline(watchPipeline, PIPELINE_WATCH_MS);
 }
 
 /** Render a proportional bar with a single labelled count for every share, including zeroes. */

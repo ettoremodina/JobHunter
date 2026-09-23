@@ -40,6 +40,29 @@ def input_versions(archive):
     return versions
 
 
+JOB_COLUMNS = f"id,step,status,parameters,basis,pid,started_at,finished_at,{BRIEF_DETAIL}"
+
+
+def job(archive, row):
+    """One pipeline_jobs row for the dashboard: parsed fields, stop request, a dead worker shown as interrupted."""
+    item = dict(row)
+    item['parameters'] = json.loads(item['parameters'])
+    item['detail'] = json.loads(item['detail'])
+    item['cancel_requested'] = archive.db.execute('SELECT 1 FROM pipeline_cancellations WHERE job_id=?', (item['id'],)).fetchone() is not None
+    if item['status'] == 'running' and process_alive(item['pid']) is False:
+        item['status'] = 'interrupted'
+    return item
+
+
+def active(archive):
+    """The running job alone: cheap enough for the dashboard to poll every few seconds while it works."""
+    for row in archive.db.execute(f"SELECT {JOB_COLUMNS} FROM pipeline_jobs WHERE status='running' ORDER BY id DESC"):
+        item = job(archive, row)
+        if item['status'] == 'running':
+            return item
+    return None
+
+
 def controls(archive, cfg, versions=None):
     """Describe action forms, real execution states, and changes since the last successful run.
 
@@ -52,15 +75,9 @@ def controls(archive, cfg, versions=None):
     jev = system_one_config()
     versions = versions or input_versions(archive)
     history = []
-    for row in archive.db.execute(f"""SELECT id,step,status,parameters,basis,pid,started_at,finished_at,{BRIEF_DETAIL}
-            FROM pipeline_jobs WHERE id IN (SELECT id FROM pipeline_jobs ORDER BY id DESC LIMIT 100) OR status='running' ORDER BY id DESC"""):
-        item = dict(row)
-        item['parameters'] = json.loads(item['parameters'])
-        item['detail'] = json.loads(item['detail'])
-        item['cancel_requested'] = archive.db.execute('SELECT 1 FROM pipeline_cancellations WHERE job_id=?', (item['id'],)).fetchone() is not None
-        if item['status'] == 'running' and process_alive(item['pid']) is False:
-            item['status'] = 'interrupted'
-        history.append(item)
+    for row in archive.db.execute(f"""SELECT {JOB_COLUMNS} FROM pipeline_jobs
+            WHERE id IN (SELECT id FROM pipeline_jobs ORDER BY id DESC LIMIT 100) OR status='running' ORDER BY id DESC"""):
+        history.append(job(archive, row))
     actions = {}
     for key, spec in ui['actions'].items():
         last = next((r for r in history if r['step'] == key or r['step'] == 'sequence' and r['detail'].get('phase') == key and r['status'] in ('running', 'failed', 'interrupted')), None)

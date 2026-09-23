@@ -145,6 +145,9 @@ def create_server(database, cfg, port=8000):
                     payload = {**cache.get("pipeline", lambda: summary(archive, cfg)), "workflow": workflow(archive, cfg),
                                "controls": controls(archive, cfg, cache.get("versions", lambda: input_versions(archive))),
                                "collection_running": state["running"]}
+                elif parsed.path == "/api/pipeline/active":
+                    from jobhunter.operations.pipeline_actions import active
+                    payload = {"active": active(archive), "collection_running": state["running"]}
                 elif parsed.path == "/api/companies":
                     # Il tier chiede i verdetti di tutto l'archivio: quelli della cache, finché nulla cambia.
                     tier = query.get("tier", "")
