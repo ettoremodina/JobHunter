@@ -4,7 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from datetime import date, timedelta
-from jobhunter.workspace import Archive
+import json
+from jobhunter.workspace import Archive, ROOT
 from jobhunter.evaluation.selection import saved, requirements, proposals, metrics, evaluate
 
 
@@ -40,13 +41,18 @@ class QueueTests(unittest.TestCase):
             self.assertEqual(evaluate(dict(role, description=open_range))["status"], "potential", open_range)
 
     def test_calibrated_boundaries(self):
-        """Reject physical specializations while preserving software and computational exceptions."""
+        """Reject physical specializations while preserving software and computational exceptions.
+
+        Legge le regole d'esempio versionate: i filtri personali cambiano con l'uso (dal 23/09/2026
+        escludono per titolo anche «cameriere»), e il test deve passare anche su un clone nuovo.
+        """
+        rules = json.loads((ROOT / "examples/config/role_filters.json").read_text(encoding="utf-8"))
         for title in ("Mechanical Engineer", "PCB Design Engineer", "Manufacturing Engineer"):
-            self.assertEqual(evaluate({"title": title})["status"], "excluded", title)
+            self.assertEqual(evaluate({"title": title}, rules)["status"], "excluded", title)
         for title in ("Mechanical Simulation Engineer", "Manufacturing Software Engineer", "Engineer: Gas-Turbines CFD", "Software Developer"):
-            self.assertEqual(evaluate({"title": title})["status"], "potential", title)
+            self.assertEqual(evaluate({"title": title}, rules)["status"], "potential", title)
         for title in ("Systems Engineer", "cameriere ai piani", "Data Entry Specialist"):
-            self.assertEqual(evaluate({"title": title})["status"], "review", title)
+            self.assertEqual(evaluate({"title": title}, rules)["status"], "review", title)
         self.assertEqual(evaluate({"title": "Robotics Software Engineer", "description": "A minimum of 2 years of relevant professional experience"})["status"], "potential")
         self.assertEqual(requirements("Minimum qualifications:\n5 years of experience developing models.\nPreferred qualifications:\n8 years of experience.")["required_years"], 5)
         self.assertEqual(requirements("At least 5 years of professional software-engineering experience")["required_years"], 5)
