@@ -505,6 +505,11 @@ class Archive:
             hashes.append(identity(path.read_text(encoding="utf-8")))
         return identity("|".join(hashes))
 
+    def require_company(self, cid):
+        """Fail like show() does for an unknown company, without assembling its whole detail."""
+        if not self.db.execute("SELECT 1 FROM companies WHERE id=?", (cid,)).fetchone():
+            raise ValueError("Company not found")
+
     def show(self, cid):
         """Return a company with opportunities, provenance, evidence and feedback."""
         company = self.db.execute("SELECT * FROM companies WHERE id=?", (cid,)).fetchone()
@@ -544,7 +549,7 @@ class Archive:
 
     def feedback(self, cid, status, note="", opportunity_id=None, reason="other", until_date=None):
         """Record an explicit company or opportunity decision; identical retries are harmless."""
-        self.show(cid)
+        self.require_company(cid)
         from jobhunter.evaluation.selection import feedback_reasons, role_snapshot
         snapshot = json.dumps(role_snapshot(self, cid))
         if reason not in feedback_reasons():
@@ -584,13 +589,13 @@ class Archive:
 
     def assess(self, cid, data):
         """Persist a structured chat assessment; compatible with a future API producer."""
-        self.show(cid)
+        self.require_company(cid)
         if not isinstance(data, dict) or not isinstance(data.get("reasoning"), str) or not data["reasoning"].strip():
             raise ValueError("Assessment requires reasoning text")
         for key in ("missing_information", "relevant_opportunity_ids"):
             if key in data and (not isinstance(data[key], list) or not all(isinstance(v, str) for v in data[key])):
                 raise ValueError(key + " must be a list of strings")
-        valid_ids = {j["id"] for j in self.show(cid)["opportunities"]}
+        valid_ids = {r[0] for r in self.db.execute("SELECT id FROM opportunities WHERE company_id=?", (cid,))}
         if not set(data.get("relevant_opportunity_ids", [])) <= valid_ids:
             raise ValueError("Assessment refers to unknown opportunities")
         with self.db:
@@ -599,7 +604,7 @@ class Archive:
 
     def add_evidence(self, cid, source_url, note):
         """Add attributed research to an existing company, idempotently."""
-        self.show(cid)
+        self.require_company(cid)
         link = url(source_url)
         if not link or not clean(note):
             raise ValueError("Evidence requires an HTTP URL and a note")
