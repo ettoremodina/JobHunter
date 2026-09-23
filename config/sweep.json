@@ -4,5 +4,8 @@
   "jobspy_workers": 2,
   "jobspy_query_timeout_seconds": 180,
   "browser_max_pages": 200,
-  "browser_max_jobs": 10000
+  "browser_max_jobs": 10000,
+  "close_missing_ads": true,
+  "max_closed_share": 0.5,
+  "remove_closed_html": true
 }

@@ -46,6 +46,9 @@ def sweep(archive, cfg):
 
     checkpoint("listings")
     ordered = sorted(cfg["sources"].items(), key=lambda item: {"airtable": 0, "browser": 1, "jobspy": 2}[item[1]["kind"]])
+    # Le fonti che possono dire «non c'è più»: Airtable restituisce tutto, JobSpy la sua finestra di ore.
+    # Il browser si ferma a limiti di navigazione, quindi un annuncio mancante non prova niente.
+    closable = {}
     for name, source in ordered:
         directory = output/name
         directory.mkdir()
@@ -75,6 +78,8 @@ def sweep(archive, cfg):
                         checkpoint("listings")
                         logger.info("Official %s: %s/%s queries, %s records", name, len(details["queries"]), len(specs), details["received"])
                 details["status"] = "partial" if any(q["error"] or q["stop"] in ("page_cap", "empty_or_blocked", "no_output") or q["import"]["rejected"] for q in details["queries"]) else "success"
+                if details["received"] and not any(q["error"] or q["stop"] in ("empty_or_blocked", "no_output") for q in details["queries"]):
+                    closable[name] = conf["hours_old"]
             else:
                 if source["kind"] == "airtable":
                     rows, errors = airtable_rows(conf, cfg["timeout_seconds"]), []
@@ -87,6 +92,8 @@ def sweep(archive, cfg):
                 imported = archive.ingest(rows, name)
                 details.update(received=len(rows), accepted=len(rows)-len(imported["rejected"]), errors=errors, import_report=imported)
                 details["status"] = "partial" if errors or imported["rejected"] else "success" if rows else "empty"
+                if source["kind"] == "airtable" and details["status"] == "success":
+                    closable[name] = None
                 if source["kind"] == "browser":
                     details["discovery"] = json.loads((directory/"discovery.json").read_text(encoding="utf-8"))
                     details["status"] = "partial"
@@ -97,6 +104,14 @@ def sweep(archive, cfg):
         checkpoint("listings")
     # DESIGN §10: collect-all fa solo raccolta. Descrizioni, categorie, analisi e coda hanno il loro
     # posto nei dieci passi e non vanno ripetute con un ordine diverso alla fine di uno sweep.
+    if limits.get("close_missing_ads", True):
+        from jobhunter.acquisition import closure
+        checkpoint("closures")
+        found = closure.detect(archive, report["started_at"], closable, limits.get("max_closed_share", 0.5))
+        report["closures"] = {k: v for k, v in found.items() if k != "ids"}
+        if limits.get("remove_closed_html", True):
+            snapshots = json.loads((ROOT/"config/descriptions.json").read_text(encoding="utf-8"))["output_directory"]
+            report["closures"]["removed_html"] = closure.compact(found["ids"], ROOT/snapshots)
     from jobhunter.acquisition.descriptions import coverage
     checkpoint("coverage")
     report["description_coverage"] = coverage(archive)

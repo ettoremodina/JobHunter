@@ -330,7 +330,11 @@ function opportunityBlock(job, company, decision, id, open, context = {}) {
   const line = el("span", undefined, "job-head");
   line.append(el("strong", job.title, "job-title"), verdictBadge(job.verdict?.verdetto));
   if (decision) line.append(el("span", labels[decision], `badge ${decision}`));
-  if (isStale(job.posted_at)) line.append(el("span", `Oltre ${config.stale_after_days} giorni`, "badge stale"));
+  if (job.closed) {
+    const closed = el("span", "Chiuso", "badge closed");
+    closed.title = `${job.closed.reason}. Resta in archivio; si riapre se ricompare.`;
+    line.append(closed);
+  } else if (isStale(job.posted_at)) line.append(el("span", `Oltre ${config.stale_after_days} giorni`, "badge stale"));
   head.append(line, el("small", [locationPreview(job.locations), postedText(job.posted_at)].filter(Boolean).join(" · ")));
   block.append(head);
   const body = el("div", undefined, "opportunity-body");

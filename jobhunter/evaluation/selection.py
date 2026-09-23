@@ -108,6 +108,8 @@ def verdicts(archive, cid=None):
         saved_args = (json.dumps(list(decisions)),)
     for row in archive.db.execute(saved_sql, saved_args):
         saved[row["record_id"]] = json.loads(row["data"]).get("result") or {}
+    # Un annuncio chiuso resta nella catena con il suo verdetto, ma non tiene più in piedi un tier.
+    closed = {r[0] for r in archive.db.execute("SELECT opportunity_id FROM closures")}
     from jobhunter.evaluation import review
     scoped = None if cid is None else list(decisions)
     users, agents = review.user_judgements(archive, scoped), review.agent_judgements(archive, scoped)
@@ -124,7 +126,7 @@ def verdicts(archive, cid=None):
         # B-esperienza. Senza, tenere un ruolo non spostava quasi mai il tier (utente, 22/09/2026).
         reviewed_keep = final["giudice"] in ("utente", "agente") and final["verdetto"] == tier.KEEP
         roles[oid] = {**final, "primary": chain[0]["primary"] or reviewed_keep,
-                      "catena": chain + overrides[::-1]}
+                      "catena": chain + overrides[::-1], "chiuso": oid in closed}
     if cid is None:
         scope, own_scope, arguments = "", "", ()
     elif isinstance(cid, str):
@@ -149,7 +151,7 @@ def verdicts(archive, cid=None):
         result[row["id"]] = {"azienda": {"verdetto": verdict, "categoria": company["category"],
                                         "categorie": labels,
                                         "motivo": company["reason"], "giudice": company["method"]},
-                             "ruoli": own, "tier": tier.tier(verdict, own.values())}
+                             "ruoli": own, "tier": tier.tier(verdict, [r for r in own.values() if not r["chiuso"]])}
     return result
 
 

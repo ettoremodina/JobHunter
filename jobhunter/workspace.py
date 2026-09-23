@@ -147,6 +147,8 @@ class Archive:
         CREATE TABLE IF NOT EXISTS company_profile_attempts(company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
           strategy TEXT NOT NULL, status TEXT NOT NULL, url TEXT NOT NULL, found TEXT NOT NULL,
           detail TEXT NOT NULL, checked_at TEXT NOT NULL, retry_after TEXT, PRIMARY KEY(company_id,strategy));
+        CREATE TABLE IF NOT EXISTS closures(opportunity_id TEXT PRIMARY KEY REFERENCES opportunities(id) ON DELETE CASCADE,
+          detected_at TEXT NOT NULL, reason TEXT NOT NULL);
         """)
         if 'to_map' not in {r[1] for r in self.db.execute('PRAGMA table_info(places)')}:
             # Quali località aspettano ancora una città nella mappa: prima non lo distinguevamo
@@ -253,6 +255,8 @@ class Archive:
                 self.db.execute("INSERT INTO opportunities VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data, content_hash=excluded.content_hash, last_seen=MAX(opportunities.last_seen,excluded.last_seen)",
                                 (oid, cid, encoded, digest, stamp, stamp))
                 self.db.execute("INSERT INTO observations VALUES(?,?,?,?) ON CONFLICT DO UPDATE SET observed_at=MAX(observations.observed_at,excluded.observed_at)", (oid, source, observed_url, stamp))
+                # Un annuncio che ricompare non è chiuso: la chiusura era solo un'ipotesi della raccolta.
+                self.db.execute("DELETE FROM closures WHERE opportunity_id=?", (oid,))
                 if carries_text:
                     self.record_description_attempt(oid, "available", item["source_url"], observed=stamp)
                 listing = json.dumps({"method": "listing", "extracted_at": stamp}) if company_fields["company_description"] else ""
@@ -394,7 +398,7 @@ class Archive:
             # esiste un annuncio che li giustifichi, e i filtri restano su tutti gli annunci.
             if tier in ("A", "B-esperienza"):
                 qualifying = sorted(oid for cid in chosen for oid, verdict in assessment[cid]["ruoli"].items()
-                                    if verdict["verdetto"] == tiers.KEEP
+                                    if verdict["verdetto"] == tiers.KEEP and not verdict.get("chiuso")
                                     and (tier != "B-esperienza" or verdict.get("primary")))
         role_conditions, role_args = [], []
         if qualifying is not None:
@@ -545,6 +549,8 @@ class Archive:
                 job["formatting_model"] = enriched["model"]
             job.update(id=row["id"], first_seen_at=row["first_seen"], last_seen_at=row["last_seen"])
             job["sources"] = [dict(x) for x in self.db.execute("SELECT source,source_url,observed_at FROM observations WHERE opportunity_id=?", (row["id"],))]
+            closure = self.db.execute("SELECT detected_at,reason FROM closures WHERE opportunity_id=?", (row["id"],)).fetchone()
+            job["closed"] = dict(closure) if closure else None
             result["opportunities"].append(job)
         result["feedback"] = [dict(r) for r in self.db.execute("SELECT f.*,d.reason,d.until_date FROM feedback f LEFT JOIN feedback_detail d ON d.event_id=f.id WHERE f.company_id=? ORDER BY f.id DESC", (cid,))]
         result["status"] = next((f["status"] for f in result["feedback"] if not f["undone_at"] and not f["opportunity_id"]), "new")

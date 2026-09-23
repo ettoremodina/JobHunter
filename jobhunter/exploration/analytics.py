@@ -28,6 +28,8 @@ def summary(archive, eligibility=''):
         countries_of.setdefault(row['opportunity_id'], set()).add(row['country'])
 
     attempted = {row[0] for row in archive.db.execute('SELECT opportunity_id FROM description_attempts')}
+    # Come in `selection.verdicts`: un annuncio chiuso non tiene in piedi il tier della sua azienda.
+    closed = {row[0] for row in archive.db.execute('SELECT opportunity_id FROM closures')}
     distributions = {key: Counter() for key in ('categories', 'countries', 'continents', 'selection')}
     health = Counter({key: 0 for key in ('with_description', 'with_usable_description', 'categorized',
                                          'country_known', 'with_salary', 'with_posted_date')})
@@ -70,7 +72,7 @@ def summary(archive, eligibility=''):
                     outcomes['jev_' + jev] += 1
                     outcomes['overall_' + {'keep': 'compatible', 'exclude': 'discarded',
                                             'review': 'review'}[jev]] += 1
-                    if jev == 'keep':
+                    if jev == 'keep' and row['id'] not in closed:
                         roles_by_company.setdefault(row['company_id'], []).append({
                             'verdetto': tier.KEEP,
                             'primary': decision.get('career_priority') == 'primary',

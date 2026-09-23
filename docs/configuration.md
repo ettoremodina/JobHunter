@@ -9,7 +9,7 @@ I file personali non sono versionati: `user_context/`, `config/role_filters.json
 | Ambito | File | Contenuto |
 |---|---|---|
 | Applicazione | `config/app.json` | Database, porta, fonti, limiti generali, directory degli snapshot e `stale_after_days`, la soglia oltre la quale un annuncio è segnalato come vecchio e che il filtro «Pubblicazione» usa |
-| Raccolta ampia | `config/sweep.json` | Concorrenza, pagine e timeout delle query JobSpy |
+| Raccolta ampia | `config/sweep.json` | Concorrenza, pagine e timeout delle query JobSpy; `close_missing_ads`, `max_closed_share` e `remove_closed_html` per chiudere gli annunci non ritrovati e cancellarne le pagine salvate |
 | JobSpy | `config/jobspy.yaml` | Board, query, località e finestra temporale |
 | Altre fonti | `config/airtable.yaml`, `config/sites/*.yaml` | Endpoint e navigazione per fonte |
 | Descrizioni | `config/descriptions.json` | Host ammessi, worker, timeout, scadenze e rinvii |

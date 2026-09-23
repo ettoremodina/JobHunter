@@ -42,6 +42,9 @@ def main():
             replace_categories(archive, cid, ["Energia", "Software e tecnologia"], "jev",
                                "Fixture multi-categoria", {"Energia": 0.55, "Software e tecnologia": 0.40},
                                preserve_chat=False)
+        # Un annuncio non ritrovato da una raccolta completa resta in archivio con l'etichetta «Chiuso».
+        with archive.db:
+            archive.db.execute("INSERT INTO closures SELECT id,'2026-09-20','Non ritrovato da qa nella raccolta del 2026-09-20' FROM opportunities WHERE json_extract(data,'$.title')='Senior engineer'")
         archive.close()
         cfg = settings()
         server = create_server(database, cfg, 0)
@@ -98,6 +101,7 @@ def main():
                 assert page.get_by_role("link", name="example.org", exact=True).count() == 1
                 # Ogni ruolo è un blocco richiudibile: il titolo sta nella sua riga di apertura.
                 assert page.locator("#detail .job-title", has_text="Senior engineer").count() == 1
+                expect(page.locator("#detail .badge.closed")).to_have_count(1)
                 # Con più ruoli i blocchi restano chiusi: si aprono per leggere sintesi e campi.
                 for summary in page.locator("#detail details.opportunity > summary").all():
                     summary.click()
