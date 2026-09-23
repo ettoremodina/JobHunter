@@ -222,7 +222,6 @@ class Archive:
         """Import source records transactionally; return counts and rejected row reasons."""
         stamp = observed or now()
         result = {"received": len(rows), "inserted": 0, "updated": 0, "unchanged": 0, "rejected": []}
-        affected = set()
         with self.db:
             for index, raw in enumerate(rows):
                 try:
@@ -230,8 +229,9 @@ class Archive:
                 except (ValueError, TypeError) as exc:
                     result["rejected"].append({"row": index + 1, "reason": str(exc)})
                     continue
+                # Quello che questa riga porta davvero, prima che l'annuncio gia' salvato lo sostituisca.
+                observed_url, carries_text = item["source_url"], bool(item["description"])
                 cid = self.company(item["company_name"], item["website_url"], stamp)
-                affected.add(cid)
                 oid = identity(cid + "|" + item["application_url"])
                 company_fields = {k: item.pop(k) for k in COMPANY_FIELDS}
                 encoded = json.dumps(item, ensure_ascii=False, sort_keys=True)
@@ -252,8 +252,8 @@ class Archive:
                 result["inserted" if old is None else "unchanged" if old["content_hash"] == digest else "updated"] += 1
                 self.db.execute("INSERT INTO opportunities VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data, content_hash=excluded.content_hash, last_seen=MAX(opportunities.last_seen,excluded.last_seen)",
                                 (oid, cid, encoded, digest, stamp, stamp))
-                self.db.execute("INSERT INTO observations VALUES(?,?,?,?) ON CONFLICT DO UPDATE SET observed_at=MAX(observations.observed_at,excluded.observed_at)", (oid, source, normalize(raw, source)["source_url"], stamp))
-                if normalize(raw, source)["description"]:
+                self.db.execute("INSERT INTO observations VALUES(?,?,?,?) ON CONFLICT DO UPDATE SET observed_at=MAX(observations.observed_at,excluded.observed_at)", (oid, source, observed_url, stamp))
+                if carries_text:
                     self.record_description_attempt(oid, "available", item["source_url"], observed=stamp)
                 listing = json.dumps({"method": "listing", "extracted_at": stamp}) if company_fields["company_description"] else ""
                 self.db.execute("""UPDATE companies SET description=CASE WHEN ?!='' THEN ? ELSE description END,
