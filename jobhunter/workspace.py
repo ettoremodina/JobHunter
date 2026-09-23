@@ -361,8 +361,12 @@ class Archive:
     SORTS = {"recenti": "c.last_seen DESC", "nome": "c.name COLLATE NOCASE",
              "ruoli": "matching_roles DESC", "categoria": "category COLLATE NOCASE"}
 
-    def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility="", tier="", sort="recenti", country="", city=""):
-        """Paginate companies, requiring role filters to match the same saved opportunity."""
+    def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility="", tier="", sort="recenti", country="", city="", assessment=None):
+        """Paginate companies, requiring role filters to match the same saved opportunity.
+
+        `assessment` accepts a precomputed `verdicts(archive)` for the whole archive; the dashboard
+        passes the one it keeps while nothing changes, so filtering by tier skips a full evaluation.
+        """
         if status and status not in STATUSES:
             raise ValueError("Unknown status")
         if sort not in self.SORTS:
@@ -375,7 +379,7 @@ class Archive:
             if tier not in tiers.TIERS:
                 raise ValueError("Unknown tier")
             # Il tier non è in SQL perché non si salva mai: si calcola e si filtra sugli ID risultanti.
-            assessment = verdicts(self)
+            assessment = verdicts(self) if assessment is None else assessment
             chosen = sorted(cid for cid, state in assessment.items() if state["tier"] == tier)
             conditions.append("c.id IN (SELECT value FROM json_each(?))")
             args.append(json.dumps(chosen))

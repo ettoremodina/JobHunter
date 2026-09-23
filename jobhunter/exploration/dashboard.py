@@ -6,6 +6,7 @@ import secrets
 import sqlite3
 import threading
 import socket
+from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 from jobhunter.evaluation.tier import TIERS, label
@@ -78,6 +79,11 @@ def create_server(database, cfg, port=8000):
     collection_lock = threading.Lock()
     state = {"running": False, "result": None}
 
+    def verdicts_of(archive):
+        """Both axis verdicts for the whole archive, reused until the archive or the rules change."""
+        from jobhunter.evaluation.selection import verdicts
+        return cache.get("verdicts", lambda: verdicts(archive))
+
     class Handler(BaseHTTPRequestHandler):
         """Handle only the dashboard's allowlisted routes."""
 
@@ -140,7 +146,12 @@ def create_server(database, cfg, port=8000):
                                "controls": controls(archive, cfg, cache.get("versions", lambda: input_versions(archive))),
                                "collection_running": state["running"]}
                 elif parsed.path == "/api/companies":
-                    payload = archive.search(query.get("query", ""), query.get("status", ""), query.get("source", ""), query.get("location", ""), int(query.get("limit", cfg["page_size"])), int(query.get("offset", 0)), query.get("category", ""), query.get("eligibility", ""), query.get("tier", ""), query.get("sort") or "recenti", query.get("country", ""), query.get("city", ""))
+                    # Il tier chiede i verdetti di tutto l'archivio: quelli della cache, finché nulla cambia.
+                    tier = query.get("tier", "")
+                    assessment = verdicts_of(archive) if tier else None
+                    payload = archive.search(query.get("query", ""), query.get("status", ""), query.get("source", ""), query.get("location", ""), int(query.get("limit", cfg["page_size"])), int(query.get("offset", 0)), query.get("category", ""), query.get("eligibility", ""), tier, query.get("sort") or "recenti", query.get("country", ""), query.get("city", ""), assessment)
+                elif parsed.path == "/api/tiers":
+                    payload = {"counts": dict(Counter(state["tier"] for state in verdicts_of(archive).values()))}
                 elif parsed.path == "/api/debug":
                     from jobhunter.exploration.debug import lenses, rows
                     payload = rows(archive, query["lens"], query.get("value", ""), int(query.get("offset", 0)),

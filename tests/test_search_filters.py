@@ -43,6 +43,10 @@ class SearchFilterTests(unittest.TestCase):
             archive, cid = self.build(directory)
             try:
                 self.assertEqual(archive.search(tier='A')['total'], 1)
+                # I verdetti già calcolati che la dashboard tiene in cache danno lo stesso risultato.
+                from jobhunter.evaluation.selection import verdicts
+                self.assertEqual(archive.search(tier='A', location='London', assessment=verdicts(archive)),
+                                 archive.search(tier='A', location='London'))
                 self.assertEqual([i['id'] for i in archive.search(tier='A', location='London')['items']], [cid])
                 # L'annuncio di Milano c'è, ma è scartato: non è lui a produrre il Tier A.
                 self.assertEqual(archive.search(tier='A', location='Milano')['total'], 0)
