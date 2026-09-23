@@ -63,6 +63,8 @@ class ThresholdTests(unittest.TestCase):
         self.assertEqual(self.judge(0.94, family=('commerciale_marketing', 0.2))['decision'], 'keep')
         self.assertEqual(self.judge(0.94, student=0.95)['decision'], 'exclude')
         self.assertEqual(self.judge(0.94, too_senior=0.95)['decision'], 'exclude')
+        # Il motivo nomina per primo il numero che ha deciso, non la compatibilita' che ha perso.
+        self.assertIn("(seniority fuori profilo 95%; compatibilita' 94%)", self.judge(0.94, too_senior=0.95)['rationale'])
         self.assertEqual(self.judge(0.05, described=0.05)['decision'], 'review')
 
     def test_uncertain_seniority_sends_a_compatible_role_to_review(self):

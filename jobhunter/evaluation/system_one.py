@@ -253,10 +253,15 @@ def verdict(limits, scores, quote):
     excluded = family != 'nessuna' and scores['famiglia_confidenza'] >= limits['choice_confidence']
     conflict = excluded and compatible >= limits['conflict_review_above']
     unknown = []
+    # Quando a decidere e' un cancello e non la compatibilita', il suo numero va scritto per primo:
+    # «scarta (compatibilita' 96%)» faceva sembrare sbagliato uno scarto per seniority (utente, 23/09/2026).
+    deciding = ''
     if scores['posto_per_studenti'] >= limits['flag_above']:
         decision, motive = 'exclude', 'Posto riservato a studenti o di tirocinio'
+        deciding = f"posto per studenti {scores['posto_per_studenti']:.0%}; "
     elif too_senior >= limits['flag_above']:
         decision, motive = 'exclude', 'Seniority, management o esperienza obbligatoria fuori profilo'
+        deciding = f'seniority fuori profilo {too_senior:.0%}; '
     elif conflict:
         decision, motive = 'review', (
             'Segnali in conflitto: mansioni compatibili e famiglia esclusa «%s»'
@@ -267,11 +272,13 @@ def verdict(limits, scores, quote):
         # Un titolo e una frase breve bastano per lavori manuali inequivocabili. Non serve pagare
         # la futura review umana soltanto per confermare che un roofer installa tetti o pannelli.
         decision, motive = 'exclude', 'Mansioni della famiglia esclusa «%s»' % family.replace('_', ' ')
+        deciding = f"famiglia esclusa {scores['famiglia_confidenza']:.0%}; "
     elif described < limits['choice_confidence']:
         decision, motive = 'review', 'Il testo non descrive mansioni specifiche del ruolo'
         unknown = ['Mansioni non descritte']
     elif excluded:
         decision, motive = 'exclude', 'Mansioni della famiglia esclusa «%s»' % family.replace('_', ' ')
+        deciding = f"famiglia esclusa {scores['famiglia_confidenza']:.0%}; "
     elif compatible >= limits['keep_above'] and too_senior >= limits.get('seniority_review_above', limits['flag_above']):
         # Fra questa soglia e `flag_above` il modello non sa se il ruolo e' troppo senior. Manopola
         # facoltativa: senza `seniority_review_above` in config il ruolo si tiene. Accesa il
@@ -286,7 +293,7 @@ def verdict(limits, scores, quote):
         decision, motive = 'review', 'Le mansioni non bastano a decidere'
         unknown = ['Mansioni ambigue: compatibilita' + f' {compatible:.0%}']
     return {'decision': decision, 'evidence': [quote], 'missing_information': unknown,
-            'rationale': f'{motive} (compatibilita\' {compatible:.0%}).'}
+            'rationale': f'{motive} ({deciding}compatibilita\' {compatible:.0%}).'}
 
 
 def judgement(cfg, spec, answers, catalog):
