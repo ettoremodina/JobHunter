@@ -28,7 +28,7 @@ from jobhunter.workspace import Archive, ROOT, settings  # noqa: E402
 
 def check(archive, calls=2):
     """Send the same request twice and report what the provider says about its own cache."""
-    cfg = json.loads((ROOT/'config/remote_llm.json').read_text())
+    cfg = json.loads((ROOT/'config/remote_llm.json').read_text(encoding='utf-8'))
     prompt = (ROOT/cfg['company_batch']['prompt_path']).read_text(encoding='utf-8')
     counts = Counter()
     job = next((j for j in (cb.prepare(archive, cfg, prompt, cid, state, set(), counts)

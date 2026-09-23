@@ -146,7 +146,7 @@ def main():
     parser.add_argument("phase", choices=("prepare", "label", "report"))
     parser.add_argument("--batch", type=int)
     args = parser.parse_args()
-    config = json.loads((ROOT / "config/calibration.json").read_text())
+    config = json.loads((ROOT / "config/calibration.json").read_text(encoding="utf-8"))
     directory = ROOT / config["output_directory"]
     if args.phase == "prepare":
         prepare(config, directory)

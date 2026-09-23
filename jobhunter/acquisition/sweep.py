@@ -33,7 +33,7 @@ def board_query(spec, directory, index, timeout):
 def sweep(archive, cfg):
     """Acquire all accessible configured source scopes; report caps and access limits explicitly."""
     import yaml
-    limits = json.loads((ROOT/"config/sweep.json").read_text())
+    limits = json.loads((ROOT/"config/sweep.json").read_text(encoding="utf-8"))
     output = ROOT/cfg["raw_directory"]/ (now().replace(":", "").replace("+", "_") + "-official")
     output.mkdir(parents=True)
     report = {"started_at": now(), "scope": "All configured source URLs, countries and search queries; site-wide completeness is not asserted", "sources": {}}
@@ -88,7 +88,7 @@ def sweep(archive, cfg):
                 details.update(received=len(rows), accepted=len(rows)-len(imported["rejected"]), errors=errors, import_report=imported)
                 details["status"] = "partial" if errors or imported["rejected"] else "success" if rows else "empty"
                 if source["kind"] == "browser":
-                    details["discovery"] = json.loads((directory/"discovery.json").read_text())
+                    details["discovery"] = json.loads((directory/"discovery.json").read_text(encoding="utf-8"))
                     details["status"] = "partial"
         except Exception as exc:
             logger.exception("Official source %s failed", name)

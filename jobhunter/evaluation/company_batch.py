@@ -128,7 +128,7 @@ def prepare(archive, cfg, prompt, cid, state, counts):
     # Le etichette sono stabili e `request()` le sposta nel messaggio di sistema. Il profilo del
     # candidato invece non appartiene a uno step descrittivo: nel pilot induceva il modello a
     # valutare il match e a scrivere persino il nome del candidato, malgrado il divieto nel prompt.
-    payload = {'field_labels': json.loads((ROOT/cfg['job_fields_path']).read_text()),
+    payload = {'field_labels': json.loads((ROOT/cfg['job_fields_path']).read_text(encoding='utf-8')),
                'company': source, 'company_requested': company_needed, 'jobs': wire_jobs,
                'response_schema': response_schema(cfg, company['response_schema'])}
     oversized = len(carded) > limits['max_jobs'] or len(prompt)+len(json.dumps(payload)) > limits['max_input_chars']
@@ -224,7 +224,7 @@ def run(archive, values, progress):
     volta per ruolo in attesa: con molte richieste insieme un preparatore lento diventa subito
     il vero limite, non il provider.
     """
-    cfg = json.loads((ROOT/'config/remote_llm.json').read_text())
+    cfg = json.loads((ROOT/'config/remote_llm.json').read_text(encoding='utf-8'))
     limits = cfg['company_batch']
     workers = min(max(int(values.get('workers') or limits.get('workers', 1)), 1), limits.get('max_workers', 8))
     prompt = (ROOT/limits['prompt_path']).read_text(encoding='utf-8')

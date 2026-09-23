@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def run(archive, batch_size=50, worker_counts=(1, 4, 8), seed=20260908):
     """Save recovered texts and compare useful throughput; stop escalation on any access block."""
-    cfg = json.loads((ROOT / 'config/descriptions.json').read_text())
+    cfg = json.loads((ROOT / 'config/descriptions.json').read_text(encoding='utf-8'))
     if not 1 <= batch_size <= cfg['max_limit'] or not worker_counts or worker_counts[0] != 1:
         raise ValueError('Use a supported batch size and a serial first batch')
     if any(not 1 <= w <= cfg.get('max_workers', 16) for w in worker_counts):

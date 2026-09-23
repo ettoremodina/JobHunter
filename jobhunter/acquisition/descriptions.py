@@ -78,7 +78,7 @@ def extract(html, address):
 
 def recover(archive, limit=None, source=None, all_missing=False, opportunity_ids=None, workers=None, refresh_stale=False, force=False, progress=None):
     """Fetch missing details driven by company coverage; worker threads never access SQLite."""
-    cfg = json.loads((ROOT / "config/descriptions.json").read_text())
+    cfg = json.loads((ROOT / "config/descriptions.json").read_text(encoding="utf-8"))
     workers = cfg.get("workers", 1) if workers is None else workers
     if not 1 <= workers <= cfg.get("max_workers", 16):
         raise ValueError("Invalid description worker count")

@@ -46,8 +46,8 @@ def controls(archive, cfg, versions=None):
     `versions` accepts precomputed `input_versions`, which the dashboard reuses while nothing changes.
     """
     ui = configuration()
-    desc = json.loads((ROOT/'config/descriptions.json').read_text())
-    batch = json.loads((ROOT/'config/remote_llm.json').read_text())['company_batch']
+    desc = json.loads((ROOT/'config/descriptions.json').read_text(encoding='utf-8'))
+    batch = json.loads((ROOT/'config/remote_llm.json').read_text(encoding='utf-8'))['company_batch']
     from jobhunter.evaluation.system_one import config as system_one_config
     jev = system_one_config()
     versions = versions or input_versions(archive)
@@ -85,13 +85,13 @@ def parameters(step, supplied, archive, cfg):
     if set(supplied) - set(ui['actions'][step]['fields']):
         raise ValueError('Parametro non previsto per questo passaggio')
     values = dict(supplied)
-    desc = json.loads((ROOT/'config/descriptions.json').read_text())
+    desc = json.loads((ROOT/'config/descriptions.json').read_text(encoding='utf-8'))
     for key in ('all', 'refresh_stale', 'force', 'all_companies', 'revisit'):
         if key in ui['actions'][step]['fields']:
             values.setdefault(key, False)
             if type(values[key]) is not bool:
                 raise ValueError('Valore booleano richiesto')
-    batch = json.loads((ROOT/'config/remote_llm.json').read_text())['company_batch']
+    batch = json.loads((ROOT/'config/remote_llm.json').read_text(encoding='utf-8'))['company_batch']
     from jobhunter.evaluation.system_one import config as system_one_config
     jev = system_one_config()
     for key, default, maximum in [('limit', jev['default_limit'] if step == 'jev' else min(10, cfg['max_jobs']),
@@ -161,7 +161,7 @@ def start(database, cfg, step, supplied, lock, continue_after=False, remote_para
         if paid_mode == 'execute':
             from jobhunter.evaluation.remote_llm import api_key
             if 'remote' in steps:
-                api_key(json.loads((ROOT/'config/remote_llm.json').read_text()))
+                api_key(json.loads((ROOT/'config/remote_llm.json').read_text(encoding='utf-8')))
             if 'jev' in steps:
                 from jobhunter.evaluation.system_one import config as system_one_config
                 api_key(system_one_config())

@@ -10,7 +10,7 @@ import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from jobhunter.workspace import Archive
+from jobhunter.workspace import Archive, ROOT
 from jobhunter.evaluation.company_batch import run, response_schema
 from jobhunter.evaluation.remote_llm import digest, inputs, request as request_remote, validate
 
@@ -126,7 +126,9 @@ class BatchTests(unittest.TestCase):
                         patch('jobhunter.evaluation.company_batch.time.sleep'):
                     run(arc, {'all_companies': True, 'mode': 'execute'}, lambda d: None)
                 self.assertNotIn('candidate_profile', captured[0])
-                self.assertIn('field_labels', captured[0])
+                # Letto come UTF-8 anche su Windows: «Attività», non «AttivitÃ ».
+                labels = (ROOT / 'config/job_summary_fields.json').read_bytes().decode('utf-8')
+                self.assertEqual(captured[0]['field_labels'], json.loads(labels))
             finally:
                 arc.close()
 
