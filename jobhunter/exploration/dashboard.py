@@ -3,6 +3,7 @@
 import json
 import logging
 import secrets
+import sqlite3
 import threading
 import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,6 +25,51 @@ class LocalHTTPServer(ThreadingHTTPServer):
         if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         super().server_bind()
+
+    def server_close(self):
+        """Release the cache's watch connection too, or Windows keeps the database file locked."""
+        super().server_close()
+        if getattr(self, 'read_cache', None):
+            self.read_cache.close()
+
+
+class ReadCache:
+    """Riusa le letture aggregate più care (Pipeline, Metriche) finché archivio e regole non cambiano.
+
+    `PRAGMA data_version` su una connessione tenuta aperta cambia a ogni commit di qualunque altra
+    connessione: richieste della dashboard, passaggi della pipeline, CLI. La versione si legge
+    *prima* del calcolo, così una scrittura avvenuta durante il calcolo fa ricalcolare la volta dopo.
+    Le regole stanno in file, non nel database: contano anche le date di modifica di quei file.
+    """
+
+    def __init__(self, database, root=ROOT):
+        self.watch = sqlite3.connect(database, check_same_thread=False)
+        self.lock = threading.Lock()
+        self.folders = [root / "config", root / "user_context"]
+        self.saved = {}
+
+    def version(self):
+        """Stato corrente di archivio e file di configurazione, senza leggere i dati."""
+        with self.lock:
+            data = self.watch.execute("PRAGMA data_version").fetchone()[0]
+        files = tuple((str(p), p.stat().st_mtime_ns) for folder in self.folders if folder.exists()
+                      for p in sorted(folder.rglob("*")) if p.is_file())
+        return data, files
+
+    def get(self, key, compute):
+        """Restituisce il risultato salvato se nulla è cambiato, altrimenti lo ricalcola."""
+        version = self.version()
+        hit = self.saved.get(key)
+        if hit and hit[0] == version:
+            return hit[1]
+        value = compute()
+        self.saved[key] = (version, value)
+        return value
+
+    def close(self):
+        """Close the watch connection."""
+        with self.lock:
+            self.watch.close()
 
 
 def create_server(database, cfg, port=8000):
@@ -84,13 +130,15 @@ def create_server(database, cfg, port=8000):
                     payload = research_brief(archive, parsed.path.rsplit("/", 1)[-1])
                 elif parsed.path == "/api/analytics":
                     from jobhunter.exploration.analytics import summary
-                    payload = summary(archive, query.get("eligibility", ""))
+                    eligibility = query.get("eligibility", "")
+                    payload = cache.get(("analytics", eligibility), lambda: summary(archive, eligibility))
                 elif parsed.path == "/api/pipeline":
-                    from jobhunter.operations.pipeline import summary
-                    payload = summary(archive, cfg)
-                    from jobhunter.operations.pipeline_actions import controls
-                    payload['controls'] = controls(archive, cfg)
-                    payload['collection_running'] = state['running']
+                    from jobhunter.operations.pipeline import summary, workflow
+                    from jobhunter.operations.pipeline_actions import controls, input_versions
+                    # Conteggi e impronte degli input dalla cache; workflow e processi attivi sempre dal vivo.
+                    payload = {**cache.get("pipeline", lambda: summary(archive, cfg)), "workflow": workflow(archive, cfg),
+                               "controls": controls(archive, cfg, cache.get("versions", lambda: input_versions(archive))),
+                               "collection_running": state["running"]}
                 elif parsed.path == "/api/companies":
                     payload = archive.search(query.get("query", ""), query.get("status", ""), query.get("source", ""), query.get("location", ""), int(query.get("limit", cfg["page_size"])), int(query.get("offset", 0)), query.get("category", ""), query.get("eligibility", ""), query.get("tier", ""), query.get("sort") or "recenti", query.get("country", ""), query.get("city", ""))
                 elif parsed.path == "/api/debug":
@@ -187,6 +235,8 @@ def create_server(database, cfg, port=8000):
     server = LocalHTTPServer(("127.0.0.1", port), Handler)
     server.daemon_threads = True
     server.operation_lock = collection_lock
+    # Dopo il bind: se la porta è occupata non resta una connessione aperta sull'archivio.
+    server.read_cache = cache = ReadCache(database)
     return server
 
 

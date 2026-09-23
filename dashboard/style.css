@@ -311,14 +311,13 @@ tr.selected, tr.selected:hover { background: var(--accent-soft); box-shadow: ins
 .pager { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; gap: 8px; }
 /* Le larghezze seguono la colonna, non la sua posizione: nasconderne una non sposta le altre. */
 /* Stato è largo quanto il tag più lungo («Da approfondire»): un tag non va a capo. */
-th.col-azienda { width: 26%; }
-th.col-categoria { width: 15%; }
+th.col-azienda { width: 23%; }
+th.col-categoria { width: 18%; }
 th.col-tier { width: 13%; }
 th.col-localita { width: 18%; }
 th.col-ruoli { width: 10%; }
 th.col-stato { width: 18%; }
 td.col-ruoli { white-space: nowrap; font-variant-numeric: tabular-nums; }
-td.col-tier { overflow-wrap: normal; word-break: normal; font-family: var(--font-mono); font-size: 12.5px; }
 td { overflow-wrap: anywhere; }
 
 /* Scheda azienda */

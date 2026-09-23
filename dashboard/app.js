@@ -97,10 +97,11 @@ function remembered(key) {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 
-/** Keep list rows short even when a source stores many places in one string. */
+/** Keep list rows short: the first place, a count for the rest, and a cap for one long source string. */
 function locationPreview(locations) {
-  const text = locations.join(" · ").replace(/^[,\s]+/, "") || "Da verificare";
-  return text.length > 90 ? text.slice(0, 87).trimEnd() + "…" : text;
+  const shown = (locations[0] || "").replace(/^[,\s]+/, "") || "Da verificare";
+  const text = shown.length > 90 ? shown.slice(0, 87).trimEnd() + "…" : shown;
+  return locations.length > 1 ? `${text} +${locations.length - 1} altre` : text;
 }
 
 /** Reveal the source's full location text without guessing comma-separated cities. */
@@ -190,15 +191,16 @@ async function load() {
     status.append(
       el("span", labels[company.status], `badge ${company.status}`),
     );
+    // Testo semplice: in una colonna stretta un tag non va a capo e copre la colonna accanto.
     const category = el("td", undefined, "col-categoria");
-    for (const label of companyCategories(company)) category.append(el("span", label, "tag"));
+    category.append(el("span", companyCategories(company).join(" · ")));
     if (company.categories?.length) {
       category.append(el("small", categoryMethods[company.category_method] || company.category_method));
     }
     tr.append(
       name,
       category,
-      el("td", company.tier_label ? company.tier : company.tier || "—", "col-tier"),
+      tierCell(company),
       el("td", locationPreview(company.places?.length ? company.places : company.locations), "col-localita"),
       el("td", company.archive_opportunity_count
         ? `${company.opportunity_count} di ${company.archive_opportunity_count}`
@@ -731,7 +733,8 @@ async function sources() {
   for (const run of stats.runs) {
     const row = el("details", undefined, "run");
     row.append(
-      el("summary", `${date(run.created_at)} · ${run.source} · ${run.status}`),
+      el("summary", `${date(run.created_at)} · ${run.source} · ${run.status}` +
+        (run.items_omitted ? ` · ${run.items_omitted} elementi, esiti salvati nell’archivio` : "")),
       el("pre", JSON.stringify(JSON.parse(run.detail), null, 2)),
     );
     $("runs").append(row);
@@ -1190,6 +1193,16 @@ document.addEventListener("DOMContentLoaded", () => {
 /** Render comparable counts with a shared denominator and no chart dependency. */
 const categoryMethods = {rules: "da parole chiave", jev: "da Jev",
   chat: "scelta tua", unknown: "nessuna corrispondenza"};
+
+/** Short tier names for the dense table; the full label, with its reason, stays in the tooltip. */
+const tierNames = {"A": "A", "B-attesa": "B · attesa", "B-esperienza": "B · esperienza",
+  "evidenza-mancante": "Evidenza mancante", "scarto": "Scarto"};
+
+function tierCell(company) {
+  const cell = el("td", tierNames[company.tier] || company.tier || "—", "col-tier");
+  if (company.tier_label) cell.title = company.tier_label;
+  return cell;
+}
 
 /** Normalize the transitional first-category field into the multi-label UI contract. */
 function companyCategories(company) {
@@ -1795,6 +1808,7 @@ function pipelineResult(run) {
   } else if (detail.counts) container.append(el('p', `Richieste previste: ${detail.counts.selected || 0} · Risultati salvati: ${detail.counts.processed || 0} · Già in cache: ${detail.counts.cached || 0}`));
   if (detail.usage) container.append(el('p', `Token: ${detail.usage.total_tokens || 0} · Costo API: ${detail.usage.cost === undefined ? 'non restituito dal provider' : '$' + detail.usage.cost.toFixed(6)}`));
   if (detail.counts?.requests_without_cost) container.append(el('p', `Costo incompleto: ${detail.counts.requests_without_cost} risposte non riportano il costo. Controlla il consuntivo LLM remoto.`, 'error'));
+  if (run.items_omitted) container.append(el('p', `L’esito dei singoli elementi (${nf(run.items_omitted)}) non è mostrato qui: resta salvato nell’archivio${detail.report_path ? ' e nel report ' + detail.report_path : ''}.`, 'muted'));
   const details = el('details');
   details.append(el('summary', 'Risultato completo'), el('pre', JSON.stringify(detail, null, 2)));
   container.append(details);

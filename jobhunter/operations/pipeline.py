@@ -320,9 +320,14 @@ def summary(archive, cfg, root=ROOT):
         json_extract(detail,'$.task') task FROM runs ORDER BY id DESC LIMIT 12''')]
     order = ['collection', 'normalization', 'descriptions', 'filters', 'jev', 'remote']
     steps.sort(key=lambda step: order.index(step['id']))
-    workflow = snapshot(root, cfg) if archive.path.resolve() == (root / cfg['database']).resolve() else {
-        'status': 'not_found', 'message': 'Nessun report collegato a questo archivio.'}
     logger.info('Pipeline snapshot: %s opportunities, %s companies', count, company_count)
     return {'generated_at': now(), **totals, 'funnel': funnel, 'oldest_observation': oldest, 'steps': steps,
             'description_attempts': attempts, 'last_description_attempt': recovered[1], 'runs': runs,
-            'workflow': {k: workflow[k] for k in ('status', 'phase_label', 'started_at', 'checkpoint_age_seconds', 'warnings', 'message') if k in workflow}}
+            'workflow': workflow(archive, cfg, root)}
+
+
+def workflow(archive, cfg, root=ROOT):
+    """Stato dell'eventuale workflow esterno su questo archivio. È vivo: età del checkpoint compresa."""
+    state = snapshot(root, cfg) if archive.path.resolve() == (root / cfg['database']).resolve() else {
+        'status': 'not_found', 'message': 'Nessun report collegato a questo archivio.'}
+    return {k: state[k] for k in ('status', 'phase_label', 'started_at', 'checkpoint_age_seconds', 'warnings', 'message') if k in state}

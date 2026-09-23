@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 STATUSES = ("new", "review", "saved", "discarded", "contacted")
 _SEARCH_INDEX_LOCK = threading.Lock()
+# Il dettaglio di un'esecuzione conserva l'esito di ogni elemento, fino a qualche MB per riga.
+# Gli elenchi della dashboard ne mostrano solo il numero: la riga completa resta nel database.
+BRIEF_DETAIL = "json_remove(detail,'$.items') detail, json_array_length(detail,'$.items') items_omitted"
 
 
 def now():
@@ -623,4 +626,4 @@ class Archive:
         return {"companies": self.db.execute("SELECT count(*) FROM companies").fetchone()[0],
                 "opportunities": self.db.execute("SELECT count(*) FROM opportunities").fetchone()[0],
                 "first_import_at": self.db.execute("SELECT min(first_seen) FROM opportunities").fetchone()[0],
-                "runs": [dict(r) for r in self.db.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 30")]}
+                "runs": [dict(r) for r in self.db.execute(f"SELECT id,source,status,created_at,{BRIEF_DETAIL} FROM runs ORDER BY id DESC LIMIT 30")]}

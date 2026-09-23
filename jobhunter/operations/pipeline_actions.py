@@ -6,7 +6,7 @@ import logging
 import os
 import threading
 
-from jobhunter.workspace import Archive, ROOT, now
+from jobhunter.workspace import Archive, BRIEF_DETAIL, ROOT, now
 from jobhunter.evaluation.remote_llm import digest
 from jobhunter.operations.progress import process_alive
 from jobhunter.operations import cancellation
@@ -40,16 +40,20 @@ def input_versions(archive):
     return versions
 
 
-def controls(archive, cfg):
-    """Describe action forms, real execution states, and changes since the last successful run."""
+def controls(archive, cfg, versions=None):
+    """Describe action forms, real execution states, and changes since the last successful run.
+
+    `versions` accepts precomputed `input_versions`, which the dashboard reuses while nothing changes.
+    """
     ui = configuration()
     desc = json.loads((ROOT/'config/descriptions.json').read_text())
     batch = json.loads((ROOT/'config/remote_llm.json').read_text())['company_batch']
     from jobhunter.evaluation.system_one import config as system_one_config
     jev = system_one_config()
-    versions = input_versions(archive)
+    versions = versions or input_versions(archive)
     history = []
-    for row in archive.db.execute("SELECT * FROM pipeline_jobs WHERE id IN (SELECT id FROM pipeline_jobs ORDER BY id DESC LIMIT 100) OR status='running' ORDER BY id DESC"):
+    for row in archive.db.execute(f"""SELECT id,step,status,parameters,basis,pid,started_at,finished_at,{BRIEF_DETAIL}
+            FROM pipeline_jobs WHERE id IN (SELECT id FROM pipeline_jobs ORDER BY id DESC LIMIT 100) OR status='running' ORDER BY id DESC"""):
         item = dict(row)
         item['parameters'] = json.loads(item['parameters'])
         item['detail'] = json.loads(item['detail'])

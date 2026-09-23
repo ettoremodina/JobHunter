@@ -1,4 +1,8 @@
-"""Archive metrics shared by dashboard and CLI, with a recorded completion timestamp."""
+"""Archive metrics shared by dashboard and CLI.
+
+Writes nothing of its own (only the stale derived indexes it refreshes), so the dashboard can reuse
+the result until the archive changes.
+"""
 
 from collections import Counter
 import json
@@ -143,8 +147,6 @@ def summary(archive, eligibility=''):
         'tiers': {key: tiers[key] for key in tier.TIERS},
     }
     logger.info('Archive metrics: %s roles, scope=%s', total, eligibility or 'all')
-    with archive.db:
-        archive.db.execute("INSERT OR REPLACE INTO pipeline_updates VALUES('analytics',?)", (now(),))
     return {'generated_at': now(), 'eligibility': eligibility, 'total': total,
             'companies': len(scoped_companies), 'archive_total': coverage['archive'],
             'archive_companies': len(company_ids), 'processing': processing,
