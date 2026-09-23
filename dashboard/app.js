@@ -449,6 +449,7 @@ async function show(id, context = {}) {
   // senza i filtri della tab Aziende e senza ricaricarne la tabella.
   const {panel = $("detail"), filtered = true, refresh = load} = context;
   selected = id;
+  if (panel === $("detail")) markSelected();
   const company = await api("/api/company/" + id);
   if (selected !== id) return;
   panel.replaceChildren();
@@ -1146,6 +1147,7 @@ async function init() {
     }),
   );
   setupTiers();
+  setupKeyboard();
   $("sort").value = remembered("sort") || "recenti";
   $("sort").addEventListener("change", guarded(async () => {
     remember("sort", $("sort").value);
@@ -1211,6 +1213,41 @@ function tierCell(company) {
   const cell = el("td", tierNames[company.tier] || company.tier || "—", "col-tier");
   if (company.tier_label) cell.title = company.tier_label;
   return cell;
+}
+
+/** L'evidenza segue l'azienda aperta, non solo l'ultima pagina caricata. */
+function markSelected() {
+  for (const tr of $("rows").querySelectorAll("tr[data-id]")) tr.classList.toggle("selected", tr.dataset.id === selected);
+}
+
+/** Scorrere le aziende da tastiera: ↓ o j la successiva, ↑ o k la precedente, anche oltre la pagina. */
+function setupKeyboard() {
+  document.addEventListener("keydown", guarded(async (event) => {
+    const step = {ArrowDown: 1, j: 1, ArrowUp: -1, k: -1}[event.key];
+    if (!step || $("companies-view").hidden || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.target.closest("input, select, textarea, [contenteditable], dialog")) return;
+    event.preventDefault();
+    await moveSelection(step);
+  }));
+}
+
+async function moveSelection(step) {
+  const rows = () => [...$("rows").querySelectorAll("tr[data-id]")];
+  let list = rows(), index = list.findIndex((tr) => tr.dataset.id === selected);
+  let target = index === -1 ? list[0] : list[index + step];
+  if (!target && index !== -1) {
+    // Oltre il bordo della pagina: si carica la pagina accanto e si prosegue da lì.
+    if (step > 0 && offset + config.page_size < total) offset += config.page_size;
+    else if (step < 0 && offset > 0) offset = Math.max(0, offset - config.page_size);
+    else return;
+    await load();
+    list = rows();
+    target = step > 0 ? list[0] : list[list.length - 1];
+  }
+  if (!target) return;
+  target.scrollIntoView({block: "nearest"});
+  target.querySelector(".company-link").focus({preventScroll: true});
+  await show(target.dataset.id);
 }
 
 /** Il tier scelto nei pulsanti sopra l'elenco; "" vuol dire tutti. */
