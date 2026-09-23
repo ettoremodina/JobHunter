@@ -2,47 +2,86 @@
 
 *[Read in English](README.md)*
 
-JobHunter raccoglie annunci di lavoro da più bacheche, li raggruppa per azienda e li fa passare davanti a una serie di giudici, dal più economico al più attento, finché resta una lista corta. Gira tutto sul tuo computer: SQLite e gli snapshot locali sono la fonte dei dati, e una dashboard locale, una CLI e un agente in chat leggono lo stesso archivio.
+**Un archivio locale per la ricerca di lavoro che trasforma migliaia di annunci in una lista corta di aziende che valgono il tuo tempo.**
 
-Per capire come funziona apri la panoramica illustrata [docs/jobhunter-overview.html](docs/jobhunter-overview.html).
+JobHunter raccoglie annunci da più bacheche, li raggruppa per azienda e fa passare ogni annuncio davanti a una catena di giudici, dalle regole gratuite a un modello che legge le mansioni. Quello che resta incerto arriva a te. Gira tutto sul tuo computer: profilo, archivio e decisioni non lo lasciano mai.
 
-## Primi passi
+Sull'archivio dell'autore: 23.049 annunci da 5.908 aziende sono diventati 1.509 ruoli compatibili e 198 aziende da guardare per prime.
 
-La guida [docs/getting-started.it.md](docs/getting-started.it.md) porta da una copia appena clonata ai primi annunci giudicati. In breve:
+## Come funziona
+
+```mermaid
+flowchart LR
+    boards["Bacheche"] --> collect["Raccolta e<br/>raggruppamento per azienda"]
+    collect --> rules{"Filtro a regole<br/>gratuito"}
+    rules -- "fuori profilo certo" --> out["Scartati"]
+    rules --> text["Recupero del<br/>testo dell'annuncio"]
+    text --> jev{"Jev legge<br/>le mansioni"}
+    jev -- "scarta" --> out
+    jev -- "non so" --> you["Tu, in chat"]
+    jev -- "tieni" --> tier["Tier<br/>azienda × ruolo"]
+    you --> tier
+    tier --> cards["Schede<br/>Tier A e B"]
+```
+
+- **Due domande separate.** L'azienda è interessante, cioè il suo settore ti interessa? Ha un ruolo adatto? Le due risposte si incrociano in un Tier solo alla fine, così un'azienda valida senza posizioni aperte resta sotto osservazione.
+- **Prima il giudice più economico.** Le regole gratuite scartano ciò che è certo; il resto lo legge Jev, un modello che risponde a domande precise con probabilità. Una passata completa di Jev su 23.000 annunci costa circa 1,20 $.
+- **Chi decide non scrive.** Jev decide e non scrive nulla; Qwen scrive le schede e non decide nulla.
+- **L'ultima parola è tua.** Le tue decisioni, e le regole che confermi in chat, prevalgono su ogni verdetto automatico. Ogni verdetto conserva la sua prova, così vedi sempre perché un annuncio è finito dov'è.
+
+## Avvio rapido
+
+Serve Python 3.11 o successivo.
 
 ```bash
+git clone https://github.com/ettoremodina/JobHunter.git
+cd JobHunter
 python -m venv .venv
+.venv/Scripts/activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
 python main.py init
 python main.py serve
 ```
 
-`init` crea il database e i tuoi file personali (profilo, filtri, ricerche) a partire dagli esempi in `examples/`. Per una configurazione guidata, chiedi al tuo agente di programmazione di seguire [skills/jobhunter-setup/SKILL.md](skills/jobhunter-setup/SKILL.md).
+`init` crea il database e i tuoi file personali a partire dagli esempi inventati in `examples/`. La dashboard si apre su <http://127.0.0.1:8000>.
 
-La dashboard risponde su <http://127.0.0.1:8000>. Su Windows puoi anche aprire `Avvia JobHunter.pyw`.
+Poi rendi tuo il profilo, in uno di questi due modi:
 
-## Come funziona
+- segui la [guida di avvio](docs/getting-started.it.md);
+- chiedi al tuo agente di programmazione (Codex, Claude Code…) di seguire [skills/jobhunter-setup/SKILL.md](skills/jobhunter-setup/SKILL.md): ti fa qualche domanda e scrive profilo, filtri e ricerche.
 
-1. Raccoglie e normalizza gli annunci.
-2. Scarta con regole gratuite i ruoli chiaramente fuori profilo.
-3. Recupera le descrizioni mancanti e i dati aziendali.
-4. Usa Jev per i casi che richiedono un giudizio sulle mansioni.
-5. Calcola i Tier dai due assi, azienda e ruolo.
-6. Genera con Qwen le schede delle aziende già ammesse.
-7. Lascia all'utente la revisione degli indecisi e la scelta finale.
-
-Regole, Jev, schede e decisioni personali restano dati distinti. Il Tier viene calcolato in lettura e non viene salvato.
+Le chiavi API per Jev e Qwen sono facoltative e vanno in `.env.local`.
 
 ## Documentazione
 
-L'indice è in [docs/README.md](docs/README.md). I riferimenti principali:
+| Da qui si parte | |
+|---|---|
+| [Primi passi](docs/getting-started.it.md) · [English](docs/getting-started.md) | Installazione, profilo, filtri, primo avvio |
+| [Panoramica illustrata](docs/jobhunter-overview.html) | Tutto il sistema in diagrammi, in italiano e in inglese. Scaricala e aprila nel browser. |
 
-- [architettura e mappa del codice](docs/mappa-codice-dati.md);
-- [pipeline completa](docs/pipeline-completa.md);
-- [uso e manutenzione](docs/jobhunter-v2.md);
-- [configurazione](docs/configuration.md);
-- [revisione ed esplorazione in chat](docs/conversazioni-codex.md).
+| Per approfondire | |
+|---|---|
+| [DESIGN.md](DESIGN.md) | Decisioni di prodotto e invarianti della pipeline |
+| [Pipeline completa](docs/pipeline-completa.md) | Un annuncio e un'azienda lungo tutti i passaggi |
+| [Jev](docs/system-one.md) · [Schede](docs/remote-llm.md) | I due modelli: contratti, costi e cache |
+| [Configurazione](docs/configuration.md) · [Fonti](docs/scraper-sources.md) | I file di configurazione, e come aggiungere una bacheca |
+| [Revisione in chat](docs/conversazioni-codex.md) | Rivedere i ruoli incerti ed esplorare la selezione con un agente |
+| [Mappa del codice](docs/mappa-codice-dati.md) · [Modello dati](docs/data-model.md) | Dove vive ogni responsabilità |
+| [docs/README.md](docs/README.md) | L'indice completo |
+
+## Struttura della repository
+
+```text
+jobhunter/     il pacchetto Python: raccolta, valutazione, operazioni, server della dashboard
+dashboard/     la dashboard web locale (HTML, CSS e JS semplici)
+config/        configurazione condivisa: fonti, settori, geografia, modelli, soglie
+examples/      file personali di esempio che `init` copia al loro posto
+skills/        skill per agenti: configurazione guidata e revisione in chat
+docs/          documentazione
+tests/         test unitari e controlli nel browser
+main.py        il punto d'ingresso da riga di comando (python main.py --help)
+```
 
 ## Test
 
@@ -50,11 +89,8 @@ Dopo `python main.py init`:
 
 ```bash
 python -B -m unittest discover -s tests -v
-python -B tests/browser_check.py
 ```
 
-I test usano database temporanei.
+## I tuoi dati restano locali
 
-## Dati personali
-
-Profilo, filtri, ricerche, chiavi (`.env.local`) e archivio (`data/`) restano sul tuo computer: sono elencati in `.gitignore`. Prima di pubblicare un fork, controlla `git status`.
+Profilo, filtri, ricerche, chiavi API (`.env.local`) e archivio (`data/`) sono elencati in `.gitignore` e non lasciano mai il tuo computer. Prima di pubblicare un fork, controlla `git status`.
