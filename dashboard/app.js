@@ -199,8 +199,9 @@ async function load() {
     // Testo semplice: in una colonna stretta un tag non va a capo e copre la colonna accanto.
     const category = el("td", undefined, "col-categoria");
     category.append(el("span", companyCategories(company).join(" · ")));
+    // Chi l'ha assegnata sta nel tooltip e nella scheda: nella riga costava una linea per azienda.
     if (company.categories?.length) {
-      category.append(el("small", categoryMethods[company.category_method] || company.category_method));
+      category.title = "Origine: " + (categoryMethods[company.category_method] || company.category_method);
     }
     tr.append(
       name,
@@ -1210,7 +1211,10 @@ const tierNames = {"A": "A", "B-attesa": "B · attesa", "B-esperienza": "B · es
   "evidenza-mancante": "Evidenza mancante", "scarto": "Scarto"};
 
 function tierCell(company) {
-  const cell = el("td", tierNames[company.tier] || company.tier || "—", "col-tier");
+  // «B» e sotto, più piccolo, «attesa»: la colonna è stretta e il puntino a capo non si legge.
+  const [main, sub] = (tierNames[company.tier] || company.tier || "—").split(" · ");
+  const cell = el("td", main, "col-tier");
+  if (sub) cell.append(el("small", sub));
   if (company.tier_label) cell.title = company.tier_label;
   return cell;
 }
