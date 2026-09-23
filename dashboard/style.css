@@ -282,6 +282,22 @@ main { padding: 24px 32px 48px; }
 }
 #detail { position: sticky; top: 72px; max-height: calc(100vh - 88px); overflow: auto; }
 .toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+
+/* Gruppo di bottoni esclusivi (dal template): un incavo che contiene un solo tasto alzato. */
+.segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--field-inset); }
+.segmented button {
+  min-height: 28px; padding: 0 10px; gap: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--text-2);
+  background: transparent; border: 1px solid transparent; border-radius: 6px; box-shadow: none;
+}
+.segmented button:hover { color: var(--text); background: transparent; }
+.segmented button:active { transform: none; box-shadow: none; }
+.segmented button[aria-pressed="true"] { color: var(--text); background: var(--surface); border-color: var(--line-strong); box-shadow: 0 1px 0 var(--line-strong); }
+/* Il conteggio accompagna l'etichetta senza competere: stesso tasto, peso minore. */
+.segmented .count { font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.segmented .count:empty { display: none; }
+/* Il tier e' il primo filtro: una riga intera, sopra i campi. */
+.tier-row { flex: 1 0 100%; }
 .toolbar p { margin: 0; font-weight: 650; }
 
 /* Tabella risultati */
@@ -318,6 +334,13 @@ th.col-localita { width: 18%; }
 th.col-ruoli { width: 10%; }
 th.col-stato { width: 18%; }
 td.col-ruoli { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Il tier porta il colore del suo bordo nella scheda; il testo resta, il colore da solo non basta. */
+td.col-tier::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 2px; vertical-align: 1px; background: var(--tier-dot, var(--neutral-dot)); }
+tr[data-tier="A"] { --tier-dot: var(--ok-dot); }
+tr[data-tier="B-attesa"], tr[data-tier="B-esperienza"] { --tier-dot: var(--info-dot); }
+tr[data-tier="evidenza-mancante"] { --tier-dot: var(--warn-dot); }
+tr[data-tier="scarto"] { --tier-dot: var(--bad-dot); }
+#results-table.single-tier .col-tier { display: none; }
 td { overflow-wrap: anywhere; }
 
 /* Scheda azienda */

@@ -79,7 +79,7 @@ function params(start = offset, size = config.page_size) {
     country: $("country").value,
     city: $("city").value,
     category: $("category").value,
-    tier: $("tier-scope").value,
+    tier: currentTier(),
     sort: $("sort").value,
     offset: start,
     limit: size,
@@ -159,12 +159,17 @@ async function load() {
   }
   if (request !== requestNumber) return;
   total = data.total;
+  // Con un solo tier scelto la colonna direbbe la stessa cosa su ogni riga.
+  $("results-table").classList.toggle("single-tier", Boolean(currentTier()));
+  refreshTierCounts();
   matchingRoles.clear();
   $("rows").replaceChildren();
   $("count").textContent = `${total.toLocaleString("it-IT")} aziende`;
   for (const company of data.items) {
     matchingRoles.set(company.id, company.matching_ids || []);
     const tr = el("tr");
+    tr.dataset.id = company.id;
+    tr.dataset.tier = company.tier || "";
     if (company.id === selected) tr.className = "selected";
     const name = el("td", undefined, "col-azienda");
     const button = el("button", company.name, "company-link");
@@ -1117,6 +1122,9 @@ async function init() {
     "click",
     guarded(async () => {
       HTMLFormElement.prototype.reset.call($("filters"));
+      // I pulsanti del tier non sono campi del modulo: si riportano a «Tutte» a mano.
+      for (const button of $("tier-scope").querySelectorAll("button")) button.setAttribute("aria-pressed", String(!button.dataset.tier));
+      remember("tier", "");
       refillCities();
       // L'ordinamento non è un filtro: Azzera pulisce la ricerca, non il modo di guardarla.
       offset = 0;
@@ -1137,6 +1145,7 @@ async function init() {
       await load();
     }),
   );
+  setupTiers();
   $("sort").value = remembered("sort") || "recenti";
   $("sort").addEventListener("change", guarded(async () => {
     remember("sort", $("sort").value);
@@ -1202,6 +1211,46 @@ function tierCell(company) {
   const cell = el("td", tierNames[company.tier] || company.tier || "—", "col-tier");
   if (company.tier_label) cell.title = company.tier_label;
   return cell;
+}
+
+/** Il tier scelto nei pulsanti sopra l'elenco; "" vuol dire tutti. */
+function currentTier() {
+  return $("tier-scope").querySelector('[aria-pressed="true"]')?.dataset.tier || "";
+}
+
+/** Un pulsante per tier, più «Tutte». La scelta resta per la prossima visita, come l'ordinamento. */
+function setupTiers() {
+  const saved = remembered("tier") || "";
+  const name = (id) => /^[AB]/.test(id) ? "Tier " + tierNames[id] : tierNames[id] || id;
+  const choices = [{id: "", label: "Tutte"}, ...config.tiers.map(({id}) => ({id, label: name(id)}))];
+  for (const {id, label} of choices) {
+    const button = el("button", label);
+    button.type = "button";
+    button.dataset.tier = id;
+    button.setAttribute("aria-pressed", String(id === (choices.some(c => c.id === saved) ? saved : "")));
+    button.append(el("span", "", "count"));
+    const full = config.tiers.find(t => t.id === id);
+    if (full) button.title = full.label;
+    $("tier-scope").append(button);
+  }
+  $("tier-scope").addEventListener("click", guarded(async (event) => {
+    const choice = event.target.closest("button");
+    if (!choice || choice.getAttribute("aria-pressed") === "true") return;
+    for (const other of $("tier-scope").querySelectorAll("button")) other.setAttribute("aria-pressed", String(other === choice));
+    remember("tier", choice.dataset.tier);
+    offset = 0;
+    await load();
+  }));
+}
+
+/** I conteggi arrivano dopo l'elenco: sono sull'archivio intero e non devono ritardarlo. */
+function refreshTierCounts() {
+  api("/api/tiers").then(({counts}) => {
+    const all = Object.values(counts).reduce((sum, n) => sum + n, 0);
+    for (const button of $("tier-scope").querySelectorAll("button")) {
+      button.querySelector(".count").textContent = nf(button.dataset.tier ? counts[button.dataset.tier] : all);
+    }
+  }).catch(() => { /* senza conteggi i pulsanti funzionano lo stesso */ });
 }
 
 /** Normalize the transitional first-category field into the multi-label UI contract. */

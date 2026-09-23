@@ -43,7 +43,7 @@
       </section>
       <section id="companies-view">
         <form id="filters" class="filters">
-          <label>Tier<select id="tier-scope"><option value="">Tutti i tier</option><option value="A">Tier A</option><option value="B-attesa">Tier B · attesa</option><option value="B-esperienza">Tier B · esperienza</option><option value="evidenza-mancante">Evidenza mancante</option><option value="scarto">Scarto</option></select></label>
+          <div class="tier-row"><div class="segmented" id="tier-scope" role="group" aria-label="Tier"></div></div>
           <label
             >Cerca azienda, attività o ruolo<input
               id="query"
@@ -88,6 +88,7 @@
             <p class="hint">
               Una riga per azienda. Conteggi, sedi e ruoli nel dettaglio riguardano
               i filtri attivi. Nulla viene cancellato: azzerando i filtri tornano tutti.
+              I numeri accanto ai tier contano l'intero archivio.
             </p>
             <div class="table-scroll">
               <table id="results-table">

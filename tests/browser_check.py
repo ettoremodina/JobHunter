@@ -58,8 +58,14 @@ def main():
                 page.goto(f"http://127.0.0.1:{server.server_port}")
                 page.wait_for_load_state("networkidle")
                 expect(page.locator("#rows .company-link")).to_have_count(2)
-                # I filtri espongono un solo asse di selezione, il Tier.
-                expect(page.locator('#filters select')).to_have_count(5)
+                # I filtri espongono un solo asse di selezione, il Tier, con un pulsante per valore.
+                expect(page.locator('#filters select')).to_have_count(4)
+                expect(page.locator('#tier-scope button')).to_have_count(6)
+                page.locator('#tier-scope button[data-tier="scarto"]').click()
+                expect(page.locator('#results-table th.col-tier')).to_be_hidden()
+                page.get_by_role("button", name="Azzera", exact=True).click()
+                expect(page.locator('#tier-scope button[aria-pressed="true"]')).to_have_attribute('data-tier', '')
+                expect(page.locator("#rows .company-link")).to_have_count(2)
                 expect(page.locator('#filters')).not_to_contain_text('Asse ruolo')
                 expect(page.locator('#filters')).not_to_contain_text('Stato')
                 expect(page.locator('body')).not_to_contain_text('Località dichiarata nell’annuncio')
