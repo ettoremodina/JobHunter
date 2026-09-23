@@ -8,6 +8,7 @@
   "max_jobs": 100,
   "request_delay_seconds": 1,
   "refresh_hours": 24,
+  "stale_after_days": 30,
   "sources": {
     "jobspy": {
       "enabled": true,

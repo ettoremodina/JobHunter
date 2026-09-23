@@ -358,14 +358,18 @@ class Archive:
 
     # L'ordinamento vive in SQL, non sulla pagina: ordinare i trenta risultati gia' scelti darebbe
     # una classifica diversa a ogni pagina. Il tier non c'e': non e' salvato, si calcola in lettura.
-    SORTS = {"recenti": "c.last_seen DESC", "nome": "c.name COLLATE NOCASE",
+    # «pubblicati» guarda la data dell'annuncio più recente fra quelli filtrati: la data di raccolta è
+    # la stessa per tutto quello che entra con una passata, e non ordina niente.
+    SORTS = {"pubblicati": "latest_posted DESC", "recenti": "c.last_seen DESC", "nome": "c.name COLLATE NOCASE",
              "ruoli": "matching_roles DESC", "categoria": "category COLLATE NOCASE"}
 
-    def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility="", tier="", sort="recenti", country="", city="", assessment=None):
+    def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility="", tier="", sort="recenti", country="", city="", assessment=None, posted_days=None):
         """Paginate companies, requiring role filters to match the same saved opportunity.
 
         `assessment` accepts a precomputed `verdicts(archive)` for the whole archive; the dashboard
         passes the one it keeps while nothing changes, so filtering by tier skips a full evaluation.
+        `posted_days` keeps roles published in the last N days, plus those without a date: meglio
+        un annuncio in più da guardare che uno buono nascosto perché la fonte non lo data.
         """
         if status and status not in STATUSES:
             raise ValueError("Unknown status")
@@ -419,6 +423,10 @@ class Archive:
         if source:
             role_conditions.append("EXISTS(SELECT 1 FROM observations s WHERE s.opportunity_id=o.id AND s.source=?)")
             role_args.append(source)
+        if posted_days:
+            from datetime import date, timedelta
+            role_conditions.append("(json_extract(o.data,'$.posted_at') IS NULL OR substr(json_extract(o.data,'$.posted_at'),1,10)>=?)")
+            role_args.append((date.today() - timedelta(days=int(posted_days))).isoformat())
         role_where = ' AND ' + ' AND '.join(role_conditions) if role_conditions else ''
         if role_conditions:
             conditions.append('EXISTS(SELECT 1 FROM opportunities o WHERE o.company_id=c.id' + role_where + ')')
@@ -447,9 +455,12 @@ class Archive:
             text_count = "(SELECT count(*) FROM opportunities o WHERE o.company_id=c.id AND o.data LIKE ?" + role_where + ")"
             matching_count = "COALESCE(NULLIF(" + text_count + ",0)," + matching_count + ")"
             count_args = ['%' + query.strip() + '%', *role_args, *role_args]
+        latest_posted = ("(SELECT max(substr(json_extract(o.data,'$.posted_at'),1,10)) FROM opportunities o "
+                         "WHERE o.company_id=c.id" + role_where + ")")
+        count_args += role_args
         selected = ("SELECT c.*, " + status_sql + " AS status, "
                     "(SELECT count(*) FROM opportunities o WHERE o.company_id=c.id) AS opportunity_count, "
-                    + matching_count + " AS matching_roles, "
+                    + matching_count + " AS matching_roles, " + latest_posted + " AS latest_posted, "
                     "COALESCE((SELECT category FROM categories WHERE company_id=c.id ORDER BY rank LIMIT 1),'Da classificare') AS category")
         sql = selected + " FROM companies c" + where + " ORDER BY " + self.SORTS[sort] + ",c.name COLLATE NOCASE,c.id LIMIT ? OFFSET ?"
         items = [dict(r) for r in self.db.execute(sql, count_args + args + [min(max(int(limit), 1), 500), max(int(offset), 0)])]

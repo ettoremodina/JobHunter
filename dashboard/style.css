@@ -186,6 +186,9 @@ button:disabled:hover { background: var(--surface); }
 .badge.contacted { --dot: var(--info-dot); color: var(--info-fg); background: var(--info-bg); }
 .badge.review { --dot: var(--warn-dot); color: var(--warn-fg); background: var(--warn-bg); }
 .badge.discarded { --dot: var(--bad-dot); color: var(--bad-fg); background: var(--bad-bg); }
+/* Un annuncio più vecchio della soglia: da verificare sulla fonte prima di candidarsi. */
+.badge.stale { --dot: var(--warn-dot); color: var(--warn-fg); background: var(--warn-bg); }
+small.stale { color: var(--warn-fg); }
 
 /* Campi: incavati, al contrario dei bottoni. */
 input:not([type="checkbox"], [type="radio"]), select, textarea {
@@ -336,6 +339,7 @@ th.col-localita { width: 18%; }
 th.col-ruoli { width: 10%; }
 th.col-stato { width: 18%; }
 td.col-ruoli { white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.col-ruoli small { white-space: normal; }
 /* Il tier porta il colore del suo bordo nella scheda; il testo resta, il colore da solo non basta. */
 td.col-tier::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 2px; vertical-align: 1px; background: var(--tier-dot, var(--neutral-dot)); }
 tr[data-tier="A"] { --tier-dot: var(--ok-dot); }

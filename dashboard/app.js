@@ -80,6 +80,7 @@ function params(start = offset, size = config.page_size) {
     city: $("city").value,
     category: $("category").value,
     tier: currentTier(),
+    posted_days: $("posted").value,
     sort: $("sort").value,
     offset: start,
     limit: size,
@@ -208,9 +209,7 @@ async function load() {
       category,
       tierCell(company),
       el("td", locationPreview(company.places?.length ? company.places : company.locations), "col-localita"),
-      el("td", company.archive_opportunity_count
-        ? `${company.opportunity_count} di ${company.archive_opportunity_count}`
-        : String(company.opportunity_count), "col-ruoli"),
+      rolesCell(company),
       status,
     );
     $("rows").append(tr);
@@ -331,7 +330,8 @@ function opportunityBlock(job, company, decision, id, open, context = {}) {
   const line = el("span", undefined, "job-head");
   line.append(el("strong", job.title, "job-title"), verdictBadge(job.verdict?.verdetto));
   if (decision) line.append(el("span", labels[decision], `badge ${decision}`));
-  head.append(line, el("small", [locationPreview(job.locations), date(job.last_seen_at)].filter(Boolean).join(" · ")));
+  if (isStale(job.posted_at)) line.append(el("span", `Oltre ${config.stale_after_days} giorni`, "badge stale"));
+  head.append(line, el("small", [locationPreview(job.locations), postedText(job.posted_at)].filter(Boolean).join(" · ")));
   block.append(head);
   const body = el("div", undefined, "opportunity-body");
   block.append(body);
@@ -1149,7 +1149,12 @@ async function init() {
   );
   setupTiers();
   setupKeyboard();
-  $("sort").value = remembered("sort") || "recenti";
+  // Una sola soglia per il filtro e per l'avviso sui ruoli vecchi: viene da config/app.json.
+  const recent = el("option", `Ultimi ${config.stale_after_days} giorni (e senza data)`);
+  recent.value = String(config.stale_after_days);
+  $("posted").append(recent);
+  $("posted").addEventListener("change", guarded(async () => { offset = 0; await load(); }));
+  $("sort").value = remembered("sort") || "pubblicati";
   $("sort").addEventListener("change", guarded(async () => {
     remember("sort", $("sort").value);
     offset = 0;
@@ -1205,6 +1210,32 @@ document.addEventListener("DOMContentLoaded", () => {
 /** Render comparable counts with a shared denominator and no chart dependency. */
 const categoryMethods = {rules: "da parole chiave", jev: "da Jev",
   chat: "scelta tua", unknown: "nessuna corrispondenza"};
+
+/** Giorni dalla pubblicazione dichiarata dalla fonte; null quando la fonte non la dà. */
+function daysSince(value) {
+  const then = value ? Date.parse(String(value).slice(0, 10)) : NaN;
+  return Number.isNaN(then) ? null : Math.max(0, Math.floor((Date.now() - then) / 86400000));
+}
+function isStale(value) {
+  const days = daysSince(value);
+  return days !== null && days > config.stale_after_days;
+}
+function postedText(value) {
+  const days = daysSince(value);
+  return days === null ? "Pubblicazione senza data" : days === 0 ? "Pubblicato oggi" : days === 1 ? "Pubblicato ieri" : `Pubblicato ${days} giorni fa`;
+}
+
+/** Quanti ruoli e quanto è fresco il più recente: con la raccolta in un giorno solo, è la data che conta. */
+function rolesCell(company) {
+  const cell = el("td", company.archive_opportunity_count
+    ? `${company.opportunity_count} di ${company.archive_opportunity_count}`
+    : String(company.opportunity_count), "col-ruoli");
+  const days = daysSince(company.latest_posted);
+  const age = el("small", days === null ? "senza data" : `ultimo ${days} gg fa`, isStale(company.latest_posted) ? "stale" : undefined);
+  if (isStale(company.latest_posted)) age.title = `Il ruolo più recente è più vecchio di ${config.stale_after_days} giorni`;
+  cell.append(age);
+  return cell;
+}
 
 /** Short tier names for the dense table; the full label, with its reason, stays in the tooltip. */
 const tierNames = {"A": "A", "B-attesa": "B · attesa", "B-esperienza": "B · esperienza",

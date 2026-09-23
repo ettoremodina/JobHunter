@@ -125,7 +125,7 @@ def create_server(database, cfg, port=8000):
             try:
                 query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
                 if parsed.path == "/api/bootstrap":
-                    payload = {"token": token, "sources": cfg["sources"], "page_size": cfg["page_size"], "max_jobs": cfg["max_jobs"], "categories": [*categories(), "Da classificare"], "tiers": [{"id": name, "label": label(name)} for name in TIERS]}
+                    payload = {"token": token, "sources": cfg["sources"], "page_size": cfg["page_size"], "max_jobs": cfg["max_jobs"], "stale_after_days": cfg["stale_after_days"], "categories": [*categories(), "Da classificare"], "tiers": [{"id": name, "label": label(name)} for name in TIERS]}
                     from jobhunter.evaluation.selection import feedback_reasons
                     payload["feedback_reasons"] = feedback_reasons()
                 elif parsed.path in ("/api/saved", "/api/metrics", "/api/proposals"):
@@ -152,7 +152,7 @@ def create_server(database, cfg, port=8000):
                     # Il tier chiede i verdetti di tutto l'archivio: quelli della cache, finché nulla cambia.
                     tier = query.get("tier", "")
                     assessment = verdicts_of(archive) if tier else None
-                    payload = archive.search(query.get("query", ""), query.get("status", ""), query.get("source", ""), query.get("location", ""), int(query.get("limit", cfg["page_size"])), int(query.get("offset", 0)), query.get("category", ""), query.get("eligibility", ""), tier, query.get("sort") or "recenti", query.get("country", ""), query.get("city", ""), assessment)
+                    payload = archive.search(query.get("query", ""), query.get("status", ""), query.get("source", ""), query.get("location", ""), int(query.get("limit", cfg["page_size"])), int(query.get("offset", 0)), query.get("category", ""), query.get("eligibility", ""), tier, query.get("sort") or "recenti", query.get("country", ""), query.get("city", ""), assessment, int(query.get("posted_days") or 0))
                 elif parsed.path == "/api/tiers":
                     payload = {"counts": dict(Counter(state["tier"] for state in verdicts_of(archive).values()))}
                 elif parsed.path == "/api/debug":

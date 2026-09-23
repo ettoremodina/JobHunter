@@ -100,3 +100,20 @@ class RoleVisibilityTests(unittest.TestCase):
         self.assertEqual((first['name'], first['matching_roles']), ('Uno', 2))
         with self.assertRaises(ValueError):
             self.archive.search(sort='; DROP TABLE companies')
+
+    def test_publication_date_sorts_and_filters_roles(self):
+        """Newest publication first; an old role drops out of the recent filter, an undated one stays."""
+        from datetime import date, timedelta
+        recent, old = ((date.today() - timedelta(days=d)).isoformat() for d in (3, 90))
+        self.archive.ingest([
+            {'company_name': 'Fresh', 'title': 'Data Scientist', 'posted_at': recent, 'source_url': 'https://example.org/f'},
+            {'company_name': 'Stale', 'title': 'Data Scientist', 'posted_at': old + 'T00:00:00.000', 'source_url': 'https://example.org/s'},
+        ], 'test')
+        names = [i['name'] for i in self.archive.search(sort='pubblicati')['items']]
+        self.assertEqual(names[:2], ['Fresh', 'Stale'])
+        self.assertEqual(self.archive.search(query='Fresh', sort='pubblicati')['items'][0]['latest_posted'], recent)
+        kept = {i['name'] for i in self.archive.search(posted_days=30)['items']}
+        self.assertIn('Fresh', kept)
+        self.assertNotIn('Stale', kept)
+        # Le aziende del setUp non hanno date: restano visibili, meglio un falso positivo che un buco.
+        self.assertTrue({'Molti', 'Uno'} <= kept)

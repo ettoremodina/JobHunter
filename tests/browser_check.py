@@ -59,7 +59,7 @@ def main():
                 page.wait_for_load_state("networkidle")
                 expect(page.locator("#rows .company-link")).to_have_count(2)
                 # I filtri espongono un solo asse di selezione, il Tier, con un pulsante per valore.
-                expect(page.locator('#filters select')).to_have_count(4)
+                expect(page.locator('#filters select')).to_have_count(5)
                 expect(page.locator('#tier-scope button')).to_have_count(6)
                 page.locator('#tier-scope button[data-tier="scarto"]').click()
                 expect(page.locator('#results-table th.col-tier')).to_be_hidden()
@@ -214,7 +214,8 @@ def main():
                 expect(page.locator("#page")).to_have_text("31–32 di 32")
                 # L'azienda con un ruolo a Milano e uno a Roma entra dichiarando quanti ruoli rispondono.
                 mixed = page.locator("#rows tr").filter(has=page.get_by_role("button", name="Search QA Mixed", exact=True))
-                expect(mixed.locator("td.col-ruoli")).to_have_text("1 di 2")
+                expect(mixed.locator("td.col-ruoli")).to_contain_text("1 di 2")
+                expect(mixed.locator("td.col-ruoli small")).to_have_text("senza data")
                 mixed.get_by_role('button', name='Search QA Mixed', exact=True).click()
                 expect(page.locator('#detail > details.opportunity')).to_have_count(1)
                 expect(page.locator('#detail details.other-roles')).not_to_have_attribute('open', '')
