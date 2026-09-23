@@ -21,7 +21,7 @@ def board_query(spec, directory, index, timeout):
     error = None
     with (directory/f"query-{index}.log").open("w", encoding="utf-8") as log:
         try:
-            result = subprocess.run([sys.executable, "-B", "-m", "jobhunter.board_worker", str(input_path), str(output)], cwd=ROOT, stdout=log, stderr=log, timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            result = subprocess.run([sys.executable, "-B", "-m", "jobhunter.acquisition.board_worker", str(input_path), str(output)], cwd=ROOT, stdout=log, stderr=log, timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             if result.returncode:
                 error = f"worker_exit_{result.returncode}"
         except subprocess.TimeoutExpired:

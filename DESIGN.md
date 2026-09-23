@@ -150,7 +150,7 @@ chiamare nessun modello.
 
 Il livello 4 non gira dentro il tool: l'utente lavora in chat con un agente che
 legge i Tier A e B e propone domande mirate a produrre scarti o cambi di tier.
-`jobhunter/interview.py` fa già questo raggruppamento per pattern; va esteso ai due
+`jobhunter/exploration/interview.py` fa già questo raggruppamento per pattern; va esteso ai due
 assi e ai tier, invece di lavorare solo sugli annunci in stato `review`.
 
 ## 4. Ordine dei passi

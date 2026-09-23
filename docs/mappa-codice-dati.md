@@ -9,8 +9,6 @@ Questa pagina risponde a due domande: dove modificare un comportamento e dove ve
 | `main.py` | Avvia la CLI in `jobhunter/cli.py` |
 | `Avvia JobHunter.pyw` | Avvia la dashboard Windows e gestisce la chiusura del server |
 | `skills/jobhunter/` | Guida le conversazioni Codex sull'archivio |
-| `jobhunter/board_worker.py` | Ingresso interno del processo isolato usato dalla raccolta JobSpy |
-| `jobhunter/calibration.py` | Ingresso compatibile dell'esperimento di calibrazione |
 
 ## Pacchetto Python
 
