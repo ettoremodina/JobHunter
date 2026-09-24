@@ -152,7 +152,7 @@ def create_server(database, cfg, port=8000):
                     # Il tier chiede i verdetti di tutto l'archivio: quelli della cache, finché nulla cambia.
                     tier = query.get("tier", "")
                     assessment = verdicts_of(archive) if tier else None
-                    payload = archive.search(query.get("query", ""), query.get("status", ""), query.get("source", ""), query.get("location", ""), int(query.get("limit", cfg["page_size"])), int(query.get("offset", 0)), query.get("category", ""), query.get("eligibility", ""), tier, query.get("sort") or "recenti", query.get("country", ""), query.get("city", ""), assessment, int(query.get("posted_days") or 0))
+                    payload = archive.search(query.get("query", ""), query.get("status", ""), query.get("source", ""), query.get("location", ""), int(query.get("limit", cfg["page_size"])), int(query.get("offset", 0)), query.get("category", ""), query.get("eligibility", ""), tier, query.get("sort") or "recenti", query.get("country", ""), query.get("city", ""), assessment, int(query.get("posted_days") or 0), bool(query.get("phd")))
                 elif parsed.path == "/api/tiers":
                     payload = {"counts": dict(Counter(state["tier"] for state in verdicts_of(archive).values()))}
                 elif parsed.path == "/api/debug":

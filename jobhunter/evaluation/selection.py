@@ -51,10 +51,14 @@ def evaluate(job, rules=None):
     if facts["languages"]["unsupported"]:
         reasons.append("required_language")
 
+    # Un posto per *iniziare* un dottorato: un'etichetta, non un filtro. Il profilo dice che i
+    # dottorati restano possibili, quindi valgono come ruolo prioritario (utente, 24/09/2026).
+    phd = bool(re.search(rules.get("phd_title_pattern", r"(?!)"), title, re.I))
+
     def decision(status, reasons):
         """Expose career priority and missing evidence independently of compatibility."""
-        return {"status": status, "reasons": reasons, "requirements": facts,
-                "career_priority": "primary" if re.search(rules.get("primary_title_pattern", r"(?!)"), title, re.I) else "secondary",
+        return {"status": status, "reasons": reasons, "requirements": facts, "phd": phd,
+                "career_priority": "primary" if phd or re.search(rules.get("primary_title_pattern", r"(?!)"), title, re.I) else "secondary",
                 "verification": {"description": bool(job.get("description")),
                                  "description_usable": facts["description_usable"],
                                  "experience_determined": facts["required_years"] is not None,
@@ -78,6 +82,19 @@ def regex_judgement(decision):
               "Non escluso dalle regole locali: passa a Jev")
     return {"verdetto": verdetto, "motivo": motivo, "prove": list(decision["reasons"]), "giudice": "regex",
             "primary": decision["career_priority"] == "primary"}
+
+
+def phd_judgement(decision, judgement):
+    """A PhD position is not an internship: Jev's student-post exclusion becomes «non so» on one.
+
+    La domanda di Jev lo dice già, ma il modello a volte scarta comunque un dottorato come posto per
+    studenti (il Ph.D. Scholar CIMMYT, 23/09/2026). Meglio un ruolo in più da rivedere che uno perso.
+    """
+    from jobhunter.evaluation.system_one import STUDENT_MOTIVE
+    if (judgement and decision.get("phd") and judgement["verdetto"] == tier.DROP
+            and judgement["motivo"].startswith(STUDENT_MOTIVE)):
+        return {**judgement, "verdetto": tier.UNKNOWN, "motivo": "Dottorato scartato da Jev come posto per studenti: da rivedere. " + judgement["motivo"]}
+    return judgement
 
 
 def llm_judgement(result, judge):
@@ -117,7 +134,7 @@ def verdicts(archive, cid=None):
     for oid, decision in decisions.items():
         # La cascata ha un solo giudice semantico: un «non so» di Jev resta aperto alla revisione.
         chain = [j for j in (regex_judgement(decision),
-                             llm_judgement(saved.get(oid), "jev")) if j]
+                             phd_judgement(decision, llm_judgement(saved.get(oid), "jev"))) if j]
         # Sopra la cascata: tu, poi l'agente. Restano nella catena per mostrare cosa hanno cambiato.
         overrides = [j for j in (users.get(oid), agents.get(oid)) if j]
         final = tier.role_verdict(chain, overrides)

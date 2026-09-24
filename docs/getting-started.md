@@ -69,6 +69,7 @@ Then write `user_context/llm-selection-profile.md` with four short sections:
 | `user_title_rules` | Extra title rules added after reviews. |
 | `preferred_title_pattern` | Titles in your target family. They get priority, but are not kept automatically. |
 | `primary_title_pattern` | A stricter set: roles strong enough to count even at a company outside your preferred sectors. |
+| `phd_title_pattern` | Titles of positions to *start* a PhD. It filters nothing: it adds the «Dottorato» tag, counts as a primary role and feeds the «Solo dottorati» filter. Leave it as is if PhDs don't interest you. |
 | `max_required_years` | The most years of **mandatory** experience you accept. “Preferred” years never exclude. |
 | `allowed_languages` | Languages you can work in. Others exclude only when the ad makes them mandatory. |
 | `preferred_categories` | Your preferred sectors. Use names exactly as they appear in `config/categories.json`. |

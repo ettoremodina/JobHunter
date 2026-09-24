@@ -236,6 +236,10 @@ def request_interval(cfg):
     return 0.0 if rate == 0 else 60.0 / rate
 
 
+# Letto anche da `selection.phd_judgement`: un dottorato non si scarta per questo motivo.
+STUDENT_MOTIVE = 'Posto riservato a studenti o di tirocinio'
+
+
 def verdict(limits, scores, quote):
     """Dalle probabilita' al verdetto: la regola sta qui, in codice, non nel modello.
 
@@ -257,7 +261,7 @@ def verdict(limits, scores, quote):
     # «scarta (compatibilita' 96%)» faceva sembrare sbagliato uno scarto per seniority (utente, 23/09/2026).
     deciding = ''
     if scores['posto_per_studenti'] >= limits['flag_above']:
-        decision, motive = 'exclude', 'Posto riservato a studenti o di tirocinio'
+        decision, motive = 'exclude', STUDENT_MOTIVE
         deciding = f"posto per studenti {scores['posto_per_studenti']:.0%}; "
     elif too_senior >= limits['flag_above']:
         decision, motive = 'exclude', 'Seniority, management o esperienza obbligatoria fuori profilo'

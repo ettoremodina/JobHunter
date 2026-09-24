@@ -58,6 +58,7 @@
     }
   ],
   "primary_title_pattern": "\\b(data scien(?:ce|tist)|machine learning|ml engineer|applied scientist|operations research|optimization|optimisation|model(?:l)?ing|simulation|digital twin|scientific computing|computational|numerical|forecasting|quantitative|statistician|cfd|fea|aeroelasticity)\\b",
+  "phd_title_pattern": "(?<!post)(?<!post-)(?<!post )\\b(?:ph\\.?\\s?d\\.?|doctoral|doctorate)[\\s-]*(?:student|candidate|position|researcher|research(?:er)? fellow|fellow(?:ship)?|scholar(?:ship)?|project|programme|program|opportunit|studentship|stipend|call|vacanc|place|training|school)|\\b(?:funded|fully[- ]funded|open)\\s+ph\\.?\\s?d|\\bph\\.?\\s?d\\.?\\s+(?:in|on|at|within|for)\\b|^ph\\.?\\s?d\\b|doktorand|promovend|(?<!post-)(?<!post)doctorant|doctorand|dottorand|dottorato|\\bearly[- ]stage researcher|\\bpre-?doc",
   "allowed_languages": [
     "English",
     "German"

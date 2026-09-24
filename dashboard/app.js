@@ -81,6 +81,7 @@ function params(start = offset, size = config.page_size) {
     category: $("category").value,
     tier: currentTier(),
     posted_days: $("posted").value,
+    phd: $("phd").value,
     sort: $("sort").value,
     offset: start,
     limit: size,
@@ -330,6 +331,8 @@ function opportunityBlock(job, company, decision, id, open, context = {}) {
   const line = el("span", undefined, "job-head");
   line.append(el("strong", job.title, "job-title"), verdictBadge(job.verdict?.verdetto));
   if (decision) line.append(el("span", labels[decision], `badge ${decision}`));
+  // Un'etichetta, non uno stato: il titolo dice che è un posto per iniziare un dottorato.
+  if (job.selection?.phd) line.append(el("span", "Dottorato", "tag"));
   if (job.closed) {
     const closed = el("span", "Chiuso", "badge closed");
     closed.title = `${job.closed.reason}. Resta in archivio; si riapre se ricompare.`;
@@ -1158,6 +1161,7 @@ async function init() {
   recent.value = String(config.stale_after_days);
   $("posted").append(recent);
   $("posted").addEventListener("change", guarded(async () => { offset = 0; await load(); }));
+  $("phd").addEventListener("change", guarded(async () => { offset = 0; await load(); }));
   $("sort").value = remembered("sort") || "pubblicati";
   $("sort").addEventListener("change", guarded(async () => {
     remember("sort", $("sort").value);

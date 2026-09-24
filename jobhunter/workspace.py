@@ -367,7 +367,7 @@ class Archive:
     SORTS = {"pubblicati": "latest_posted DESC", "recenti": "c.last_seen DESC", "nome": "c.name COLLATE NOCASE",
              "ruoli": "matching_roles DESC", "categoria": "category COLLATE NOCASE"}
 
-    def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility="", tier="", sort="recenti", country="", city="", assessment=None, posted_days=None):
+    def search(self, query="", status="", source="", location="", limit=30, offset=0, category="", eligibility="", tier="", sort="recenti", country="", city="", assessment=None, posted_days=None, phd=False):
         """Paginate companies, requiring role filters to match the same saved opportunity.
 
         `assessment` accepts a precomputed `verdicts(archive)` for the whole archive; the dashboard
@@ -431,6 +431,9 @@ class Archive:
             from datetime import date, timedelta
             role_conditions.append("(json_extract(o.data,'$.posted_at') IS NULL OR substr(json_extract(o.data,'$.posted_at'),1,10)>=?)")
             role_args.append((date.today() - timedelta(days=int(posted_days))).isoformat())
+        if phd:
+            self.refresh_search_eligibility()
+            role_conditions.append("EXISTS(SELECT 1 FROM search_eligibility e WHERE e.opportunity_id=o.id AND json_extract(e.decision,'$.phd'))")
         role_where = ' AND ' + ' AND '.join(role_conditions) if role_conditions else ''
         if role_conditions:
             conditions.append('EXISTS(SELECT 1 FROM opportunities o WHERE o.company_id=c.id' + role_where + ')')

@@ -69,6 +69,7 @@ Poi scrivi `user_context/llm-selection-profile.md` in quattro sezioni brevi:
 | `user_title_rules` | Regole sui titoli aggiunte dopo le revisioni. |
 | `preferred_title_pattern` | Titoli della tua famiglia di riferimento. Hanno priorità, ma non vengono tenuti in automatico. |
 | `primary_title_pattern` | Un insieme più stretto: ruoli abbastanza forti da contare anche in un'azienda fuori dai settori preferiti. |
+| `phd_title_pattern` | I titoli dei posti per *iniziare* un dottorato. Non filtra: aggiunge l'etichetta «Dottorato», conta come ruolo prioritario e alimenta il filtro «Solo dottorati». Se non ti interessano, lascialo com'è. |
 | `max_required_years` | Il massimo di anni di esperienza **obbligatoria** che accetti. Gli anni «preferibili» non escludono mai. |
 | `allowed_languages` | Le lingue in cui puoi lavorare. Le altre escludono solo quando l'annuncio le rende obbligatorie. |
 | `preferred_categories` | I settori preferiti. Usa i nomi esattamente come sono in `config/categories.json`. |
