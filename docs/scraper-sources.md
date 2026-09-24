@@ -56,7 +56,9 @@ Si può aggiungere una voce a mano. Senza `company_id` gli annunci vanno all'azi
 
 Ogni candidata viene letta una volta. Si tiene se il nome che dichiara è quello dell'azienda (`same_company`). Dagli annunci e dal sito basta che il nome non la contraddica; dallo slug deve coincidere. Workday dichiara solo il tenant.
 
-Il ritmo è di una richiesta per ATS ogni `probe_interval_seconds`. Recruitee e Greenhouse hanno chiuso le connessioni dopo una raffica di sottodomini e slug inesistenti. Per questo Recruitee non si prova per nome. Un'azienda il cui controllo è fallito per errori di rete resta da ricontrollare; le altre si ricontrollano dopo `recheck_days`.
+Il ritmo è di una richiesta per ATS ogni `probe_interval_seconds`. Recruitee e Greenhouse hanno chiuso le connessioni dopo una raffica di sottodomini e slug inesistenti. Per questo Recruitee non si prova per nome. Un'azienda il cui controllo è fallito per errori di rete o per un 429 resta da ricontrollare; le altre si ricontrollano dopo `recheck_days`.
+
+La ricerca per nome è lenta: Greenhouse, Lever e Personio rispondono a uno slug inesistente dopo 4-8 secondi. Il 24 settembre 2026 ha controllato circa 50 aziende in 25 minuti, e 13 hanno trovato una bacheca. Conviene lanciarla a lotti (`ats-discover --limit 100`), perché riprende da dove si è fermata. Se lo stesso nome risponde su due ATS diversi, nessuna delle due bacheche viene seguita: finiscono in `rejected` con `ambiguous`. Era il caso di Voltus Inc. su Lever e Voltus GmbH su Personio.
 
 **Raccolta.** `ats.rows()` legge ogni bacheca in `workers` thread, con al massimo una richiesta per ATS ogni `request_interval_seconds`. Workday e SmartRecruiters danno il testo solo con una seconda chiamata per annuncio: la si paga solo per gli annunci che l'archivio non ha già con testo. Nome e sito dell'azienda vengono dall'archivio, non dalla bacheca, così gli annunci finiscono sulla stessa azienda di Tier A/B. Oltre `max_jobs_per_board` la lettura si ferma.
 

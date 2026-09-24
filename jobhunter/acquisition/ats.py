@@ -468,7 +468,11 @@ def discover(archive, cfg, names=True, limit=None, force=False):
 
     def get(method, address, key=None, **kwargs):
         pace(key or urlsplit(address).hostname)
-        return call(method, address, timeout, **kwargs)
+        response = call(method, address, timeout, **kwargs)
+        # Un 429 non dice che la bacheca non esiste: l'azienda va ricontrollata (Workable, 24/09/2026).
+        if response.status_code == 429:
+            raise RuntimeError(f"HTTP 429 from {urlsplit(address).hostname}")
+        return response
 
     def one(cid):
         """Boards of one company: accepted, rejected with the name they declared, and how they were found."""
@@ -478,12 +482,12 @@ def discover(archive, cfg, names=True, limit=None, force=False):
         # Annunci e sito già letti in un giro precedente senza nomi: resta solo lo slug dal nome.
         names_only = bool(done(cid))
 
-        def check(candidates, method, strict):
+        def check(candidates, method, strict, attempts=3):
             for board in candidates:
                 if any(b["ats"] == board["ats"] and b["slug"].lower() == board["slug"].lower() for b in accepted + rejected):
                     continue
                 try:
-                    declared = info(board, lambda m, a, **k: get(m, a, board["ats"], **k))
+                    declared = info(board, lambda m, a, **k: get(m, a, board["ats"], attempts=attempts, **k))
                 except Exception as exc:
                     logger.debug("ATS check failed for %s %s: %s", board, company["name"], exc)
                     failed.append(board)
@@ -529,7 +533,15 @@ def discover(archive, cfg, names=True, limit=None, force=False):
         if not accepted and names:
             candidates = [{"ats": ats, "slug": slug} for slug in guesses(company["name"])
                           for ats in GUESSABLE]
-            check(candidates, "nome", strict=True)
+            # Greenhouse, Lever e Personio rispondono a uno slug inesistente dopo 4-8 secondi: senza
+            # ritentativi un timeout costa 15 secondi, non un minuto, e l'azienda resta da ricontrollare.
+            check(candidates, "nome", strict=True, attempts=1)
+            guessed = [b for b in accepted if b["found_by"] == "nome"]
+            if len({b["ats"] for b in guessed}) > 1:
+                # Lo stesso nome su più ATS: quasi sempre omonimi (Voltus Inc. su Lever, Voltus GmbH su
+                # Personio). Nessuna viene seguita; restano fra gli scarti da rivedere.
+                accepted[:] = [b for b in accepted if b not in guessed]
+                rejected.extend({**b, "ambiguous": True} for b in guessed)
         return cid, accepted, rejected, failed
 
     found = {"annuncio": 0, "sito": 0, "nome": 0}

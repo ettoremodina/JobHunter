@@ -123,6 +123,22 @@ class CollectionTests(unittest.TestCase):
         self.archive.ingest(rows, "ats")
         self.assertEqual(self.archive.db.execute("SELECT count(*) FROM companies").fetchone()[0], 1)
 
+    def test_discovery_by_name_keeps_one_match_and_rejects_namesakes(self):
+        """One ATS answering to the name is followed; the same name on two ATSs is left for review."""
+        with self.archive.db:
+            unique, twice = self.archive.company("Exolaunch"), self.archive.company("Voltus")
+        (self.root / "config").mkdir()
+        cfg = {"sources": {"ats": {"config": "config/w.json", "discovery": {
+            "tiers": ["A"], "recheck_days": 30, "workers": 2, "probe_interval_seconds": 0, "timeout_seconds": 1}}}}
+        declared = {("personio", "exolaunch"): "Jobs at EXOLAUNCH", ("lever", "voltus"): "Voltus", ("personio", "voltus"): "Jobs bei Voltus GmbH"}
+        with patch.object(ats, "ROOT", self.root), patch.object(ats, "info", lambda b, get: declared.get((b["ats"], b["slug"]))), \
+                patch("jobhunter.evaluation.selection.verdicts", return_value={unique: {"tier": "A"}, twice: {"tier": "A"}}):
+            report = ats.discover(self.archive, cfg)
+        watch = json.loads((self.root / "config/w.json").read_text(encoding="utf-8"))
+        self.assertEqual([(b["ats"], b["slug"]) for b in watch["boards"]], [("personio", "exolaunch")])
+        self.assertEqual({(b["ats"], b["slug"]) for b in watch["rejected"]}, {("lever", "voltus"), ("personio", "voltus")})
+        self.assertEqual(report["new_boards"]["nome"], 1)
+
     def test_closure_is_limited_to_boards_that_answered(self):
         self.archive.ingest([self.ad("Read", "Kept"), self.ad("Read", "Gone"), self.ad("Failed", "Missing")], "ats", BEFORE)
         self.archive.ingest([self.ad("Read", "Kept")], "ats", AGAIN)
