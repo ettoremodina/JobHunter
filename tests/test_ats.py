@@ -104,7 +104,8 @@ class CollectionTests(unittest.TestCase):
         (self.root / "config").mkdir()
         (self.root / "config/w.json").write_text(json.dumps({"boards": [
             {"ats": "greenhouse", "slug": "marvelfusion", "company_id": cid, "company": "Marvel Fusion"},
-            {"ats": "lever", "slug": "broken", "company": "Broken"}]}), encoding="utf-8")
+            {"ats": "lever", "slug": "broken", "company": "Broken"},
+            {"ats": "greenhouse", "slug": "MarvelFusion", "company": "Group sibling"}]}), encoding="utf-8")
 
         def jobs(board, get, known, cap):
             if board["slug"] == "broken":
@@ -114,6 +115,7 @@ class CollectionTests(unittest.TestCase):
             rows, errors, answered = ats.rows(self.archive, {"config": "config/w.json"}, {"timeout_seconds": 1})
         self.assertEqual((rows[0]["company_name"], rows[0]["website_url"], rows[0]["locations"]),
                          ("Marvel Fusion GmbH", "https://marvelfusion.com/", ["Munich"]))
+        self.assertEqual(len(rows), 1, "a board shared by two companies is read once")
         self.assertEqual([e["board"] for e in errors], ["lever/broken"])
         self.assertEqual(answered, {"Marvel Fusion GmbH"})
         self.archive.ingest(rows, "ats")

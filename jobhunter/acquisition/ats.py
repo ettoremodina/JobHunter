@@ -395,7 +395,13 @@ def rows(archive, source, cfg, limit=None):
         return found, None, name if complete else None
 
     collected, errors, answered = [], [], set()
-    boards = watch["boards"]
+    # ponytail: una bacheca di gruppo condivisa da più aziende (Hitachi Energy e Hitachi Rail) si
+    # legge una volta, per la prima in elenco; per sceglierne un'altra basta riordinare il file.
+    seen, boards = set(), []
+    for board in watch["boards"]:
+        if (board["ats"], board["slug"].lower()) not in seen:
+            seen.add((board["ats"], board["slug"].lower()))
+            boards.append(board)
     workers = source.get("workers", 8)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for start in range(0, len(boards), workers):
