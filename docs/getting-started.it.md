@@ -83,7 +83,8 @@ Le fonti sono in `config/app.json`, sotto `sources`. Ognuna ha `"enabled": true`
 |---|---|
 | `jobspy` | LinkedIn e Indeed, guidati da `config/jobspy.yaml`. |
 | `airtable` | ClimateTechList, una bacheca di aziende climatiche. Include il settore. |
-| `climatebase.org` | Climatebase, letta con un browser automatico. |
+| `ats` | Le bacheche pubbliche (Greenhouse, Lever, Workday...) delle aziende che ti interessano: testo completo e data esatta. L'elenco si costruisce con `python main.py ats-discover`. |
+| `climatebase.org` | Climatebase, letta con un browser automatico. Disattivata da settembre 2026: il sito blocca i browser automatici. |
 
 Le due bacheche climatiche servono solo se ti interessa quel settore; altrimenti disattivale.
 

@@ -23,6 +23,7 @@ __pycache__/
 /config/jobspy.yaml
 /config/system-one-questions.json
 /config/review_questions.json
+/config/ats_watchlist.json
 
 # Ambiente personale degli agenti e appunti di lavoro: privati.
 /.agents/

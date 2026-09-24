@@ -45,10 +45,11 @@ def sweep(archive, cfg):
         write_checkpoint(output / "report.json", report)
 
     checkpoint("listings")
-    ordered = sorted(cfg["sources"].items(), key=lambda item: {"airtable": 0, "browser": 1, "jobspy": 2}[item[1]["kind"]])
-    # Le fonti che possono dire «non c'è più»: Airtable restituisce tutto, JobSpy la sua finestra di ore.
+    ordered = sorted(cfg["sources"].items(), key=lambda item: {"airtable": 0, "ats": 1, "browser": 2, "jobspy": 3}[item[1]["kind"]])
+    # Le fonti che possono dire «non c'è più»: Airtable restituisce tutto, JobSpy la sua finestra di ore,
+    # un ATS tutto ma solo per le aziende la cui bacheca ha risposto per intero.
     # Il browser si ferma a limiti di navigazione, quindi un annuncio mancante non prova niente.
-    closable = {}
+    closable, scopes = {}, {}
     for name, source in ordered:
         directory = output/name
         directory.mkdir()
@@ -84,6 +85,11 @@ def sweep(archive, cfg):
                 if source["kind"] == "airtable":
                     rows, errors = airtable_rows(conf, cfg["timeout_seconds"]), []
                     details["scope"] = "Entire public embed response; server-side completeness unverified"
+                elif source["kind"] == "ats":
+                    from jobhunter.acquisition import ats
+                    rows, errors, answered = ats.rows(archive, source, cfg)
+                    details["scope"] = "Every board in the watchlist; a board that failed or hit max_jobs_per_board closes nothing"
+                    details["boards_complete"] = len(answered)
                 else:
                     broad_cfg = {**cfg, "max_pages": limits["browser_max_pages"]}
                     rows, errors = asyncio.run(browser_rows(conf, source, broad_cfg, limits["browser_max_jobs"], directory))
@@ -94,6 +100,10 @@ def sweep(archive, cfg):
                 details["status"] = "partial" if errors or imported["rejected"] else "success" if rows else "empty"
                 if source["kind"] == "airtable" and details["status"] == "success":
                     closable[name] = None
+                if source["kind"] == "ats" and answered:
+                    closable[name] = None
+                    scopes[name] = {r[0] for r in archive.db.execute(
+                        "SELECT id FROM companies WHERE name IN (SELECT value FROM json_each(?))", (json.dumps(sorted(answered)),))}
                 if source["kind"] == "browser":
                     details["discovery"] = json.loads((directory/"discovery.json").read_text(encoding="utf-8"))
                     details["status"] = "partial"
@@ -107,7 +117,7 @@ def sweep(archive, cfg):
     if limits.get("close_missing_ads", True):
         from jobhunter.acquisition import closure
         checkpoint("closures")
-        found = closure.detect(archive, report["started_at"], closable, limits.get("max_closed_share", 0.5))
+        found = closure.detect(archive, report["started_at"], closable, limits.get("max_closed_share", 0.5), scopes)
         report["closures"] = {k: v for k, v in found.items() if k != "ids"}
         if limits.get("remove_closed_html", True):
             snapshots = json.loads((ROOT/"config/descriptions.json").read_text(encoding="utf-8"))["output_directory"]

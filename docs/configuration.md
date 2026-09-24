@@ -2,7 +2,7 @@
 
 Il codice legge configurazioni esplicite dalla cartella `config/`. Le preferenze personali e le prove del profilo restano in `user_context/`. Le credenziali arrivano dall'ambiente o dal file di segreti configurato e non devono entrare nella documentazione.
 
-I file personali non sono versionati: `user_context/`, `config/role_filters.json`, `config/jobspy.yaml`, `config/system-one-questions.json` e `config/review_questions.json`. `python main.py init` li crea dalla copia di esempio con lo stesso percorso in `examples/`, solo se mancano. Una modifica al formato di uno di questi file va riportata anche nel suo esempio. La guida per compilarli è [getting-started.it.md](getting-started.it.md).
+I file personali non sono versionati: `user_context/`, `config/role_filters.json`, `config/jobspy.yaml`, `config/system-one-questions.json`, `config/review_questions.json` e `config/ats_watchlist.json`. `python main.py init` li crea dalla copia di esempio con lo stesso percorso in `examples/`, solo se mancano. Una modifica al formato di uno di questi file va riportata anche nel suo esempio. La guida per compilarli è [getting-started.it.md](getting-started.it.md).
 
 ## File attivi
 
@@ -12,6 +12,7 @@ I file personali non sono versionati: `user_context/`, `config/role_filters.json
 | Raccolta ampia | `config/sweep.json` | Concorrenza, pagine e timeout delle query JobSpy; `close_missing_ads`, `max_closed_share` e `remove_closed_html` per chiudere gli annunci non ritrovati e cancellarne le pagine salvate |
 | JobSpy | `config/jobspy.yaml` | Board, query, località e finestra temporale |
 | Altre fonti | `config/airtable.yaml`, `config/sites/*.yaml` | Endpoint e navigazione per fonte |
+| Bacheche ATS | `config/ats_watchlist.json`, `sources.ats` in `config/app.json` | Le bacheche da leggere (scritte da `ats-discover`, correggibili a mano); concorrenza, ritmo per ATS, tetto di annunci per bacheca e parametri della scoperta |
 | Descrizioni | `config/descriptions.json` | Host ammessi, worker, timeout, scadenze e rinvii |
 | Filtri dei ruoli | `config/role_filters.json` | Famiglie professionali, esclusioni, esperienza, lingue e categorie preferite |
 | Settori | `config/categories.json` | Vocabolario delle categorie aziendali e segnali lessicali |

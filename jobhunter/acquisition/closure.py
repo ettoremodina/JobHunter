@@ -17,21 +17,25 @@ from jobhunter.workspace import now
 logger = logging.getLogger(__name__)
 
 
-def detect(archive, started, windows, max_share):
+def detect(archive, started, windows, max_share, scopes=None):
     """Close the ads each completed source could have seen again since `started` and did not.
 
     `windows` maps every source that completed the sweep to its look-back in hours, or None when it
-    lists everything it has. A source that would close more than `max_share` of its open ads is
-    skipped and reported: a truncated or blocked response must not close half the archive.
+    lists everything it has. `scopes` optionally limits a source to some companies: an ATS lists
+    everything only for the boards that answered. A source that would close more than `max_share`
+    of its open ads is skipped and reported: a truncated or blocked response must not close half
+    the archive.
     """
     closed, skipped = [], {}
     begin = datetime.fromisoformat(started)
     for source, hours in windows.items():
-        rows = archive.db.execute("""SELECT o.id, json_extract(o.data,'$.posted_at') posted, max(s.observed_at) seen
+        rows = archive.db.execute("""SELECT o.id, o.company_id, json_extract(o.data,'$.posted_at') posted, max(s.observed_at) seen
             FROM opportunities o JOIN observations s ON s.opportunity_id=o.id
             WHERE o.id IN (SELECT opportunity_id FROM observations WHERE source=?)
               AND o.id NOT IN (SELECT opportunity_id FROM closures)
             GROUP BY o.id""", (source,)).fetchall()
+        if scopes and source in scopes:
+            rows = [r for r in rows if r["company_id"] in scopes[source]]
         # Un giorno di margine sul bordo della finestra: la data della fonte spesso non ha l'ora.
         cutoff = None if hours is None else (begin - timedelta(hours=hours) + timedelta(days=1)).date().isoformat()
         gone = [r["id"] for r in rows if r["seen"] < started

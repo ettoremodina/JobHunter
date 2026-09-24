@@ -83,7 +83,8 @@ Sources are listed in `config/app.json` under `sources`. Each one has `"enabled"
 |---|---|
 | `jobspy` | LinkedIn and Indeed, driven by `config/jobspy.yaml`. |
 | `airtable` | ClimateTechList, a board of climate companies. It includes the sector. |
-| `climatebase.org` | Climatebase, read with an automated browser. |
+| `ats` | The public job boards (Greenhouse, Lever, Workday...) of the companies you care about: full text and exact date. Build the list with `python main.py ats-discover`. |
+| `climatebase.org` | Climatebase, read with an automated browser. Disabled since September 2026: the site blocks automated browsers. |
 
 The two climate boards are useful only if you care about that sector; disable them otherwise.
 

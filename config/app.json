@@ -20,9 +20,29 @@
       "kind": "airtable",
       "config": "config/airtable.yaml"
     },
-    "climatebase.org": {
+    "ats": {
       "enabled": true,
+      "kind": "ats",
+      "config": "config/ats_watchlist.json",
+      "workers": 8,
+      "request_interval_seconds": 0.2,
+      "max_jobs_per_board": 3000,
+      "discovery": {
+        "tiers": [
+          "A",
+          "B-attesa",
+          "B-esperienza"
+        ],
+        "recheck_days": 30,
+        "workers": 16,
+        "probe_interval_seconds": 1.0,
+        "timeout_seconds": 15
+      }
+    },
+    "climatebase.org": {
+      "enabled": false,
       "kind": "browser",
+      "reason": "Protetto dalla verifica anti-bot di Cloudflare dal settembre 2026 (403 «Just a moment...» anche col browser); le sue aziende si seguono dalle bacheche ATS",
       "config": "config/sites/climatebase.org.yaml",
       "link_contains": "/job/"
     },

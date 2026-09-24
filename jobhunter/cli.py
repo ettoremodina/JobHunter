@@ -115,6 +115,10 @@ def parser():
     profile.add_argument("--id", action="append", dest="ids", help="Limit to one company; repeatable")
     profile.add_argument("--force", action="store_true", help="Overwrite sector and description already saved")
     profile.add_argument("--no-about", action="store_true", help="Never follow an «about us» link: one request per company")
+    discover = sub.add_parser("ats-discover", help="Find the public ATS board of Tier A/B companies and save it to the watchlist")
+    discover.add_argument("--limit", type=int, help="Companies to check in this run")
+    discover.add_argument("--no-names", action="store_true", help="Only ad URLs and company websites; no slug guessed from the name")
+    discover.add_argument("--force", action="store_true", help="Also recheck companies checked less than recheck_days ago")
     classify = sub.add_parser("categorize", help="Refresh automatic categories, or assign one company from chat")
     classify.add_argument("id", nargs="?")
     classify.add_argument("--category")
@@ -180,6 +184,9 @@ def execute(args, archive, cfg):
     if command == "company-profile":
         from jobhunter.acquisition.company_profile import recover
         return recover(archive, args.limit, args.ids, force=args.force, follow_about=not args.no_about)
+    if command == "ats-discover":
+        from jobhunter.acquisition.ats import discover
+        return discover(archive, cfg, names=not args.no_names, limit=args.limit, force=args.force)
     if command in ("init", "stats"):
         return archive.stats()
     if command == "sources":

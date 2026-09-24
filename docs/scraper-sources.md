@@ -1,6 +1,6 @@
 # Fonti dello scraper e aggiunta di un sito
 
-Verifica del punto 12, 15 settembre 2026, sul codice locale. Il disegno attuale basta per aggiungere fonti simili a quelle esistenti. Non esiste un protocollo Python per sito né un registro di plugin. Ci sono tre rami in `collection.collect()` e `sweep.sweep()`, con normalizzazione comune in `normalization.normalize()`.
+Verifica del punto 12, 15 settembre 2026, sul codice locale, aggiornata il 24 settembre con le bacheche ATS. Il disegno attuale basta per aggiungere fonti simili a quelle esistenti. Non esiste un protocollo Python per sito né un registro di plugin. Ci sono quattro rami in `collection.collect()` e `sweep.sweep()`, con normalizzazione comune in `normalization.normalize()`.
 
 ## Contratti effettivi
 
@@ -8,8 +8,11 @@ Verifica del punto 12, 15 settembre 2026, sul codice locale. Il disegno attuale 
 |---|---|---|
 | `airtable` | `collection.airtable_rows()` | Legge `embed_url` dal YAML, estrae endpoint e header dall'HTML pubblico, poi colonne e celle da `data.table`. Dipende da un protocollo embed non stabile. Restituisce i nomi delle colonne originali; quelli riconosciuti sono in `normalize()`. Non salva la risposta embed originale, ma salva le righe estratte. |
 | `jobspy` | JobSpy, board `linkedin` e `indeed` | YAML con `site_names`, `search_queries`, `locations`, `hours_old`, `results_wanted`. Le righe sono quelle del DataFrame JobSpy serializzato in JSON. Paginazione e accesso dipendono dalla libreria e dal board. |
+| `ats` | `ats.rows()` | Legge le bacheche di `config/ats_watchlist.json`, una per azienda seguita. Vedi «Bacheche ATS» qui sotto. |
 | `climatebase.org` | `collection.browser_rows()` | YAML con `entry_point`, eventuale `request_delay_seconds`; `link_contains` nel JSON app. Scopre link sullo stesso hostname, usa bottoni inglesi `load more`/`show more` oppure scroll. Estrae solo `JobPosting` JSON-LD dalle pagine dettaglio, prima via HTTP e poi con browser se manca. |
 | `inclimate.com` | Stesso ramo browser | Disabilitato per accesso richiesto. La presenza del YAML non prova che il parser funzioni. |
+
+Climatebase è disabilitata dal 24 settembre 2026: ogni pagina del sito, anche `robots.txt`, risponde 403 con la verifica anti-bot di Cloudflare, sia via HTTP sia con Playwright. Aggirarla non è un'opzione. Le aziende che vi comparivano si seguono dalle loro bacheche ATS.
 
 `filtered_entry_point` nel YAML Climatebase non viene letto. Conta `entry_point`. Il browser non segue una paginazione generica "Next", non interpreta card HTML arbitrarie e non scopre link su un hostname diverso. `discovery.json` registra il motivo di arresto, senza garantire l'esaurimento del sito. Un `kind` sconosciuto oggi cade nel ramo browser di `collect()`, mentre lo sweep lo rifiuta durante l'ordinamento: usare solo i tre valori esistenti.
 
@@ -34,6 +37,32 @@ Ogni riga deve avere `company_name`, `title` e un singolo `source_url` HTTP o HT
 ```
 
 `Archive.ingest()` separa i campi aziendali da quelli del ruolo, normalizza gli URL e registra le osservazioni di fonte. Le righe rifiutate finiscono nel report. La descrizione aziendale e quella dell'annuncio hanno significati diversi, non vanno copiate una nell'altra. Il worker ora conserva una sola riga per URL anche quando la stessa pagina JobSpy lo ripete.
+
+## Bacheche ATS
+
+Codice in `jobhunter/acquisition/ats.py`. Greenhouse, Lever (anche l'istanza EU), Ashby, Workable, SmartRecruiters, Recruitee, Personio, Teamtailor e Workday pubblicano senza chiave l'elenco completo degli annunci aperti di un'azienda. Verificati dal vivo il 24 settembre 2026, con testo e data sul 100% degli annunci letti.
+
+**Elenco.** `config/ats_watchlist.json` è personale e non versionato; `init` lo crea vuoto da `examples/`. Ha tre chiavi:
+- `boards`: una voce per bacheca, con `ats`, `slug` (per Workday `tenant/istanza/sito`), `company_id`, `company`, il nome che la bacheca dichiara e la strada che l'ha trovata;
+- `checked`: quando ogni azienda è stata cercata e se anche per nome;
+- `rejected`: le bacheche scartate perché dichiarano un altro nome, da rivedere a mano.
+
+Si può aggiungere una voce a mano. Senza `company_id` gli annunci vanno all'azienda con quel nome.
+
+**Scoperta.** `python main.py ats-discover [--limit N] [--no-names] [--force]` cerca le aziende dei tier in `sources.ats.discovery.tiers` (A e B) non ancora in elenco. Le strade, dalla più economica:
+1. gli URL degli annunci già in archivio, compresi i link corti `grnh.se` e `apply.workable.com/j/`, seguiti fino alla bacheca;
+2. il sito aziendale e al massimo due pagine «careers» collegate, cercando link e script delle bacheche;
+3. lo slug ricavato dal nome, provato sugli ATS che dicono «non esiste» in modo netto (`GUESSABLE`).
+
+Ogni candidata viene letta una volta. Si tiene se il nome che dichiara è quello dell'azienda (`same_company`). Dagli annunci e dal sito basta che il nome non la contraddica; dallo slug deve coincidere. Workday dichiara solo il tenant.
+
+Il ritmo è di una richiesta per ATS ogni `probe_interval_seconds`. Recruitee e Greenhouse hanno chiuso le connessioni dopo una raffica di sottodomini e slug inesistenti. Per questo Recruitee non si prova per nome. Un'azienda il cui controllo è fallito per errori di rete resta da ricontrollare; le altre si ricontrollano dopo `recheck_days`.
+
+**Raccolta.** `ats.rows()` legge ogni bacheca in `workers` thread, con al massimo una richiesta per ATS ogni `request_interval_seconds`. Workday e SmartRecruiters danno il testo solo con una seconda chiamata per annuncio: la si paga solo per gli annunci che l'archivio non ha già con testo. Nome e sito dell'azienda vengono dall'archivio, non dalla bacheca, così gli annunci finiscono sulla stessa azienda di Tier A/B. Oltre `max_jobs_per_board` la lettura si ferma.
+
+**Chiusure.** Una bacheca letta per intero dice quali annunci sono chiusi. `sweep` passa a `closure.detect` solo le aziende la cui bacheca ha risposto senza errori e senza toccare il tetto.
+
+**Google Jobs.** Provato il 24 settembre 2026 con JobSpy 1.1.82, l'ultima versione pubblicata: zero risultati con qualsiasi query, e l'avviso «initial cursor not found». Non è in `site_names`.
 
 ## Percorso raccolta, worker e descrizioni
 

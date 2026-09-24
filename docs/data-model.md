@@ -83,7 +83,8 @@ Tabella `opportunities`, campo `data` in JSON.
 
 La tabella `closures` (`opportunity_id`, `detected_at`, `reason`) segna gli annunci che una raccolta
 completa (`collect-all`) avrebbe potuto ritrovare e non ha ritrovato: tutti quelli di Airtable, che
-restituisce l'elenco intero, e quelli di JobSpy pubblicati dentro la sua finestra `hours_old`. Un
+restituisce l'elenco intero, quelli delle bacheche ATS che hanno risposto per intero, e quelli di
+JobSpy pubblicati dentro la sua finestra `hours_old`. Un
 annuncio fuori finestra o senza data non si chiude. L'annuncio resta in archivio con la sua catena di
 verdetti, ma non tiene più in piedi il tier della sua azienda (`selection.verdicts`, Metriche). Le sue
 pagine HTML salvate vengono cancellate (`closure.compact`): il testo estratto resta nel JSON. Se

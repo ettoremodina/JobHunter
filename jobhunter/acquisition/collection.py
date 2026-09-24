@@ -94,6 +94,13 @@ class JobDataParser(HTMLParser):
             self.text.append(data)
 
 
+def html_text(html):
+    """Readable lines of an HTML fragment, one per block, without scripts, styles or empty lines."""
+    parser = JobDataParser()
+    parser.feed(str(html or ""))
+    return "\n".join(clean(line) for line in "".join(parser.text).splitlines() if clean(line))
+
+
 def postings(html, address):
     """Map JSON-LD JobPosting nodes, including graphs, to the common input schema."""
     parser = JobDataParser()
@@ -132,8 +139,6 @@ def postings(html, address):
         for loc in locations:
             addr = loc.get("address", {}) if isinstance(loc, dict) else loc
             labels.append(", ".join(filter(None, [clean(addr.get(k)) for k in ("addressLocality", "addressRegion", "addressCountry")])) if isinstance(addr, dict) else clean(addr))
-        description = JobDataParser()
-        description.feed(str(node.get("description") or ""))
         salary = node.get("baseSalary") or {}
         if not isinstance(salary, dict):
             salary = {}
@@ -141,7 +146,7 @@ def postings(html, address):
         if not isinstance(value, dict):
             value = {"value": value}
         rows.append({"company_name": org.get("name"), "website_url": org.get("sameAs"), "title": node.get("title"),
-                     "source_url": urljoin(address, node.get("url") or address), "description": "\n".join(clean(line) for line in "".join(description.text).splitlines() if clean(line)),
+                     "source_url": urljoin(address, node.get("url") or address), "description": html_text(node.get("description")),
                      "locations": labels, "posted_at": node.get("datePosted"), "employment_type": node.get("employmentType"),
                      "remote_policy": "remote" if node.get("jobLocationType") == "TELECOMMUTE" else None,
                      "salary": {"min": value.get("minValue", value.get("value")), "max": value.get("maxValue", value.get("value")), "period": value.get("unitText"), "currency": salary.get("currency")}})
@@ -288,6 +293,9 @@ def collect(archive, cfg, name, limit=None, force=False, recover_descriptions=Tr
         errors = []
         if source["kind"] == "airtable":
             rows = airtable_rows(config, cfg["timeout_seconds"])[:count]
+        elif source["kind"] == "ats":
+            from jobhunter.acquisition import ats
+            rows, errors, _ = ats.rows(archive, source, cfg, count)
         elif source["kind"] == "jobspy":
             from jobspy import scrape_jobs
             rows = []
