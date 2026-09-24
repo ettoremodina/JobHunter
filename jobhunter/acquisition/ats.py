@@ -214,14 +214,17 @@ def info(board, get):
 
 # --- Annunci di una bacheca nel formato comune ------------------------------------------------------
 
-def jobs(board, get, known=frozenset(), cap=None):
+def jobs(board, get, known=None, cap=None):
     """All open ads of one board as common rows (without company fields) and whether the list is complete.
 
-    `known` holds the ad URLs whose text the archive already has: Workday and SmartRecruiters need a
-    second call per ad for the text, and it is spent only on new ads. `cap` bounds very large boards;
+    Workday and SmartRecruiters give the text only with a second call per ad. `known` maps the URL of
+    each ad the archive already has with its text to the fields saved from that call: the call is
+    spent only on new ads, and a known ad keeps its date and places. Senza, l'elenco Workday
+    sovrascriverebbe la data con niente e le sedi con «2 Locations». `cap` bounds very large boards;
     a capped list is not complete, so its missing ads must not be closed.
     """
     ats, slug = board["ats"], board["slug"]
+    known = known or {}
     rows = []
     if ats == "greenhouse":
         r = get("GET", f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true")
@@ -278,7 +281,9 @@ def jobs(board, get, known=frozenset(), cap=None):
                        "locations": [where.get("fullLocation") or ", ".join(filter(None, (where.get("city"), where.get("country"))))],
                        "remote_policy": "remote" if where.get("remote") else "hybrid" if where.get("hybrid") else None,
                        "employment_type": (j.get("typeOfEmployment") or {}).get("label")}
-                if url(address) not in known and (cap is None or len(rows) < cap):
+                if url(address) in known:
+                    row.update(known[url(address)])
+                elif cap is None or len(rows) < cap:
                     detail = get("GET", f"https://api.smartrecruiters.com/v1/companies/{slug}/postings/{j['id']}")
                     if detail.ok:
                         sections = ((detail.json().get("jobAd") or {}).get("sections") or {}).values()
@@ -333,7 +338,9 @@ def jobs(board, get, known=frozenset(), cap=None):
                     continue
                 address = f"{base}/{site}{j['externalPath']}"
                 row = {"title": j["title"], "source_url": address, "locations": [j.get("locationsText")]}
-                if url(address) not in known and (cap is None or len(rows) < cap):
+                if url(address) in known:
+                    row.update(known[url(address)])
+                elif cap is None or len(rows) < cap:
                     detail = get("GET", f"{base}/wday/cxs/{tenant}/{site}{j['externalPath']}")
                     if detail.ok:
                         posting = detail.json().get("jobPostingInfo") or {}
@@ -370,8 +377,13 @@ def rows(archive, source, cfg, limit=None):
     """
     watch = load(ROOT / source["config"])
     companies = {r["id"]: (r["name"], r["website"]) for r in archive.db.execute("SELECT id,name,website FROM companies")}
-    known = {url(r[0]) for r in archive.db.execute(
-        "SELECT json_extract(data,'$.source_url') FROM opportunities WHERE coalesce(json_extract(data,'$.description'),'')!=''")}
+    known = {}
+    for address, posted, places, kind in archive.db.execute("""SELECT json_extract(data,'$.source_url'), json_extract(data,'$.posted_at'),
+            json_extract(data,'$.locations'), json_extract(data,'$.employment_type') FROM opportunities
+            WHERE coalesce(json_extract(data,'$.description'),'')!='' AND (json_extract(data,'$.source_url') LIKE '%myworkdayjobs.com%'
+               OR json_extract(data,'$.source_url') LIKE '%smartrecruiters.com%')"""):
+        saved = {"posted_at": posted, "locations": json.loads(places) if places else None, "employment_type": kind}
+        known[url(address)] = {k: v for k, v in saved.items() if v}
     pace = Pace(source.get("request_interval_seconds", 0.2))
     timeout = cfg["timeout_seconds"]
 

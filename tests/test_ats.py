@@ -78,9 +78,11 @@ class AdapterTests(unittest.TestCase):
         def get(method, address, **kwargs):
             calls.append(address)
             return Response(listing if "offset" in address else {"jobAd": {"sections": {"x": {"title": "Job", "text": "<p>Text</p>"}}}})
-        rows, complete = ats.jobs({"ats": "smartrecruiters", "slug": "Acme"}, get, known={"https://jobs.smartrecruiters.com/Acme/1"})
+        rows, complete = ats.jobs({"ats": "smartrecruiters", "slug": "Acme"}, get,
+                                  known={"https://jobs.smartrecruiters.com/Acme/1": {"posted_at": "2026-09-01"}})
         self.assertTrue(complete)
         self.assertEqual([r.get("description") for r in rows], [None, "Job\nText"])
+        self.assertEqual(rows[0]["posted_at"], "2026-09-01", "a known ad keeps the date saved from its detail call")
         self.assertEqual(sum("postings/" in c for c in calls), 1)
 
 
