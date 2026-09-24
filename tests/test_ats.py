@@ -35,10 +35,11 @@ class DetectionTests(unittest.TestCase):
         text = ("https://job-boards.eu.greenhouse.io/marvelfusion/jobs/1 https://jobs.eu.lever.co/acme/2 "
                 "<script src='https://boards.greenhouse.io/embed/job_board/js?for=vectra'></script> "
                 "https://abb.wd3.myworkdayjobs.com/en-US/External/job/x https://apply.workable.com/j/ABC "
-                "https://www.recruitee.com https://intouch.recruitee.com/o/role")
+                "https://www.recruitee.com https://intouch.recruitee.com/o/role https://cae.wd3.myworkdayjobs.com/fr-CA/career")
         found = {(b["ats"], b["slug"]) for b in ats.detect(text)}
         self.assertEqual(found, {("greenhouse", "marvelfusion"), ("greenhouse", "vectra"), ("lever_eu", "acme"),
-                                 ("workday", "abb/wd3/External"), ("recruitee", "intouch")})
+                                 ("workday", "abb/wd3/External"), ("recruitee", "intouch"),
+                                 ("workday", "cae/wd3/career")})
 
     def test_same_company(self):
         self.assertTrue(ats.same_company("STARK", "Jobs at STARK"))
@@ -46,6 +47,9 @@ class DetectionTests(unittest.TestCase):
         self.assertTrue(ats.same_company("CarCutter", "Car Cutter"))
         self.assertFalse(ats.same_company("Nova", "Novartis"))
         self.assertFalse(ats.same_company("SMA Solar Technology", "SMA America"))
+        self.assertTrue(ats.same_company("Nova", "Nova Credit"))
+        self.assertFalse(ats.same_company("Nova", "Nova Credit", exact=True))
+        self.assertTrue(ats.same_company("Tokamak Energy Ltd", "Jobs at Tokamak Energy", exact=True))
 
 
 class AdapterTests(unittest.TestCase):

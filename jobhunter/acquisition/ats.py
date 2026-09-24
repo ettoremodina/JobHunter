@@ -72,7 +72,8 @@ def detect(text):
         for match in pattern.finditer(text or ""):
             parts = [g for g in match.groups() if g]
             if name == "workday":
-                if parts[2].lower() in GENERIC:
+                # Per Workday il sito è un nome scelto dall'azienda: «career» o «jobs» sono validi.
+                if parts[2].lower() == "wday":
                     continue
                 slug = "/".join((parts[0].lower(), parts[1].lower(), parts[2]))
             else:
@@ -90,17 +91,22 @@ def words(name):
     return [w for w in re.findall(r"[a-z0-9]+", text) if w not in LEGAL]
 
 
-def same_company(ours, theirs):
-    """True when the name a board declares is the company's own, not a namesake with more words.
+def same_company(ours, theirs, exact=False):
+    """True when the name a board declares is the company's own.
 
-    Uguale una volta tolti spazi e forma giuridica, oppure una sequenza di parole contenuta
-    nell'altra dopo aver tolto le parole di contorno dei titoli («Jobs at», «Karriere bei»).
+    Uguale una volta tolti spazi, forma giuridica e parole di contorno dei titoli («Jobs at»,
+    «Karriere bei»). Senza `exact` basta anche una sequenza di parole contenuta nell'altra
+    («ALTEN» e «ALTEN Italia»): va bene quando la bacheca viene da un annuncio o dal sito
+    dell'azienda. Per uno slug indovinato dal nome serve `exact`, altrimenti «Nova» prenderebbe
+    la bacheca di «Nova Credit».
     """
     a, b = words(ours), [w for w in words(theirs) if w not in BOILERPLATE]
     if not a or not b:
         return False
     if "".join(a) == "".join(b):
         return True
+    if exact:
+        return False
     short, long = sorted((a, b), key=len)
     return any(long[i:i + len(short)] == short for i in range(len(long) - len(short) + 1))
 
@@ -466,11 +472,18 @@ def discover(archive, cfg, names=True, limit=None, force=False):
                     continue
                 if declared is None:
                     continue
+                # Un titolo fatto solo di contorno («Jobs at») non dice niente del nome.
+                if not [w for w in words(declared) if w not in BOILERPLATE]:
+                    declared = ""
                 # Workday dichiara solo il tenant; una bacheca vuota non dichiara niente. Dagli
                 # annunci basta che il nome non contraddica l'azienda; dal nome serve che coincida.
                 unknown = declared == "" or board["ats"] == "workday" and not strict
                 entry = {**board, "company_id": cid, "company": company["name"], "declared_name": declared, "found_by": method, "added": today}
-                (accepted if unknown and not strict or same_company(company["name"], declared) else rejected).append(entry)
+                if unknown and not strict or same_company(company["name"], declared, exact=strict):
+                    accepted.append(entry)
+                elif not strict:
+                    # Da annuncio o sito un altro nome merita uno sguardo; da uno slug indovinato è un omonimo.
+                    rejected.append(entry)
 
         text = "" if names_only else " ".join(links[cid])
         check(detect(text), "annuncio", strict=False)
