@@ -12,10 +12,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# agent-workflow:provider-bridges:start
-# Machine-local .agents -> .claude junctions. Recreated by scripts/sync-provider-bridges.ps1.
-.claude/memory/
-# agent-workflow:provider-bridges:end
 
 # File personali: restano sul tuo disco. `python main.py init` li crea da examples/.
 /user_context/
@@ -33,3 +29,14 @@ __pycache__/
 /TO-DO.md
 /.tmp/
 /.vscode/
+
+# >>> agentworkflow
+# Shared skills are links to AgentWorkflow, recreated by its scripts/project.ps1 -Action Link.
+# Project-owned skills stay tracked through the exceptions below.
+.agents/skills/*
+!.agents/skills/dashboard-template/
+.agents/memory/global/
+.claude/skills
+.claude/memory
+.claude/settings.local.json
+# <<< agentworkflow
