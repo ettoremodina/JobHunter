@@ -163,7 +163,8 @@ class BatchTests(unittest.TestCase):
                     request.side_effect = None
                     request.return_value = ({'company': None, 'jobs': []}, {'total_tokens': 99}, [])
                     failed = run(arc, values, lambda d: None)
-                    self.assertEqual(failed['status'], 'partial')
+                    # Una run che ha pagato senza salvare nulla e' fallita, non parziale.
+                    self.assertEqual(failed['status'], 'failed')
                     self.assertEqual(failed['usage']['total_tokens'], 99)
                     self.assertEqual(failed['counts']['summary_requests'], 2)
                     self.assertEqual(failed['counts']['saved_summaries'], 0)
@@ -212,6 +213,35 @@ class BatchTests(unittest.TestCase):
                 self.assertEqual({titles[oid] for oid in submitted[0]}, {SURVIVOR})
                 self.assertEqual(report['counts']['summary_requests'], 1)
                 self.assertEqual(report['counts']['saved_summaries'], 1)
+            finally:
+                arc.close()
+
+    def test_a_truncated_answer_skips_only_its_company(self):
+        """Prima del 19/10/2026 una sola risposta troncata fermava tutta la run, ogni notte nello stesso punto."""
+        with tempfile.TemporaryDirectory() as folder:
+            arc, cfg = workspace(folder, [SURVIVOR])
+            arc.ingest([{'company_name': 'Other', 'title': SURVIVOR, 'description': 'Build models.',
+                         'source_url': 'https://example.org/other'}], 'test')
+            approve_survivors(arc)
+            original, config_read = redirect(cfg)
+            try:
+                calls = []
+
+                def response(config, prompt, payload, key):
+                    """Truncate the first company's answer, card the second."""
+                    calls.append(payload)
+                    if len(calls) == 1:
+                        raise ValueError('Incomplete or tool response rejected')
+                    return {'company': None, 'jobs': [{'id': oid, 'summary': card(payload, oid)} for oid in payload['jobs']]}, \
+                        {'total_tokens': 50}, []
+                with patch('json.loads', side_effect=config_read), patch('jobhunter.evaluation.remote_llm.api_key', return_value='k'), \
+                        patch('jobhunter.evaluation.remote_llm.request', side_effect=response), \
+                        patch('jobhunter.evaluation.company_batch.time.sleep'):
+                    report = run(arc, {'all_companies': True, 'mode': 'execute', 'workers': 1}, lambda d: None)
+                self.assertEqual(len(calls), 2)
+                self.assertEqual((report['status'], report['counts']['rejected_companies']), ('partial', 1))
+                self.assertEqual(report['counts']['saved_summaries'], 1)
+                self.assertNotIn('stop_reason', report)
             finally:
                 arc.close()
 

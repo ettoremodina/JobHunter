@@ -4,7 +4,9 @@ from collections import Counter
 import json
 import logging
 import os
+import sqlite3
 import threading
+import time
 
 from jobhunter.workspace import Archive, BRIEF_DETAIL, ROOT, now
 from jobhunter.evaluation.remote_llm import digest
@@ -12,6 +14,8 @@ from jobhunter.operations.progress import process_alive
 from jobhunter.operations import cancellation
 
 logger = logging.getLogger(__name__)
+# Dal migliore al peggiore: lo stato di una sequenza e' quello del suo passaggio peggiore.
+SEVERITY = ('success', 'partial', 'failed')
 
 
 def configuration():
@@ -49,7 +53,7 @@ def job(archive, row):
     item['parameters'] = json.loads(item['parameters'])
     item['detail'] = json.loads(item['detail'])
     item['cancel_requested'] = archive.db.execute('SELECT 1 FROM pipeline_cancellations WHERE job_id=?', (item['id'],)).fetchone() is not None
-    if item['status'] == 'running' and process_alive(item['pid']) is False:
+    if item['status'] == 'running' and process_alive(item['pid'], item['started_at']) is False:
         item['status'] = 'interrupted'
     return item
 
@@ -189,8 +193,10 @@ def start(database, cfg, step, supplied, lock, continue_after=False, remote_para
         basis = input_versions(archive)[step]
         with archive.db:
             archive.db.execute('BEGIN IMMEDIATE')
-            for row in archive.db.execute("SELECT id,pid FROM pipeline_jobs WHERE status='running'").fetchall():
-                if process_alive(row['pid']) is not False:
+            for row in archive.db.execute("SELECT id,pid,started_at FROM pipeline_jobs WHERE status='running'").fetchall():
+                # Una riga col nostro PID e' orfana: il lock appena preso dice che nessun worker di
+                # questo processo sta lavorando, quindi un'uscita precedente non l'ha chiusa.
+                if row['pid'] != os.getpid() and process_alive(row['pid'], row['started_at']) is not False:
                     raise ValueError('Una precedente esecuzione risulta ancora attiva. Non avvio un duplicato.')
                 archive.db.execute("UPDATE pipeline_jobs SET status='interrupted',finished_at=? WHERE id=?", (now(), row['id']))
             cursor = archive.db.execute("INSERT INTO pipeline_jobs(step,status,parameters,basis,pid,started_at,detail) VALUES(?,'running',?,?,?,?,?)",
@@ -206,14 +212,37 @@ def start(database, cfg, step, supplied, lock, continue_after=False, remote_para
     def work():
         """Persist results and progress even when the initiating browser tab has closed."""
         worker = None
+
+        def close(sql, params):
+            """Write the job's final state, retrying on a fresh connection so a lock never leaves it «running»."""
+            for attempt in range(3):
+                target = worker if worker and attempt == 0 else None
+                try:
+                    target = target or Archive(database)
+                    with target.db:
+                        target.db.execute(sql, params)
+                    return
+                except (sqlite3.Error, OSError):
+                    logger.exception('Pipeline job %s: final state not saved (attempt %s/3)', job_id, attempt + 1)
+                    time.sleep(2 ** attempt)
+                finally:
+                    if target and target is not worker:
+                        target.close()
+
         try:
             worker = Archive(database)
             cancellation.bind(lambda: worker.db.execute('SELECT 1 FROM pipeline_cancellations WHERE job_id=?', (job_id,)).fetchone() is not None)
 
             def progress(detail):
-                """Save bounded progress at record boundaries, without credentials or model input."""
-                with worker.db:
-                    worker.db.execute('UPDATE pipeline_jobs SET detail=? WHERE id=?', (json.dumps(detail), job_id))
+                """Save bounded progress at record boundaries, without credentials or model input.
+
+                Il progresso serve solo a chi guarda: un lock momentaneo non deve fermare il lavoro.
+                """
+                try:
+                    with worker.db:
+                        worker.db.execute('UPDATE pipeline_jobs SET detail=? WHERE id=?', (json.dumps(detail), job_id))
+                except sqlite3.OperationalError as exc:
+                    logger.warning('Pipeline job %s: progress not saved: %s', job_id, exc)
                 cancellation.check()
 
             results = []
@@ -233,24 +262,26 @@ def start(database, cfg, step, supplied, lock, continue_after=False, remote_para
                         worker.db.execute('INSERT INTO pipeline_jobs(step,status,parameters,basis,pid,started_at,finished_at,detail) VALUES(?,?,?,?,?,?,?,?)',
                                           (current, status, json.dumps(current_values), current_basis, os.getpid(), started, now(), json.dumps(result)))
                 results.append({'step': current, 'status': status})
-                # `partial` è lo stato normale e permanente: solo `failed` ferma la sequenza (data-model.md).
+                # `partial` non ferma la sequenza: solo `failed` (data-model.md).
                 if status == 'failed':
                     break
             if continue_after:
-                result = {'steps': results, 'last_result': result, 'message': 'Sequenza completata.' if status != 'failed' else 'Sequenza fermata: un passaggio non ha potuto lavorare. I risultati già salvati restano disponibili.'}
-            with worker.db:
-                worker.db.execute('UPDATE pipeline_jobs SET status=?,finished_at=?,detail=?,basis=? WHERE id=?', (status, now(), json.dumps(result, ensure_ascii=False), current_basis if not continue_after else basis, job_id))
+                # La sequenza vale quanto il suo passaggio peggiore, non quanto l'ultimo: un Jev
+                # parziale seguito da schede riuscite non e' una notte riuscita.
+                status = max((r['status'] for r in results), key=SEVERITY.index)
+                result = {'steps': results, 'last_result': result, 'message': 'Sequenza completata.' if status == 'success' else
+                          'Sequenza completata con passaggi parziali: controlla i passaggi segnati.' if status == 'partial' else
+                          'Sequenza fermata: un passaggio non ha potuto lavorare. I risultati già salvati restano disponibili.'}
+            close('UPDATE pipeline_jobs SET status=?,finished_at=?,detail=?,basis=? WHERE id=?',
+                  (status, now(), json.dumps(result, ensure_ascii=False), current_basis if not continue_after else basis, job_id))
             logger.info('Pipeline %s ended: %s', step, status)
         except cancellation.Cancelled:
-            if worker:
-                with worker.db:
-                    worker.db.execute("UPDATE pipeline_jobs SET status='interrupted',finished_at=?,detail=json_set(detail,'$.message',?) WHERE id=?",
-                                      (now(), 'Interrotto su richiesta. I risultati salvati restano disponibili; nessun passaggio successivo avviato.', job_id))
+            close("UPDATE pipeline_jobs SET status='interrupted',finished_at=?,detail=json_set(detail,'$.message',?) WHERE id=?",
+                  (now(), 'Interrotto su richiesta. I risultati salvati restano disponibili; nessun passaggio successivo avviato.', job_id))
         except Exception:
             logger.exception('Pipeline %s failed', step)
-            if worker:
-                with worker.db:
-                    worker.db.execute("UPDATE pipeline_jobs SET status='failed',finished_at=?,detail=json_set(detail,'$.message',?) WHERE id=?", (now(), 'Passaggio non completato. I risultati già salvati restano disponibili; consulta il log del server.', job_id))
+            close("UPDATE pipeline_jobs SET status='failed',finished_at=?,detail=json_set(detail,'$.message',?) WHERE id=?",
+                  (now(), 'Passaggio non completato. I risultati già salvati restano disponibili; consulta il log del server.', job_id))
         finally:
             cancellation.bind()
             if worker:

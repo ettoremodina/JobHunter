@@ -1,10 +1,11 @@
 """Progress reads must not confuse skipped jobs, stale checkpoints or dead processes with success."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from jobhunter.operations.progress import snapshot, write_checkpoint, monitor
+from jobhunter.operations.progress import snapshot, write_checkpoint, monitor, process_alive
 from jobhunter.workspace import now
 
 
@@ -29,6 +30,16 @@ class ProgressTests(unittest.TestCase):
                 self.assertIsNone(snapshot(root, {'raw_directory': 'raw'}, str(path))['details']['phase_eta_seconds'])
             with patch('jobhunter.operations.progress.process_alive', return_value=False):
                 self.assertEqual(snapshot(root, {'raw_directory': 'raw'}, str(path))['status'], 'not_running')
+
+    @unittest.skipUnless(os.name == 'nt', 'Il riuso dei PID si controlla con GetProcessTimes di Windows')
+    def test_a_reused_pid_is_not_the_worker(self):
+        """Un processo nato dopo l'inizio del lavoro non puo' essere quello che lo fa (sweep del 24/09/2026)."""
+        self.assertTrue(process_alive(os.getpid(), now()))
+        self.assertFalse(process_alive(os.getpid(), '2000-01-01T00:00:00+00:00'))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'report.json'
+            path.write_text(json.dumps({'pid': os.getpid(), 'started_at': '2000-01-01T00:00:00+00:00', 'status': 'running'}))
+            self.assertEqual(snapshot(Path(directory), {'raw_directory': 'raw'}, str(path))['status'], 'not_running')
 
     def test_unreadable_and_absent_reports(self):
         """Missing evidence is never shown as completed or running."""

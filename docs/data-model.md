@@ -137,11 +137,12 @@ Ogni passo restituisce uno di tre stati, e vanno tenuti distinti:
 |---|---|---|
 | `success` | tutto fatto | prosegue |
 | `partial` | alcuni record non si sono potuti elaborare | **prosegue** |
-| `failed` | il passo si è rotto: credenziali, trasporto, database | si ferma |
+| `failed` | il passo si è rotto o si è fermato prima della fine: credenziali o credito rifiutati, troppi errori, database, oppure non ha salvato nulla | si ferma |
 
 `partial` è lo stato normale e permanente, non un'anomalia: alcune pagine hanno un
 formato che il tool non sa leggere e non lo saprà mai. Trattarlo come un errore
-significa non arrivare mai in fondo.
+significa non arrivare mai in fondo. Una sequenza vale quanto il suo passo peggiore, quindi
+basta un passo `partial` per renderla `partial` (dal 19 ottobre 2026).
 
 Ne discendono tre regole concrete:
 

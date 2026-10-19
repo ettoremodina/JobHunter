@@ -1,6 +1,7 @@
 """Exercise GUI dispatch, paid previews, resume evidence and serialization on disposable archives."""
 
 import json
+import os
 from pathlib import Path
 import tempfile
 import threading
@@ -146,6 +147,36 @@ class ActionTests(unittest.TestCase):
         self.archive.db.execute("UPDATE pipeline_jobs SET status='success',parameters=?", (json.dumps({'mode': 'preview'}),))
         self.archive.db.commit()
         self.assertIsNone(controls(self.archive, self.cfg)['actions']['remote']['last_success'])
+
+    def test_an_orphan_row_of_this_process_never_blocks_a_start(self):
+        """Una riga «running» col nostro PID e' orfana: il lock preso dice che nessun worker nostro lavora."""
+        self.archive.db.execute("INSERT INTO pipeline_jobs(step,status,parameters,basis,pid,started_at,detail) VALUES('filters','running','{}','old',?,?,'{}')",
+                                (os.getpid(), '2026-09-24T09:00:30+00:00'))
+        self.archive.db.commit()
+        lock = threading.Lock()
+        with patch('jobhunter.operations.pipeline_actions.process_alive', return_value=True), \
+                patch('jobhunter.operations.pipeline_actions.execute', return_value={'status': 'success'}):
+            job = start(self.path, self.cfg, 'filters', {}, lock)
+            self.assertTrue(lock.acquire(timeout=5))
+            lock.release()
+        rows = dict(self.archive.db.execute('SELECT id,status FROM pipeline_jobs').fetchall())
+        self.assertEqual(rows[job['job_id']], 'success')
+        self.assertEqual(sorted(rows.values()), ['interrupted', 'success'])
+
+    def test_a_sequence_is_as_good_as_its_worst_step(self):
+        """Un passaggio parziale in mezzo non diventa «Sequenza completata» perche' l'ultimo e' riuscito."""
+        lock = threading.Lock()
+        outcome = {'descriptions': {'status': 'partial'}}
+        with patch('jobhunter.operations.pipeline_actions.execute',
+                   side_effect=lambda archive, cfg, step, values, progress: outcome.get(step, {'status': 'success'})):
+            job = start(self.path, self.cfg, 'filters', {}, lock, continue_after=True)
+            self.assertTrue(lock.acquire(timeout=10))
+            lock.release()
+        row = self.archive.db.execute('SELECT status,detail FROM pipeline_jobs WHERE id=?', (job['job_id'],)).fetchone()
+        detail = json.loads(row['detail'])
+        self.assertEqual(row['status'], 'partial')
+        self.assertEqual([s['status'] for s in detail['steps']], ['success', 'partial', 'success', 'success'])
+        self.assertIn('parziali', detail['message'])
 
 
 if __name__ == '__main__':

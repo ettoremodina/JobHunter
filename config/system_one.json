@@ -19,6 +19,11 @@
   "max_workers": 64,
   "max_requests_per_minute": 0,
   "max_attempts": 4,
+  "breaker": {
+    "min_calls": 20,
+    "max_failure_share": 0.5,
+    "max_consecutive_failures": 10
+  },
   "checkpoint_seconds": 2,
   "max_evidence_options": 255,
   "max_state_chars": 60000,

@@ -150,6 +150,34 @@ class RemoteTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Incomplete'):
                 remote_llm.request(cfg, 'prompt', {}, 'SECRET')
 
+    def test_a_connection_that_never_opened_is_marked_safe_to_retry(self):
+        """Solo un errore prima dell'invio porta `not_sent`: dopo l'invio la fatturazione resta ignota."""
+        from urllib.error import URLError
+        cfg = json.loads((ROOT/'config/remote_llm.json').read_text())
+        with patch('jobhunter.evaluation.remote_llm.urllib.request.build_opener') as opener:
+            opener.return_value.open.side_effect = URLError('getaddrinfo failed')
+            with self.assertRaises(ValueError) as unsent:
+                remote_llm.request(cfg, 'prompt', {}, 'k')
+            self.assertTrue(unsent.exception.not_sent)
+            opener.return_value.open.side_effect = TimeoutError('read timed out')
+            with self.assertRaisesRegex(ValueError, 'billing outcome unknown') as unknown:
+                remote_llm.request(cfg, 'prompt', {}, 'k')
+            self.assertFalse(getattr(unknown.exception, 'not_sent', False))
+
+    def test_the_breaker_stops_only_on_a_pattern_of_failures(self):
+        """Un errore isolato non ferma; una fila, una quota alta o una chiave rifiutata si'."""
+        limits = {'min_calls': 4, 'max_failure_share': 0.5, 'max_consecutive_failures': 3}
+        failure = ValueError('Invalid remote JSON response')
+        streak = remote_llm.Breaker(limits)
+        self.assertEqual([streak.record(e) for e in (None, None, None, failure, failure)], [None] * 5)
+        self.assertIn('3 chiamate fallite di fila', streak.record(failure))
+        share = remote_llm.Breaker(limits)
+        self.assertEqual([share.record(e) for e in (failure, None, failure, None)], [None] * 4)
+        self.assertIn('3 chiamate fallite su 5', share.record(failure))
+        refused = ValueError('Remote HTTP 402; request rejected by the provider')
+        refused.status = 402
+        self.assertIn('HTTP 402', remote_llm.Breaker(limits).record(refused))
+
     def test_malformed_completion_envelopes_raise_a_controlled_error(self):
         """Unexpected provider shapes must not escape the caller's ValueError handling."""
         cfg = json.loads((ROOT/'config/remote_llm.json').read_text())

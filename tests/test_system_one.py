@@ -410,5 +410,81 @@ class TransportTests(unittest.TestCase):
                 system_one.request_interval({**cfg, 'max_requests_per_minute': value})
 
 
+class UnattendedRunTests(unittest.TestCase):
+    """Una notte non si ferma per un record cattivo, e non si dichiara riuscita quando si ferma."""
+
+    DESCRIPTION = 'Costruiamo modelli di previsione della domanda.\nSede a {}.'
+
+    def archive_with(self, folder, cities):
+        """One readable role per company, told apart by the city in its text."""
+        archive, path = workspace(folder)
+        archive.ingest([{'company_name': f'Example {city}', 'title': 'Specialist',
+                         'source_url': f'https://example.org/{city}', 'description': self.DESCRIPTION.format(city)}
+                        for city in cities], 'test')
+        return archive, path
+
+    def test_one_bad_record_does_not_stop_the_others(self):
+        """Un 400 su un'azienda riguarda quell'azienda: le altre si giudicano e si salvano."""
+        with tempfile.TemporaryDirectory() as folder:
+            archive, path = self.archive_with(folder, ['Milano', 'Torino'])
+            try:
+                def answer(cfg, state, wired, key):
+                    """Reject the Turin record as the provider would, answer the other."""
+                    if 'Torino' in json.dumps(state, ensure_ascii=False):
+                        error = ValueError('System One HTTP 400; request rejected by the provider')
+                        error.status = 400
+                        raise error
+                    return CombinedPassTests.answers(), {'input_tokens': 900}, 'jev-1.13.0'
+                with patch('jobhunter.evaluation.system_one.llm.api_key', return_value='test'), \
+                        patch('jobhunter.evaluation.system_one.ask', side_effect=answer) as ask:
+                    report = system_one.run(archive, {'all': True, 'mode': 'execute', 'workers': 1}, config_path=path)
+                self.assertEqual(ask.call_count, 2)
+                self.assertEqual((report['status'], report['counts']['rejected'], report['not_sent']), ('partial', 1, 0))
+                self.assertEqual(report['counts']['selection_decided'], 1)
+                self.assertNotIn('stop_reason', report)
+            finally:
+                archive.close()
+
+    def test_a_refused_key_stops_the_run_as_failed(self):
+        """Un 401 vale per tutte le chiamate: la run si ferma subito e la sequenza lo vede come fallimento."""
+        with tempfile.TemporaryDirectory() as folder:
+            archive, path = self.archive_with(folder, ['Milano', 'Torino', 'Roma'])
+            try:
+                error = ValueError('System One HTTP 401; request rejected by the provider')
+                error.status = 401
+                with patch('jobhunter.evaluation.system_one.llm.api_key', return_value='test'), \
+                        patch('jobhunter.evaluation.system_one.ask', side_effect=error) as ask:
+                    report = system_one.run(archive, {'all': True, 'mode': 'execute', 'workers': 1}, config_path=path)
+                self.assertEqual(ask.call_count, 1)
+                self.assertEqual((report['status'], report['not_sent']), ('failed', 2))
+                self.assertIn('401', report['stop_reason'])
+            finally:
+                archive.close()
+
+    def test_a_request_that_never_left_is_retried(self):
+        """Un errore di DNS o di connessione non ha fatturato niente: si ritenta invece di perdere il record."""
+        with tempfile.TemporaryDirectory() as folder:
+            archive, path = self.archive_with(folder, ['Milano'])
+            try:
+                unsent = ValueError('System One connection failed before the request was sent: getaddrinfo failed')
+                unsent.not_sent = True
+                outcomes = [unsent, (CombinedPassTests.answers(), {'input_tokens': 900}, 'jev-1.13.0')]
+
+                def answer(*args):
+                    """Fail once before sending, then answer."""
+                    outcome = outcomes.pop(0)
+                    if isinstance(outcome, Exception):
+                        raise outcome
+                    return outcome
+                with patch('jobhunter.evaluation.system_one.llm.api_key', return_value='test'), \
+                        patch('jobhunter.evaluation.system_one.time.sleep'), \
+                        patch('jobhunter.evaluation.system_one.ask', side_effect=answer) as ask:
+                    report = system_one.run(archive, {'all': True, 'mode': 'execute'}, config_path=path)
+                self.assertEqual(ask.call_count, 2)
+                self.assertEqual((report['status'], report['counts']['throttled_retries']), ('success', 1))
+            finally:
+                archive.close()
+
+
 if __name__ == '__main__':
     unittest.main()

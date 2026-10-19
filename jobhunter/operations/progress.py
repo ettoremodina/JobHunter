@@ -43,8 +43,51 @@ def read_json(path):
         return {}
 
 
-def process_alive(pid):
-    """Check a local process without signalling it; unknown permissions remain unknown."""
+def process_started(pid):
+    """Creation time of a local Windows process as a Unix timestamp, or None when it cannot be read."""
+    if os.name != 'nt' or not isinstance(pid, int) or pid <= 0:
+        return None
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel.OpenProcess(0x1000, False, pid)
+    if not handle:
+        return None
+    try:
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not kernel.GetProcessTimes(handle, *(ctypes.byref(t) for t in times)):
+            return None
+        created = times[0].dwHighDateTime << 32 | times[0].dwLowDateTime
+        # FILETIME conta intervalli di 100 ns dal 1601; l'epoca Unix arriva 11.644.473.600 secondi dopo.
+        return created / 1e7 - 11644473600
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def process_alive(pid, started_at=None):
+    """Check a local process without signalling it; unknown permissions remain unknown.
+
+    `started_at` is when the work began. Windows reuses PIDs: a process created after that moment
+    cannot be the one doing the work, so the worker is reported dead instead of blocking every
+    later start. Il report del 24/09/2026 restava «running» perche' il suo PID era passato a un
+    altro programma.
+    """
+    alive = _pid_exists(pid)
+    began = timestamp(started_at) if started_at else 0
+    if alive and began:
+        created = process_started(pid)
+        # Cinque secondi di margine: il processo scrive `started_at` subito dopo essere nato.
+        if created is not None and created > began + 5:
+            return False
+    return alive
+
+
+def _pid_exists(pid):
+    """Whether some process currently holds this PID; None when permissions hide the answer."""
     if not isinstance(pid, int) or pid <= 0:
         return None
     if os.name == 'nt':
@@ -109,7 +152,7 @@ def snapshot(root, cfg, run=None):
             return {'status': 'not_found', 'message': 'Nessun workflow o recupero descrizioni con un report disponibile.'}
         selected, report = max(candidates, key=lambda pair: timestamp(pair[1].get('started_at')))
     started = timestamp(report.get('started_at'))
-    alive = process_alive(report.get('pid'))
+    alive = process_alive(report.get('pid'), report.get('started_at'))
     terminal = bool(report.get('finished_at'))
     phase = report.get('phase') or ('finished' if terminal else 'descriptions' if 'eligible_missing' in report or report.get('description_report') else 'listings')
     detail_path = None

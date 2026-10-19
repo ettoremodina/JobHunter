@@ -35,6 +35,8 @@ Le schede Qwen includono modello, parametri, prompt, schema e input nella chiave
 
 ## Credenziali
 
+Entrambi hanno un blocco `breaker` (`min_calls`, `max_failure_share`, `max_consecutive_failures`) che decide quando gli errori di una run a pagamento la devono fermare: un errore isolato fa fallire solo il suo record. In `remote_llm.json` il blocco sta al primo livello e non dentro `company_batch`, perché la firma della cache delle schede legge tutto `company_batch`: una chiave aggiunta lì invaliderebbe ogni scheda già pagata.
+
 `system_one.json` e `remote_llm.json` dichiarano il nome della variabile d'ambiente e, dove previsto, il file locale di segreti. Anteprime e letture non devono richiedere la chiave. Solo un comando con `--execute` o l'equivalente conferma nella dashboard può inviare dati a un provider a pagamento.
 
 ## Controlli prima di modificare

@@ -57,7 +57,7 @@ qualità del modello. Nessuna modifica alle preferenze o alla selezione della pi
 
 Il passaggio combinato prepara ogni azienda sul thread che possiede SQLite e manda in parallelo solo la chiamata HTTP: i worker non toccano il database. Il numero di chiamate contemporanee si imposta in `config/remote_llm.json` (`company_batch.workers`, massimo `company_batch.max_workers`) e dal campo «Chiamate API contemporanee» nella card del passaggio. Il parallelismo riduce il tempo totale, non il costo: le chiamate restano una per azienda.
 
-Una risposta non è più tutto-o-niente. Ogni scheda di ruolo e la scheda aziendale vengono validate separatamente sulle proprie evidenze e salvate singolarmente. Se il modello inventa una citazione in una scheda, o omette la scheda aziendale richiesta, il resto della risposta già pagata resta salvato e la parte scartata viene ricontata come `rejected_jobs` nel report. Un errore di trasporto continua invece a fermare l'invio di nuove richieste: l'esito di fatturazione è ignoto e nessun tentativo viene ripetuto implicitamente.
+Una risposta non è più tutto-o-niente. Ogni scheda di ruolo e la scheda aziendale vengono validate separatamente sulle proprie evidenze e salvate singolarmente. Se il modello inventa una citazione in una scheda, o omette la scheda aziendale richiesta, il resto della risposta già pagata resta salvato e la parte scartata viene ricontata come `rejected_jobs` nel report. Anche un errore di trasporto o una risposta troncata riguardano soltanto quell'azienda. Nessun tentativo viene ripetuto implicitamente quando la fatturazione è incerta, e le altre aziende proseguono. Le regole di ritento e l'interruttore che ferma la run sono descritte in [system-one.md](system-one.md#errori-e-ritenti); le soglie stanno nel blocco `breaker` di `config/remote_llm.json`.
 
 Nella stessa richiesta ogni annuncio ha un proprio spazio di riferimenti (`J0-S3`, `J1-S7`, …): due annunci non possono più citarsi a vicenda per errore, perché entrambi i cataloghi partivano da `S0`.
 
@@ -113,7 +113,7 @@ Gli originali rimangono nel database; le sintesi non sovrascrivono descrizioni o
 
 La cache dipende da fonte inviata, prompt, profilo per i soli task che lo usano, modello, endpoint, parametri e versione di schema. Un nuovo avvio salta gli output già validi. Cambiare il prompt del batch o il modello rende necessaria una nuova elaborazione; la vecchia versione è mantenuta nei report precedenti. Non c'è riscrittura periodica automatica.
 
-Il batch usa una richiesta per azienda e più richieste contemporanee. Ritenta soltanto i rifiuti espliciti del provider (429 e 5xx configurati), che non hanno generato una risposta; un errore di trasporto ferma nuovi invii perché la fatturazione è incerta. Output non validi vengono registrati e il batch prosegue sulle altre aziende. I corpi di errore HTTP e la chiave non vengono riportati nei log.
+Il batch usa una richiesta per azienda e più richieste contemporanee. Ritenta soltanto i rifiuti espliciti del provider (429 e 5xx configurati) e le richieste mai partite, che non hanno generato una risposta. Un errore di trasporto dopo l'invio non si ritenta perché la fatturazione è incerta. Output non validi ed errori vengono registrati e il batch prosegue sulle altre aziende. La run si ferma, con stato `failed`, solo per una chiave o un credito rifiutati, o quando scatta l'interruttore `breaker`. I corpi di errore HTTP e la chiave non vengono riportati nei log.
 
 Le citazioni devono esistere esattamente nelle fonti fornite. Questo non dimostra che la parafrasi sia corretta o completa: il pilot deve controllare esclusioni errate e informazioni importanti omesse. I task ordinari non hanno strumenti; le tool calls da eseguire sul client sono sempre rifiutate.
 
@@ -145,7 +145,7 @@ Resta da sviluppare la proposta di raggruppare i motivi dei `review` per formula
 
 ## Errori nel pilot aziendale
 
-Le risposte JSON ricevute ma respinte dalla validazione vengono conservate solo nei report come `rejected_answer`, insieme ai token consumati. Non entrano nelle sintesi visibili. Il pilot prosegue sugli altri record e termina con stato `partial` se esistono scarti. I soli rifiuti espliciti del provider vengono ritentati; errori di trasporto o risposte incomplete fermano nuovi invii. La coda contiene soltanto aziende Tier A, Tier B attesa e Tier B esperienza. `completed_companies` indica quante aziende della coda sono state completate, comprese quelle già coperte dalla cache; non indica quante abbiano prodotto tutti gli output richiesti.
+Le risposte JSON ricevute ma respinte dalla validazione vengono conservate solo nei report come `rejected_answer`, insieme ai token consumati. Non entrano nelle sintesi visibili. Il pilot prosegue sugli altri record e termina con stato `partial` se esistono scarti. Vengono ritentati solo i rifiuti espliciti del provider e le richieste mai partite. Errori di trasporto e risposte incomplete scartano l'azienda interessata, non la run. Una run che paga senza salvare nessuna scheda chiude `failed`. La coda contiene soltanto aziende Tier A, Tier B attesa e Tier B esperienza. `completed_companies` indica quante aziende della coda sono state completate, comprese quelle già coperte dalla cache; non indica quante abbiano prodotto tutti gli output richiesti.
 
 ## Formato vincolato e prove dalla fonte
 

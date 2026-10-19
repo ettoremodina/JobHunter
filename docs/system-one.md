@@ -68,8 +68,8 @@ Le partenze sono distribuite nel tempo e rispettano `max_requests_per_minute`, a
 molti worker liberi. Il valore `0` disabilita esplicitamente questo pacing; è la configurazione
 corrente, scelta dall'utente dopo che le prove a 60 e 500/minuto non hanno prodotto throttling. Non
 esiste comunque una quota pubblicata o garantita da TypeSafe. Un
-`429` o `529` viene ritentato con attesa crescente; un errore di trasporto,
-per cui la fatturazione potrebbe essere già avvenuta, ferma invece nuove partenze. Aumentare i
+`429` o `529` viene ritentato con attesa crescente; un errore di trasporto non si ritenta e conta
+per l'interruttore descritto in «Errori e ritenti». Aumentare i
 worker riduce l'attesa solo finché la latenza delle chiamate è il collo di bottiglia: non supera il
 tetto di richieste al minuto e non riduce il costo.
 
@@ -173,6 +173,25 @@ Senza `--report` usa automaticamente l'ultimo report Jev.
 
 ## Errori e ritenti
 
-JobHunter ritenta 429 e 5xx, incluso 529, con attesa crescente. Un errore di trasporto ha un esito
-di fatturazione incerto: il passaggio si ferma e non ritenta automaticamente. Ogni richiesta usa
+Dal 19 ottobre 2026 un errore riguarda il suo record, non la run. Le regole, uguali per Jev e per le
+schede Qwen (`remote_llm.Breaker`):
+
+| errore | ritento | effetto sulla run |
+|---|---|---|
+| 429 e 5xx, incluso 529 | sì, con attesa crescente, fino a `max_attempts` | dopo i ritenti fallisce solo il record |
+| richiesta mai partita (DNS, connessione rifiutata, timeout di connessione) | sì, come sopra: niente può essere stato fatturato | come sopra |
+| errore durante l'attesa della risposta | no: la fatturazione è incerta | fallisce solo il record |
+| 400, risposta troncata o malformata, risposte fuori schema | no | fallisce solo il record |
+| 401, 402, 403 | no | la run si ferma subito: chiave o credito rifiutati |
+
+L'interruttore ferma la run anche quando gli errori smettono di sembrare casi isolati. Succede con
+`max_consecutive_failures` errori di fila, per esempio rete caduta, PC sospeso o modello sparito.
+Succede anche quando, dopo almeno `min_calls` chiamate, gli errori superano `max_failure_share`.
+Le soglie stanno nel blocco `breaker` di `config/system_one.json`. Il valore iniziale è 10 di fila,
+oppure oltre il 50% dopo 20 chiamate: a settembre gli errori reali erano lo 0,5% delle chiamate.
+
+Una run fermata prima della fine, o che non ha salvato nessuna risposta, chiude `failed`. Il report
+porta `stop_reason` e `not_sent` (quanti record non sono partiti), e la sequenza della dashboard si
+ferma. Prima un solo errore di trasporto fermava gli invii e la run chiudeva `partial`. La sequenza
+proseguiva e scriveva «Sequenza completata». Ogni richiesta usa
 HTTPS e un bearer token; non esistono più stub, gateway alternativi o percorsi senza credenziale.

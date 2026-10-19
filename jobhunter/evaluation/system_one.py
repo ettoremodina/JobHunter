@@ -20,6 +20,7 @@ persone e le lingue restano dove sono, nel regex di `selection.requirements()`.
 """
 
 import copy
+import http.client
 import json
 import logging
 import threading
@@ -191,7 +192,9 @@ def ask(cfg, state, wired, key):
         pause = (exc.headers or {}).get('Retry-After', '')
         rejected.retry_after = int(pause) if str(pause).strip().isdigit() else 0
         raise rejected from None
-    except (OSError, TimeoutError):
+    except urllib.error.URLError as exc:
+        raise llm.not_sent('System One', exc) from None
+    except (OSError, TimeoutError, http.client.HTTPException):
         raise ValueError('System One transport failure; billing outcome unknown, no automatic retry') from None
     if len(raw) > cfg['max_response_bytes']:
         raise ValueError('System One response exceeds configured size')
@@ -587,13 +590,17 @@ def run(archive, values, progress=None, config_path=None):
             try:
                 return ask(cfg, record['state'], wired, key)
             except ValueError as exc:
-                if getattr(exc, 'status', None) not in THROTTLED or attempt == attempts - 1:
+                # Si ritenta solo cio' che non puo' essere stato fatturato: un rifiuto del provider o
+                # una richiesta mai partita. Un errore durante l'attesa della risposta non si ritenta.
+                retryable = getattr(exc, 'status', None) in THROTTLED or getattr(exc, 'not_sent', False)
+                if not retryable or attempt == attempts - 1:
                     raise
                 with gate:
                     counts['throttled_retries'] += 1
                 time.sleep(min(getattr(exc, 'retry_after', 0) or 2 ** attempt, 60))
 
     queue, inflight, stopped = iter(records), {}, False
+    breaker = llm.Breaker(cfg['breaker'])
     pool = ThreadPoolExecutor(max_workers=workers)
     try:
         while True:
@@ -612,7 +619,7 @@ def run(archive, values, progress=None, config_path=None):
                 item = {'id': record['id'], 'company_id': record['company_id'],
                         'tasks': [task for task in TASKS if task in record], 'results': {}}
                 report['items'].append(item)
-                received = False
+                received, failure = False, None
                 try:
                     answers, consumed, model = future.result()
                     received = True
@@ -636,19 +643,33 @@ def run(archive, values, progress=None, config_path=None):
                             item.setdefault('errors', {})[task] = str(exc)
                             report['status'] = 'partial'
                             logger.warning('Jev %s answer rejected for %s: %s', task, record[task]['id'], exc)
-                except (ValueError, TypeError, KeyError, OSError) as exc:
+                    if not item['results']:
+                        failure = ValueError('Nessuna risposta utilizzabile: ' + '; '.join(item.get('errors', {}).values()))
+                except Exception as exc:
+                    # Anche un errore inatteso (database occupato, risposta letta a meta') riguarda
+                    # solo questo record: le risposte gia' pagate in volo si salvano comunque.
                     counts['rejected'] += 1
                     item['error'] = str(exc)
                     if received:
                         item['rejected_answer'] = answers
                     report['status'] = 'partial'
                     logger.warning('Jev request rejected for %s: %s', record['id'], exc)
-                    # Un errore di trasporto lascia la fatturazione ignota: non si spedisce altro.
-                    stopped = stopped or not received
+                    failure = exc
+                halt = breaker.record(failure)
+                if halt and not stopped:
+                    stopped = True
+                    report['stop_reason'] = halt
+                    logger.error('Jev stopped: %s', halt)
                 report['completed'] += 1
                 checkpoint(force=False)
     finally:
         pool.shutdown(wait=True)
+    # Una run fermata prima della fine, o che non ha salvato nulla, e' fallita: la sequenza si ferma
+    # invece di dichiararsi completata.
+    report['not_sent'] = report['total'] - report['completed']
+    if stopped or counts['calls'] and not counts['decided']:
+        report['status'] = 'failed'
+        report.setdefault('stop_reason', 'Nessuna risposta utilizzabile in tutta la run.')
     report['report_path'] = str(output)
     checkpoint()
     logger.info('Jev: %s results saved from %s requests, %s rejected',

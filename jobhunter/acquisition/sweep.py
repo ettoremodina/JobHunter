@@ -9,6 +9,7 @@ import subprocess
 import sys
 from jobhunter.workspace import ROOT, now
 from jobhunter.acquisition.collection import airtable_rows, browser_rows
+from jobhunter.operations import cancellation
 from jobhunter.operations.progress import write_checkpoint
 
 logger = logging.getLogger(__name__)
@@ -44,89 +45,104 @@ def sweep(archive, cfg):
         report.update(phase=phase, updated_at=now())
         write_checkpoint(output / "report.json", report)
 
-    checkpoint("listings")
-    ordered = sorted(cfg["sources"].items(), key=lambda item: {"airtable": 0, "ats": 1, "browser": 2, "jobspy": 3}[item[1]["kind"]])
-    # Le fonti che possono dire «non c'è più»: Airtable restituisce tutto, JobSpy la sua finestra di ore,
-    # un ATS tutto ma solo per le aziende la cui bacheca ha risposto per intero.
-    # Il browser si ferma a limiti di navigazione, quindi un annuncio mancante non prova niente.
-    closable, scopes = {}, {}
-    for name, source in ordered:
-        directory = output/name
-        directory.mkdir()
-        details = {"status": "running", "received": 0, "accepted": 0, "queries": []}
-        report["sources"][name] = details
+    try:
         checkpoint("listings")
-        if not source["enabled"]:
-            details.update(status="access_required", reason=source.get("reason"))
-            archive.run(name, details["status"], details)
-            continue
-        conf = yaml.safe_load((ROOT/source["config"]).read_text(encoding="utf-8"))
-        try:
-            if source["kind"] == "jobspy":
-                specs = [{"site_name": board, "search_term": query, "location": location, "country_indeed": "uk" if location == "UK" else location.lower(), "hours_old": conf["hours_old"], "results_wanted": limits["jobspy_page_size"], "linkedin_fetch_description": False, "max_pages": limits["jobspy_max_pages"], "pause": cfg["request_delay_seconds"]} for query in conf["search_queries"] for location in conf["locations"] for board in conf["site_names"]]
-                details["description_policy"] = "Discover listings first; retrieve missing descriptions once per unique opportunity after import, before selection"
-                details["expected_queries"] = len(specs)
-                with ThreadPoolExecutor(max_workers=limits["jobspy_workers"]) as pool:
-                    futures = [pool.submit(board_query, spec, directory, i, limits["jobspy_query_timeout_seconds"]) for i, spec in enumerate(specs)]
-                    for future in as_completed(futures):
-                        result = future.result()
-                        rows = result.pop("rows")
-                        imported = archive.ingest(rows, name)
-                        result["import"] = imported
-                        details["queries"].append(result)
-                        details["received"] += len(rows)
-                        details["accepted"] += len(rows)-len(imported["rejected"])
-                        checkpoint("listings")
-                        logger.info("Official %s: %s/%s queries, %s records", name, len(details["queries"]), len(specs), details["received"])
-                details["status"] = "partial" if any(q["error"] or q["stop"] in ("page_cap", "empty_or_blocked", "no_output") or q["import"]["rejected"] for q in details["queries"]) else "success"
-                if details["received"] and not any(q["error"] or q["stop"] in ("empty_or_blocked", "no_output") for q in details["queries"]):
-                    closable[name] = conf["hours_old"]
-            else:
-                if source["kind"] == "airtable":
-                    rows, errors = airtable_rows(conf, cfg["timeout_seconds"]), []
-                    details["scope"] = "Entire public embed response; server-side completeness unverified"
-                elif source["kind"] == "ats":
-                    from jobhunter.acquisition import ats
-                    rows, errors, answered = ats.rows(archive, source, cfg)
-                    details["scope"] = "Every board in the watchlist; a board that failed or hit max_jobs_per_board closes nothing"
-                    details["boards_complete"] = len(answered)
+        ordered = sorted(cfg["sources"].items(), key=lambda item: {"airtable": 0, "ats": 1, "browser": 2, "jobspy": 3}[item[1]["kind"]])
+        # Le fonti che possono dire «non c'è più»: Airtable restituisce tutto, JobSpy la sua finestra di ore,
+        # un ATS tutto ma solo per le aziende la cui bacheca ha risposto per intero.
+        # Il browser si ferma a limiti di navigazione, quindi un annuncio mancante non prova niente.
+        closable, scopes = {}, {}
+        for name, source in ordered:
+            directory = output/name
+            directory.mkdir()
+            details = {"status": "running", "received": 0, "accepted": 0, "queries": []}
+            report["sources"][name] = details
+            checkpoint("listings")
+            if not source["enabled"]:
+                details.update(status="access_required", reason=source.get("reason"))
+                archive.run(name, details["status"], details)
+                continue
+            try:
+                # Dentro il try: un file mancante o scritto a meta' fa fallire questa fonte, non lo sweep.
+                conf = yaml.safe_load((ROOT/source["config"]).read_text(encoding="utf-8"))
+                if source["kind"] == "jobspy":
+                    specs = [{"site_name": board, "search_term": query, "location": location, "country_indeed": "uk" if location == "UK" else location.lower(), "hours_old": conf["hours_old"], "results_wanted": limits["jobspy_page_size"], "linkedin_fetch_description": False, "max_pages": limits["jobspy_max_pages"], "pause": cfg["request_delay_seconds"]} for query in conf["search_queries"] for location in conf["locations"] for board in conf["site_names"]]
+                    details["description_policy"] = "Discover listings first; retrieve missing descriptions once per unique opportunity after import, before selection"
+                    details["expected_queries"] = len(specs)
+                    with ThreadPoolExecutor(max_workers=limits["jobspy_workers"]) as pool:
+                        futures = [pool.submit(board_query, spec, directory, i, limits["jobspy_query_timeout_seconds"]) for i, spec in enumerate(specs)]
+                        for future in as_completed(futures):
+                            result = future.result()
+                            rows = result.pop("rows")
+                            imported = archive.ingest(rows, name)
+                            result["import"] = imported
+                            details["queries"].append(result)
+                            details["received"] += len(rows)
+                            details["accepted"] += len(rows)-len(imported["rejected"])
+                            checkpoint("listings")
+                            logger.info("Official %s: %s/%s queries, %s records", name, len(details["queries"]), len(specs), details["received"])
+                    details["status"] = "partial" if any(q["error"] or q["stop"] in ("page_cap", "empty_or_blocked", "no_output") or q["import"]["rejected"] for q in details["queries"]) else "success"
+                    if details["received"] and not any(q["error"] or q["stop"] in ("empty_or_blocked", "no_output") for q in details["queries"]):
+                        closable[name] = conf["hours_old"]
                 else:
-                    broad_cfg = {**cfg, "max_pages": limits["browser_max_pages"]}
-                    rows, errors = asyncio.run(browser_rows(conf, source, broad_cfg, limits["browser_max_jobs"], directory))
-                    details["scope"] = "Configured listing, until navigation stalls or configured safety caps; see discovery.json"
-                (directory/"raw.json").write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
-                imported = archive.ingest(rows, name)
-                details.update(received=len(rows), accepted=len(rows)-len(imported["rejected"]), errors=errors, import_report=imported)
-                details["status"] = "partial" if errors or imported["rejected"] else "success" if rows else "empty"
-                if source["kind"] == "airtable" and details["status"] == "success":
-                    closable[name] = None
-                if source["kind"] == "ats" and answered:
-                    closable[name] = None
-                    scopes[name] = {r[0] for r in archive.db.execute(
-                        "SELECT id FROM companies WHERE name IN (SELECT value FROM json_each(?))", (json.dumps(sorted(answered)),))}
-                if source["kind"] == "browser":
-                    details["discovery"] = json.loads((directory/"discovery.json").read_text(encoding="utf-8"))
-                    details["status"] = "partial"
-        except Exception as exc:
-            logger.exception("Official source %s failed", name)
-            details.update(status="failed", error=str(exc))
-        archive.run(name, details["status"], details)
-        checkpoint("listings")
-    # DESIGN §10: collect-all fa solo raccolta. Descrizioni, categorie, analisi e coda hanno il loro
-    # posto nei dieci passi e non vanno ripetute con un ordine diverso alla fine di uno sweep.
-    if limits.get("close_missing_ads", True):
-        from jobhunter.acquisition import closure
-        checkpoint("closures")
-        found = closure.detect(archive, report["started_at"], closable, limits.get("max_closed_share", 0.5), scopes)
-        report["closures"] = {k: v for k, v in found.items() if k != "ids"}
-        if limits.get("remove_closed_html", True):
-            snapshots = json.loads((ROOT/"config/descriptions.json").read_text(encoding="utf-8"))["output_directory"]
-            report["closures"]["removed_html"] = closure.compact(found["ids"], ROOT/snapshots)
-    from jobhunter.acquisition.descriptions import coverage
-    checkpoint("coverage")
-    report["description_coverage"] = coverage(archive)
-    report["finished_at"] = now()
-    report["status"] = "success" if all(v["status"] == "success" for v in report["sources"].values()) else "partial"
-    report["archive"] = {k: archive.stats()[k] for k in ("companies", "opportunities")}
-    checkpoint("finished")
-    return {"status": report["status"], "report": str(output/"report.json"), "archive": report["archive"], "sources": {k: v["status"] for k, v in report["sources"].items()}}
+                    if source["kind"] == "airtable":
+                        rows, errors = airtable_rows(conf, cfg["timeout_seconds"]), []
+                        details["scope"] = "Entire public embed response; server-side completeness unverified"
+                    elif source["kind"] == "ats":
+                        from jobhunter.acquisition import ats
+                        rows, errors, answered = ats.rows(archive, source, cfg)
+                        details["scope"] = "Every board in the watchlist; a board that failed or hit max_jobs_per_board closes nothing"
+                        details["boards_complete"] = len(answered)
+                    else:
+                        broad_cfg = {**cfg, "max_pages": limits["browser_max_pages"]}
+                        rows, errors = asyncio.run(browser_rows(conf, source, broad_cfg, limits["browser_max_jobs"], directory))
+                        details["scope"] = "Configured listing, until navigation stalls or configured safety caps; see discovery.json"
+                    (directory/"raw.json").write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+                    imported = archive.ingest(rows, name)
+                    details.update(received=len(rows), accepted=len(rows)-len(imported["rejected"]), errors=errors, import_report=imported)
+                    details["status"] = "partial" if errors or imported["rejected"] else "success" if rows else "empty"
+                    if source["kind"] == "airtable" and details["status"] == "success":
+                        closable[name] = None
+                    if source["kind"] == "ats" and answered:
+                        closable[name] = None
+                        scopes[name] = {r[0] for r in archive.db.execute(
+                            "SELECT id FROM companies WHERE name IN (SELECT value FROM json_each(?))", (json.dumps(sorted(answered)),))}
+                    if source["kind"] == "browser":
+                        details["discovery"] = json.loads((directory/"discovery.json").read_text(encoding="utf-8"))
+                        details["status"] = "partial"
+            except Exception as exc:
+                logger.exception("Official source %s failed", name)
+                details.update(status="failed", error=str(exc))
+            archive.run(name, details["status"], details)
+            checkpoint("listings")
+        # DESIGN §10: collect-all fa solo raccolta. Descrizioni, categorie, analisi e coda hanno il loro
+        # posto nei dieci passi e non vanno ripetute con un ordine diverso alla fine di uno sweep.
+        if limits.get("close_missing_ads", True):
+            from jobhunter.acquisition import closure
+            checkpoint("closures")
+            # La raccolta e' gia' salvata: un errore nelle chiusure va riportato, non deve far fallire lo sweep.
+            try:
+                found = closure.detect(archive, report["started_at"], closable, limits.get("max_closed_share", 0.5), scopes)
+                report["closures"] = {k: v for k, v in found.items() if k != "ids"}
+                if limits.get("remove_closed_html", True):
+                    snapshots = json.loads((ROOT/"config/descriptions.json").read_text(encoding="utf-8"))["output_directory"]
+                    report["closures"]["removed_html"] = closure.compact(found["ids"], ROOT/snapshots)
+            except Exception as exc:
+                logger.exception("Closure detection failed")
+                report["closures"] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+        from jobhunter.acquisition.descriptions import coverage
+        checkpoint("coverage")
+        report["description_coverage"] = coverage(archive)
+        report["finished_at"] = now()
+        report["status"] = "success" if all(v["status"] == "success" for v in report["sources"].values()) else "partial"
+        report["archive"] = {k: archive.stats()[k] for k in ("companies", "opportunities")}
+        checkpoint("finished")
+        return {"status": report["status"], "report": str(output/"report.json"), "archive": report["archive"], "sources": {k: v["status"] for k, v in report["sources"].items()}}
+    except BaseException as exc:
+        # Qualunque uscita lascia un report chiuso: uno «running» con un PID poi riusato da Windows
+        # ha bloccato la dashboard per settimane dopo lo sweep del 24/09/2026.
+        stopped = isinstance(exc, (KeyboardInterrupt, cancellation.Cancelled))
+        report.update(status="interrupted" if stopped else "failed", finished_at=now(), updated_at=now(),
+                      error=None if stopped else f"{type(exc).__name__}: {exc}"[:300])
+        write_checkpoint(output / "report.json", report)
+        raise

@@ -14,13 +14,23 @@ comandi shell o percorsi arbitrari dal browser.
 
 “Continua da qui” avvia in sequenza i passaggi principali successivi. La finestra mostra l'elenco e permette di impostare il successivo passaggio LLM remoto, comprese le chiamate contemporanee. Se il recupero descrizioni è successivo al passaggio scelto, considera tutte le descrizioni eleggibili. Il recupero mantiene esclusioni, cooldown e limiti della fonte già previsti dalla pipeline.
 
-La sequenza prosegue dopo un risultato parziale e si ferma su errore o interruzione.
+La sequenza prosegue dopo un risultato parziale e si ferma su errore o interruzione. Il suo
+stato finale è quello del passaggio **peggiore**, non dell'ultimo. «Sequenza completata» compare
+solo se tutti i passaggi sono riusciti. Con un passaggio parziale il messaggio dice di controllare i
+passaggi segnati.
 “Riprova” significa riaprire il passaggio, verificare i parametri e avviarlo di nuovo: i
 risultati validi già salvati vengono riutilizzati dove previsto dai rispettivi task. Non
-esistono retry automatici a pagamento. Il passaggio remoto ritenta da solo la richiesta
-che il provider ha **rifiutato** (HTTP 429 o 5xx): non ha generato niente, quindi non c'è
-spesa da duplicare. Un fallimento di trasporto, dove l'esito di fatturazione è ignoto,
-ferma la run come prima.
+esistono retry automatici a pagamento. Jev e Qwen ritentano da soli la richiesta che il
+provider ha **rifiutato** (HTTP 429 o 5xx) o che non è mai partita: in nessuno dei due casi c'è
+spesa da duplicare. Un errore su un singolo record non ferma più la run. Si fermano, con stato
+`failed`, per una chiave o un credito rifiutati, o quando gli errori si accumulano
+([system-one.md](system-one.md#errori-e-ritenti)).
+
+Una riga rimasta «running» dopo un crash non blocca più gli avvii. Se ha il PID del server stesso,
+è orfana: il lock appena preso dice che nessun suo worker sta lavorando. Se il PID appartiene a un
+processo nato dopo l'inizio del lavoro, Windows lo ha riusato, quindi non è il worker. Lo stesso
+controllo vale per i report di `collect-all` e del recupero descrizioni, che ora si chiudono
+(`failed` o `interrupted`) a qualunque uscita.
 
 ## Schede Qwen e ordine dei passaggi
 

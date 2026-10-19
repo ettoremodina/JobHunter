@@ -180,7 +180,8 @@ def recover(archive, limit=None, source=None, all_missing=False, opportunity_ids
                 request_host = (urlsplit(address).hostname or "").removeprefix("www.")
                 item["application_url"] = application
                 time.sleep(cfg["request_delay_seconds"])
-        except (OSError, ValueError) as exc:
+        except Exception as exc:
+            # Un errore inatteso su una pagina riguarda quella pagina: il lotto continua.
             item.update(status="failed", error=str(exc))
             if isinstance(exc, HTTPError) and exc.code in (403, 429, 999) or str(exc) in ("rate_limited", "access_denied"):
                 with lock:
@@ -209,60 +210,74 @@ def recover(archive, limit=None, source=None, all_missing=False, opportunity_ids
             report["blocked_hosts"] = sorted(blocked)
         write_checkpoint(output / "report.json", report)
 
-    checkpoint()
-    cancellation.check()
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(retrieve, candidate) for candidate in selected]
-        for future in as_completed(futures):
-            if future.cancelled():
-                continue
-            item, description, provenance, facts = future.result()
-            report["attempted"] += bool(item["requests"])
-            website = url(facts.get("website_url") or "")
-            if website:
-                # hiringOrganization.sameAs: l'indirizzo del sito aziendale, gratis su una pagina già scaricata.
-                with archive.db:
-                    archive.db.execute("UPDATE companies SET website=? WHERE website='' AND id=(SELECT company_id FROM opportunities WHERE id=?)", (website, item["id"]))
-                report["websites"] += 1
-            if provenance:
-                saved = archive.save_description(item["id"], description, provenance, replace=refresh_stale)
-                item["status"] = "saved" if saved else "already_present"
-                report["saved"] += bool(saved)
-                missing_ids.discard(item["id"])
-            if item["requests"]:
-                status = "available" if provenance else "blocked" if item.get("host_stopped") else "missing_page" if "HTTP Error 404" in item.get("error", "") else "unsupported_parser" if "No unambiguous" in item.get("error", "") else "temporary_error"
-                retry = None if status in ("available", "unsupported_parser") else (datetime.now(timezone.utc) + (timedelta(days=cfg.get("missing_page_retry_days", 7)) if status == "missing_page" else timedelta(hours=cfg.get("retry_after_hours", 24)))).isoformat()
-                with archive.db:
-                    archive.record_description_attempt(item["id"], status, item.get("application_url", item["url"]), item.get("error", ""), retry, parser_version=PARSER_VERSION)
-            report["items"].append(item)
-            checkpoint(force=False)
-            if not cancelled:
-                try:
-                    cancellation.check()
-                except cancellation.Cancelled:
-                    cancelled = True
-                    stop_event.set()
-                    for pending in futures:
-                        pending.cancel()
-            # Reported after the cancellation check so a stop request never bypasses the graceful path.
-            if progress and not cancelled:
-                progress({"phase": "descriptions", "done": len(report["items"]), "total": len(selected),
-                          "saved": report["saved"], "attempted": report["attempted"],
-                          "workers": workers, "started_at": report["started_at"]})
-            logger.info("Description %s: %s (%s/%s)", item["id"], item["status"], len(report["items"]), len(selected))
-    report["unattempted"] = len(candidates) - report["attempted"]
-    report["remaining_missing"] = len(missing_ids)
-    report["remaining_to_check"] = len(candidates) - report["saved"] + unsupported + deferred
-    report["failed"] = sum(item["status"] == "failed" for item in report["items"])
-    report["http_requests"] = sum(item["requests"] for item in report["items"])
-    report["status"] = "partial" if any(item["status"] in ("failed", "skipped") for item in report["items"]) or all_missing and report["remaining_to_check"] else "success"
-    report["finished_at"] = now()
-    if cancelled:
-        report['status'] = 'interrupted'
-    checkpoint()
-    report["saved_per_minute"] = round(report["saved"] * 60 / max(report["elapsed_seconds"], .001), 2)
-    checkpoint()
-    archive.run("description_recovery", report["status"], report)
-    if cancelled:
-        raise cancellation.Cancelled()
+    try:
+        checkpoint()
+        cancellation.check()
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(retrieve, candidate) for candidate in selected]
+            for future in as_completed(futures):
+                if future.cancelled():
+                    continue
+                item, description, provenance, facts = future.result()
+                report["attempted"] += bool(item["requests"])
+                website = url(facts.get("website_url") or "")
+                if website:
+                    # hiringOrganization.sameAs: l'indirizzo del sito aziendale, gratis su una pagina già scaricata.
+                    with archive.db:
+                        archive.db.execute("UPDATE companies SET website=? WHERE website='' AND id=(SELECT company_id FROM opportunities WHERE id=?)", (website, item["id"]))
+                    report["websites"] += 1
+                if provenance:
+                    saved = archive.save_description(item["id"], description, provenance, replace=refresh_stale)
+                    item["status"] = "saved" if saved else "already_present"
+                    report["saved"] += bool(saved)
+                    missing_ids.discard(item["id"])
+                if item["requests"]:
+                    status = "available" if provenance else "blocked" if item.get("host_stopped") else "missing_page" if "HTTP Error 404" in item.get("error", "") else "unsupported_parser" if "No unambiguous" in item.get("error", "") else "temporary_error"
+                    retry = None if status in ("available", "unsupported_parser") else (datetime.now(timezone.utc) + (timedelta(days=cfg.get("missing_page_retry_days", 7)) if status == "missing_page" else timedelta(hours=cfg.get("retry_after_hours", 24)))).isoformat()
+                    with archive.db:
+                        archive.record_description_attempt(item["id"], status, item.get("application_url", item["url"]), item.get("error", ""), retry, parser_version=PARSER_VERSION)
+                report["items"].append(item)
+                checkpoint(force=False)
+                if not cancelled:
+                    try:
+                        cancellation.check()
+                    except cancellation.Cancelled:
+                        cancelled = True
+                        stop_event.set()
+                        for pending in futures:
+                            pending.cancel()
+                # Reported after the cancellation check so a stop request never bypasses the graceful path.
+                if progress and not cancelled:
+                    progress({"phase": "descriptions", "done": len(report["items"]), "total": len(selected),
+                              "saved": report["saved"], "attempted": report["attempted"],
+                              "workers": workers, "started_at": report["started_at"]})
+                logger.info("Description %s: %s (%s/%s)", item["id"], item["status"], len(report["items"]), len(selected))
+        report["unattempted"] = len(candidates) - report["attempted"]
+        report["remaining_missing"] = len(missing_ids)
+        report["remaining_to_check"] = len(candidates) - report["saved"] + unsupported + deferred
+        report["failed"] = sum(item["status"] == "failed" for item in report["items"])
+        report["http_requests"] = sum(item["requests"] for item in report["items"])
+        report["status"] = "partial" if any(item["status"] in ("failed", "skipped") for item in report["items"]) or all_missing and report["remaining_to_check"] else "success"
+        report["finished_at"] = now()
+        if cancelled:
+            report['status'] = 'interrupted'
+        checkpoint()
+        report["saved_per_minute"] = round(report["saved"] * 60 / max(report["elapsed_seconds"], .001), 2)
+        checkpoint()
+        archive.run("description_recovery", report["status"], report)
+        if cancelled:
+            raise cancellation.Cancelled()
+    except BaseException as exc:
+        # Qualunque uscita lascia un report chiuso: uno «running» con il PID del server vivo
+        # bloccherebbe ogni avvio successivo dalla dashboard.
+        if not report.get("finished_at"):
+            stopped = isinstance(exc, (cancellation.Cancelled, KeyboardInterrupt))
+            report.update(status="interrupted" if stopped else "failed", finished_at=now(),
+                          error=None if stopped else f"{type(exc).__name__}: {exc}"[:300])
+            checkpoint()
+            try:
+                archive.run("description_recovery", report["status"], {k: v for k, v in report.items() if k != "items"})
+            except Exception:
+                logger.exception("Description recovery report not saved")
+        raise
     return report

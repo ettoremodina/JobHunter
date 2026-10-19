@@ -6,6 +6,11 @@
   "secrets_file": ".env.local",
   "timeout_seconds": 120,
   "request_delay_seconds": 1,
+  "breaker": {
+    "min_calls": 20,
+    "max_failure_share": 0.5,
+    "max_consecutive_failures": 10
+  },
   "default_limit": 3,
   "max_batch": 50,
   "max_input_chars": 80000,

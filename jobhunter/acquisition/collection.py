@@ -55,7 +55,13 @@ def fetch(address, timeout):
         if response.status_code >= 400:
             raise urllib.error.HTTPError(address, response.status_code,
                                          f"HTTP Error {response.status_code}: {response.reason}", response.headers, None)
-        return response.raw.read(12_000_000, decode_content=True).decode("utf-8", errors="replace")
+        import urllib3
+        try:
+            return response.raw.read(12_000_000, decode_content=True).decode("utf-8", errors="replace")
+        except urllib3.exceptions.HTTPError as exc:
+            # `raw.read` solleva le eccezioni di urllib3 (timeout di lettura, connessione chiusa a meta'),
+            # che non sono OSError: senza conversione uscivano dai gestori e lasciavano la run «running».
+            raise OSError(f"Lettura interrotta: {exc}") from exc
 
 
 class JobDataParser(HTMLParser):

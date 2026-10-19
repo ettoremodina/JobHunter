@@ -274,9 +274,10 @@ def run(archive, values, progress):
     def call(job):
         """Perform one billed request in a worker thread; no SQLite handle is touched here.
 
-        Si ritenta solo un rifiuto del provider (`THROTTLED`), con attesa crescente: quella
-        richiesta non ha generato niente, quindi il ritento non puo' duplicare una spesa. Un
-        fallimento di trasporto lascia l'esito di fatturazione ignoto e continua a fermare la run.
+        Si ritenta solo un rifiuto del provider (`THROTTLED`) o una richiesta mai partita, con
+        attesa crescente: nessuna delle due ha generato niente, quindi il ritento non puo' duplicare
+        una spesa. Un fallimento durante l'attesa della risposta lascia ignota la fatturazione: quel
+        record non si ritenta, e se i fallimenti si accumulano l'interruttore ferma la run.
         """
         attempts = max(int(limits.get('max_attempts', 4)), 1)
         for attempt in range(attempts):
@@ -286,7 +287,10 @@ def run(archive, values, progress):
                 # (es. enable_thinking), senza toccare le chiamate brevi di selezione e descrizione.
                 return llm.request({**cfg, 'parameters': {**cfg['parameters'], 'max_tokens': limits['max_tokens'], **limits.get('parameters', {})}}, prompt, job['payload'], job['key'])
             except ValueError as exc:
-                if getattr(exc, 'status', None) not in THROTTLED or attempt == attempts - 1:
+                # Si ritenta solo cio' che non puo' essere stato fatturato: un rifiuto del provider o
+                # una richiesta mai partita. Un errore durante l'attesa della risposta non si ritenta.
+                retryable = getattr(exc, 'status', None) in THROTTLED or getattr(exc, 'not_sent', False)
+                if not retryable or attempt == attempts - 1:
                     raise
                 with gate:
                     counts['throttled_retries'] += 1
@@ -296,6 +300,7 @@ def run(archive, values, progress):
     key = llm.api_key(cfg) if execute else None
     pool = ThreadPoolExecutor(max_workers=workers) if execute else None
     queue, inflight, stopped = iter(ids), {}, False
+    breaker = llm.Breaker(cfg['breaker'])
 
     def next_job():
         """Prepare companies until one needs a paid request, accounting for the ones passed over.
@@ -340,7 +345,7 @@ def run(archive, values, progress):
                 item = {'id': job['id'], 'job_ids': job['pending']}
                 report['items'].append(item)
                 report['company_name'] = job['name']
-                received = False
+                received, failure = False, None
                 try:
                     answer, consumed, _ = future.result()
                     received = True
@@ -357,20 +362,32 @@ def run(archive, values, progress):
                         # `remote_llm.run` con `rejected_answer`. E' limitata da `max_tokens`.
                         item['rejected_answer'] = answer
                         report['status'] = 'partial'
-                except (AttributeError, ValueError, TypeError, KeyError, OSError) as exc:
+                except Exception as exc:
+                    # Una risposta troncata, malformata o rifiutata riguarda solo questa azienda; un
+                    # errore di trasporto lascia ignota la fatturazione e quindi non si ritenta, ma
+                    # non ferma le altre. A decidere lo stop e' l'interruttore.
                     counts['rejected_companies'] += 1
                     logger.warning('Company batch failed: %s', exc)
                     item['error'] = str(exc)
                     if received:
                         item['rejected_answer'] = answer
                     report['status'] = 'partial'
-                    # A transport failure leaves the billing outcome unknown: stop submitting, never retry implicitly.
-                    stopped = stopped or not received
+                    failure = exc
+                halt = breaker.record(failure)
+                if halt and not stopped:
+                    stopped = True
+                    report['stop_reason'] = halt
+                    logger.error('Company batch stopped: %s', halt)
                 report['completed_companies'] += 1
                 checkpoint(force=False)
     finally:
         if pool:
             pool.shutdown(wait=True)
+    # Una run fermata prima della fine, o che ha pagato senza salvare nulla, e' fallita: la sequenza
+    # si ferma invece di dichiararsi completata.
+    if stopped or counts['api_calls'] and not counts['saved_summaries'] + counts['saved_company_cards']:
+        report['status'] = 'failed'
+        report.setdefault('stop_reason', 'Nessuna scheda salvata in tutta la run.')
     report['report_path'] = str(output) if execute else None
     checkpoint()
     return report

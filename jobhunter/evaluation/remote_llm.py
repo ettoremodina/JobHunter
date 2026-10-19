@@ -2,6 +2,7 @@
 
 import hashlib
 import copy
+import http.client
 import json
 import logging
 import os
@@ -16,6 +17,56 @@ from jobhunter.workspace import ROOT, now
 
 logger = logging.getLogger(__name__)
 TASKS = ('selection', 'job-summary', 'company-summary', 'company-research')
+
+
+def not_sent(provider, exc):
+    """The error for a request that never left: safe to retry, because nothing can have been billed.
+
+    urllib avvolge in URLError solo gli errori di connessione e di invio (DNS, connessione rifiutata,
+    timeout di connessione). Un errore durante l'attesa della risposta arriva invece come OSError
+    nudo, e li' l'esito di fatturazione resta ignoto.
+    """
+    error = ValueError(f'{provider} connection failed before the request was sent: {exc.reason}')
+    error.not_sent = True
+    return error
+
+
+# Chiave rifiutata o credito esaurito: ogni chiamata successiva fallirebbe allo stesso modo.
+HALT_STATUSES = frozenset({401, 402, 403})
+
+
+class Breaker:
+    """Decide when failed paid calls stop looking like single bad records, so the run must end.
+
+    Ogni errore riguarda prima di tutto il suo record: la run prosegue con gli altri. Si ferma solo
+    se il provider rifiuta chiave o credito, se gli errori arrivano in fila (rete caduta, PC sospeso,
+    modello sparito) o se superano una quota delle chiamate concluse. Prima del 19/10/2026 un solo
+    errore fermava tutto: Qwen si e' arrestato a 4.043 aziende su 5.908 per una risposta troncata.
+    Le soglie stanno nel blocco `breaker` della configurazione di ogni passaggio.
+    """
+
+    def __init__(self, limits):
+        """Read `min_calls`, `max_failure_share` and `max_consecutive_failures`."""
+        self.limits = limits
+        self.calls = self.failures = self.streak = 0
+
+    def record(self, error=None):
+        """Count one finished call; return why the run must stop, or None to keep going."""
+        self.calls += 1
+        if error is None:
+            self.streak = 0
+            return None
+        self.failures += 1
+        self.streak += 1
+        status = getattr(error, 'status', None)
+        last = str(error)[:200]
+        if status in HALT_STATUSES:
+            return f'HTTP {status}: il provider rifiuta la chiave o il credito. {last}'
+        if self.streak >= self.limits['max_consecutive_failures']:
+            return f'{self.streak} chiamate fallite di fila. Ultimo errore: {last}'
+        if self.calls >= self.limits['min_calls'] and self.failures > self.limits['max_failure_share'] * self.calls:
+            return f'{self.failures} chiamate fallite su {self.calls}. Ultimo errore: {last}'
+        return None
 
 
 def digest(value):
@@ -119,7 +170,9 @@ def request(config, prompt, payload, key):
         pause = (exc.headers or {}).get('Retry-After', '')
         rejected.retry_after = int(pause) if str(pause).strip().isdigit() else 0
         raise rejected from None
-    except (OSError, TimeoutError):
+    except urllib.error.URLError as exc:
+        raise not_sent('Remote', exc) from None
+    except (OSError, TimeoutError, http.client.HTTPException):
         raise ValueError('Remote transport failure; billing outcome unknown, no automatic retry') from None
     if len(raw) > config['max_response_bytes']:
         raise ValueError('Remote response exceeds configured size')

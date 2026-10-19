@@ -94,6 +94,54 @@ class DescriptionConcurrencyTests(unittest.TestCase):
                 self.assertEqual(result['saved'], 0)
                 self.assertEqual(result['remaining_missing'], 8)
 
+    def test_a_read_cut_by_urllib3_is_an_ordinary_os_error(self):
+        """`raw.read` solleva eccezioni di urllib3 che non sono OSError: senza conversione uscivano dai gestori."""
+        import urllib3
+        from jobhunter.acquisition import collection
+
+        class Response:
+            """A 200 whose body breaks halfway."""
+            status_code = 200
+
+            class raw:
+                @staticmethod
+                def read(*args, **kwargs):
+                    raise urllib3.exceptions.ProtocolError('Connection broken: IncompleteRead')
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exception):
+                return False
+
+        with patch.object(collection, 'session') as session:
+            session.return_value.get.return_value = Response()
+            with self.assertRaisesRegex(OSError, 'Lettura interrotta'):
+                collection.fetch('https://www.linkedin.com/jobs/view/1', 1)
+
+    def test_an_unexpected_error_still_closes_the_report(self):
+        """Un report lasciato «running» col PID del server vivo bloccava ogni avvio successivo."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'config').mkdir()
+            (root/'config/descriptions.json').write_text(json.dumps({
+                'default_limit': 2, 'max_limit': 50, 'workers': 1, 'max_workers': 8,
+                'allowed_hosts': ['www.linkedin.com'], 'timeout_seconds': 1,
+                'request_delay_seconds': 0, 'output_directory': 'details'}))
+            with closing(Archive(root/'archive.db')) as archive:
+                archive.ingest([{'company_name': 'Example', 'title': 'Data Scientist',
+                                 'source_url': 'https://www.linkedin.com/jobs/view/1'}], 'jobspy')
+                page = '<div class="show-more-less-html__markup">Build data science models.</div>'
+                with patch('jobhunter.acquisition.descriptions.ROOT', root), \
+                        patch('jobhunter.acquisition.descriptions.fetch', return_value=page), \
+                        patch.object(archive, 'save_description', side_effect=RuntimeError('boom')):
+                    with self.assertRaises(RuntimeError):
+                        recover(archive, all_missing=True)
+                report = json.loads(next((root/'details').glob('*/report.json')).read_text())
+                self.assertEqual(report['status'], 'failed')
+                self.assertTrue(report['finished_at'])
+                self.assertIn('boom', report['error'])
+
 
 if __name__ == '__main__':
     unittest.main()
