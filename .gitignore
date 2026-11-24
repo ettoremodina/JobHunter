@@ -39,4 +39,6 @@ __pycache__/
 .claude/skills
 .claude/memory
 .claude/settings.local.json
+# Personal data has its own private Git repository inside the project folder.
+/personale/
 # <<< agentworkflow
