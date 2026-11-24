@@ -44,7 +44,7 @@ python main.py init
 python main.py serve
 ```
 
-`init` creates the database and your personal files from the fictional examples in `examples/`. The dashboard opens at <http://127.0.0.1:8000>.
+`init` creates the database and your personal files from the fictional examples in `examples/`. The dashboard opens at <http://127.0.0.1:8898>.
 
 Next, make the profile yours. Either:
 

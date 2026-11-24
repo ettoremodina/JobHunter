@@ -146,7 +146,7 @@ python main.py serve
 2. `fetch-descriptions` ne recupera il testo.
 3. `system-one` senza `--execute` è un'anteprima gratuita. Mostra cosa verrebbe inviato, senza chiave e senza chiamate.
 4. `--execute` fa le chiamate a pagamento.
-5. `serve` apre la dashboard su <http://127.0.0.1:8000>. Su Windows puoi anche fare doppio clic su `Avvia JobHunter.pyw`.
+5. `serve` apre la dashboard su <http://127.0.0.1:8898>. Su Windows puoi anche fare doppio clic su `Avvia JobHunter.pyw`.
 
 Nella dashboard, apri **Aziende** per vedere le aziende e i loro verdetti, e **Metriche** per vedere perché gli annunci sono stati scartati. Se il filtro scarta ruoli che vuoi, correggi `role_filters.json`; se Jev li giudica male, correggi le sue domande.
 

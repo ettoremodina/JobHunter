@@ -1,0 +1,147 @@
+/* Kit delle app di Ettore — versione 1.0 (2026-11-24).
+   Stile: Mezzanotte con pulsanti ambra (scuro) e Notte verde (chiaro), scelti nell'app Standard (regola UI-02).
+   Si copia la cartella kit/ nel progetto e non si modifica lì: i colori di un'app si cambiano sovrascrivendo i
+   token in un file suo, caricato dopo questo. Novità e versioni: CHANGELOG.md accanto a questo file.
+   Classi con prefisso k-; token con nomi per ruolo, uguali in tutte le app. */
+
+/* ---------- Token ---------- */
+:root {
+  --radius: 6px;
+  --pad: 16px;
+  --gap: 14px;
+  --heading: 800;
+  --size: 15px;
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-title: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-num: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", Consolas, ui-monospace, monospace;
+  --side-width: 280px;
+}
+/* Scuro: Mezzanotte, nero con una sfumatura di blu; ambra per le azioni, verde per gli stati positivi. */
+:root, :root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #020409; --surface: #060b16; --surface-2: #0a1222; --line: #111b2f; --line-strong: #1d2c4a;
+  --text: #f7f9fc; --text-2: #cfd7e6; --text-3: #8796b3;
+  --accent: #d9a53f; --on-accent: #140c00; --accent-2: #3ddc84;
+  --ok: #3ddc84; --warn: #ff9447; --bad: #ff7b72;
+  --cat-1: #d9a53f; --cat-2: #3ddc84; --cat-3: #4cc9f0; --cat-4: #ff8fab; --cat-5: #c3e88d;
+  --scrim: rgb(0 0 0 / .55);
+  --shadow-pop: 0 12px 32px rgb(0 0 0 / .5);
+}
+/* Chiaro: Notte verde, carta chiara verdina e verde bosco. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f6f0; --surface: #ffffff; --surface-2: #e9eee4; --line: #d5ddd0; --line-strong: #a9b8a4;
+  --text: #0c140e; --text-2: #2e3d31; --text-3: #55665a;
+  --accent: #157a42; --on-accent: #ffffff; --accent-2: #a86b00;
+  --ok: #157a42; --warn: #a86b00; --bad: #c62828;
+  --cat-1: #157a42; --cat-2: #a86b00; --cat-3: #0b7a9e; --cat-4: #c2185b; --cat-5: #5c7a14;
+  --scrim: rgb(12 20 14 / .35);
+  --shadow-pop: 0 12px 32px rgb(12 20 14 / .18);
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font: 400 var(--size)/1.5 var(--font-ui); color: var(--text); background: var(--bg); }
+h1, h2, h3 { font-family: var(--font-title); font-weight: var(--heading); line-height: 1.2; margin: 0; }
+h1 { font-size: 22px; } h2 { font-size: 18px; } h3 { font-size: 16px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, kbd { font: 13px var(--font-mono); }
+kbd { border: 1px solid var(--line-strong); border-radius: 4px; padding: 0 4px; background: var(--surface-2); }
+.k-muted { color: var(--text-3); font-size: 13px; }
+.k-num { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 700; }
+
+/* ---------- Barra in alto e struttura ---------- */
+.k-topbar {
+  position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px var(--pad); background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.k-topbar .k-spacer { flex: 1; }
+.k-main { padding: var(--pad); display: flex; flex-direction: column; gap: var(--gap); }
+
+/* ---------- Pulsanti, tag, chip: tre famiglie diverse (UI-04) ---------- */
+.k-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 0 14px;
+  border-radius: var(--radius); border: 1px solid var(--line-strong); background: transparent; font-weight: 600;
+  cursor: pointer; text-decoration: none; color: var(--text);
+}
+.k-btn:hover { background: var(--surface-2); }
+.k-btn.k-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.k-btn.k-primary:hover { filter: brightness(1.08); }
+.k-btn.k-danger { border-color: var(--bad); color: var(--bad); }
+.k-btn.k-confirming { background: var(--bad); border-color: var(--bad); color: var(--bg); }
+.k-btn:disabled { opacity: .55; cursor: default; }
+.k-icon { min-width: 40px; padding: 0; font-size: 18px; }
+.k-tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 12px; border: 1px solid currentColor; color: var(--text-2); white-space: nowrap; }
+.k-tag.k-ok { color: var(--ok); } .k-tag.k-warn { color: var(--warn); } .k-tag.k-bad { color: var(--bad); }
+.k-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--line-strong); background: transparent; color: var(--text-2); cursor: pointer;
+}
+.k-chip[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: var(--surface-2); font-weight: 600; }
+.k-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.k-count { color: var(--text-3); font-size: 13px; }
+
+/* ---------- Superfici, campi, elenchi ---------- */
+.k-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--pad); }
+.k-input, .k-select, .k-textarea {
+  min-height: 40px; padding: 7px 10px; border-radius: var(--radius); border: 1px solid var(--line-strong); background: var(--surface);
+}
+.k-textarea { width: 100%; min-height: 120px; resize: vertical; }
+.k-list { display: flex; flex-direction: column; }
+.k-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; }
+.k-row + .k-row { border-top-color: var(--line); }
+.k-row:hover { background: var(--surface-2); }
+/* Selezione: si aggiunge luce, senza sbiadire le altre righe (UI-11). */
+.k-row[aria-selected="true"], .k-selected {
+  border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* ---------- Pannello laterale sovrapposto, con velo (UI-07) ---------- */
+.k-panel {
+  position: fixed; top: 0; bottom: 0; left: 0; z-index: 40; width: min(var(--side-width), 88vw); overflow-y: auto;
+  padding: var(--pad); background: var(--surface); border-right: 1px solid var(--line-strong); box-shadow: var(--shadow-pop);
+  transform: translateX(-102%); visibility: hidden;
+}
+.k-panel.k-right { left: auto; right: 0; border-right: none; border-left: 1px solid var(--line-strong); transform: translateX(102%); }
+.k-panel.k-open { transform: none; visibility: visible; }
+.k-scrim { position: fixed; inset: 0; z-index: 35; background: var(--scrim); }
+.k-scrim[hidden] { display: none; }
+
+/* ---------- Menu del tasto destro (UX-10) ---------- */
+.k-menu {
+  position: fixed; z-index: 60; min-width: 200px; padding: 6px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--line-strong); box-shadow: var(--shadow-pop);
+}
+.k-menu[hidden] { display: none; }
+.k-menu button { display: block; width: 100%; min-height: 36px; padding: 0 10px; text-align: left; border: none; border-radius: 4px; background: transparent; cursor: pointer; }
+.k-menu button:hover, .k-menu button:focus-visible { background: var(--surface-2); }
+.k-menu hr { border: none; border-top: 1px solid var(--line); margin: 4px 0; }
+
+/* ---------- Avvisi, stati, salvataggio ---------- */
+.k-toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 70; max-width: calc(100vw - 32px);
+  padding: 10px 16px; border-radius: var(--radius); background: var(--text); color: var(--bg); font-weight: 600;
+}
+.k-toast[hidden] { display: none; }
+.k-state { padding: 28px var(--pad); text-align: center; color: var(--text-2); border: 1px dashed var(--line-strong); border-radius: var(--radius); }
+.k-state.k-error { color: var(--bad); border-color: var(--bad); }
+.k-skeleton { height: 14px; border-radius: 4px; background: linear-gradient(90deg, var(--surface-2), var(--line), var(--surface-2)); background-size: 200% 100%; animation: k-shimmer 1.2s linear infinite; }
+@keyframes k-shimmer { to { background-position: -200% 0; } }
+.k-save { font-size: 13px; color: var(--text-3); }
+.k-save.k-error { color: var(--bad); font-weight: 600; }
+
+/* ---------- Telefono e movimento ridotto ---------- */
+@media (max-width: 640px) {
+  :root { --pad: 12px; }
+  .k-btn { min-height: 44px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .k-panel { transition: transform .2s ease, visibility .2s; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k-skeleton { animation: none; }
+}

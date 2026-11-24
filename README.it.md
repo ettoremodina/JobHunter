@@ -44,7 +44,7 @@ python main.py init
 python main.py serve
 ```
 
-`init` crea il database e i tuoi file personali a partire dagli esempi inventati in `examples/`. La dashboard si apre su <http://127.0.0.1:8000>.
+`init` crea il database e i tuoi file personali a partire dagli esempi inventati in `examples/`. La dashboard si apre su <http://127.0.0.1:8898>.
 
 Poi rendi tuo il profilo, in uno di questi due modi:
 

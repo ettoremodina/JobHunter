@@ -1,7 +1,8 @@
-"""Loopback-only dashboard with explicit assets, JSON endpoints and CSRF protection."""
+"""Dashboard on loopback, plus the hub's private address when HUB_ORIGIN names one; explicit assets, JSON endpoints and CSRF protection."""
 
 import json
 import logging
+import os
 import secrets
 import sqlite3
 import threading
@@ -13,6 +14,29 @@ from jobhunter.evaluation.tier import TIERS, label
 from jobhunter.workspace import Archive, ROOT, categories
 
 logger = logging.getLogger(__name__)
+
+# Static files by address: (file in dashboard/, content type). Nothing else is ever read from disk.
+ASSETS = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/style.css": ("style.css", "text/css; charset=utf-8"),
+    "/kit/kit.css": ("kit/kit.css", "text/css; charset=utf-8"),
+    "/kit/kit.js": ("kit/kit.js", "text/javascript; charset=utf-8"),
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "/icon-192.png": ("icon-192.png", "image/png"),
+    "/icon-512.png": ("icon-512.png", "image/png"),
+}
+
+
+def hub_origin():
+    """The hub's private address from HUB_ORIGIN (https://host:port), or None when the dashboard runs alone."""
+    value = os.environ.get("HUB_ORIGIN", "").rstrip("/")
+    if not value:
+        return None
+    parts = urlsplit(value)
+    if parts.scheme != "https" or not parts.netloc or "@" in parts.netloc or parts.path or parts.query or parts.fragment:
+        raise ValueError("HUB_ORIGIN must look like https://host:port")
+    return value
 
 
 class LocalHTTPServer(ThreadingHTTPServer):
@@ -76,6 +100,7 @@ class ReadCache:
 def create_server(database, cfg, port=8000):
     """Construct a local server; also supports an ephemeral port in integration tests."""
     token = secrets.token_urlsafe(32)
+    hub = hub_origin()
     collection_lock = threading.Lock()
     state = {"running": False, "result": None}
 
@@ -107,8 +132,11 @@ def create_server(database, cfg, port=8000):
                 logger.debug('Browser closed the request before the response completed')
 
         def valid_host(self):
-            """Reject DNS rebinding and requests addressed to other hosts."""
-            return self.headers.get("Host") in (f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}")
+            """Reject DNS rebinding and requests addressed to other hosts: loopback, or the hub's address."""
+            hosts = [f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"]
+            if hub:
+                hosts.append(urlsplit(hub).netloc)
+            return self.headers.get("Host") in hosts
 
         def do_GET(self):
             """Read archive data or one allowlisted static asset."""
@@ -116,10 +144,12 @@ def create_server(database, cfg, port=8000):
                 self.respond({"error": "Invalid host"}, 403)
                 return
             parsed = urlsplit(self.path)
-            assets = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/style.css": ("style.css", "text/css")}
-            if parsed.path in assets:
-                name, mime = assets[parsed.path]
-                self.respond((ROOT / "dashboard" / name).read_bytes(), mime=mime + "; charset=utf-8")
+            if parsed.path in ASSETS:
+                name, mime = ASSETS[parsed.path]
+                self.respond((ROOT / "dashboard" / name).read_bytes(), mime=mime)
+                return
+            if parsed.path == "/api/health":
+                self.respond({"app": "jobhunter"})
                 return
             archive = Archive(database)
             try:
@@ -181,7 +211,7 @@ def create_server(database, cfg, port=8000):
         def do_POST(self):
             """Apply validated, same-origin writes; collect in one bounded background job."""
             origin = self.headers.get("Origin")
-            allowed = (f"http://127.0.0.1:{self.server.server_port}", f"http://localhost:{self.server.server_port}")
+            allowed = (f"http://127.0.0.1:{self.server.server_port}", f"http://localhost:{self.server.server_port}", *([hub] if hub else []))
             if not self.valid_host() or self.headers.get("X-JobHunter-Token") != token or origin and origin not in allowed:
                 self.respond({"error": "Invalid request origin or token"}, 403)
                 return

@@ -2,7 +2,7 @@
   "database": "data/jobhunter.sqlite3",
   "raw_directory": "data/collection",
   "page_size": 30,
-  "port": 8000,
+  "port": 8898,
   "timeout_seconds": 25,
   "max_pages": 12,
   "max_jobs": 100,

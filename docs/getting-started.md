@@ -146,7 +146,7 @@ python main.py serve
 2. `fetch-descriptions` fetches their text.
 3. `system-one` without `--execute` is a free preview. It shows what would be sent, without a key and without calls.
 4. `--execute` makes the paid calls.
-5. `serve` opens the dashboard at <http://127.0.0.1:8000>. On Windows you can also double-click `Avvia JobHunter.pyw`.
+5. `serve` opens the dashboard at <http://127.0.0.1:8898>. On Windows you can also double-click `Avvia JobHunter.pyw`.
 
 In the dashboard, open **Aziende** to see companies and their verdicts, and **Metriche** to see why ads were discarded. If the filter discards roles you want, fix `role_filters.json`; if Jev misjudges them, fix its questions.
 

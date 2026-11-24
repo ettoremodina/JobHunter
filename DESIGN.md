@@ -295,17 +295,31 @@ ritmi diversi (§2). Non una sola coda con un filtro.
 
 Priorità dichiarata: leggibilità e navigazione, non decorazione.
 
-Palette a token che segue la preferenza chiaro/scuro del lettore: superfici a
-livelli su pagina tinta, azioni blu, form nativi, focus ring visibile. Tabella
-aziende paginata accanto a un pannello di dettaglio leggibile. I grafici sono
+Palette a token del kit delle app, con il tema chiaro/scuro scelto dal lettore:
+superfici a livelli, azioni ambra (scuro) o verdi (chiaro), form nativi, focus
+ring visibile. Tabella aziende paginata, con il dettaglio in un pannello che si
+apre sopra la tabella. I grafici sono
 ammessi solo quando portano informazione che il testo non dà: il funnel della
 pipeline mostra quote complementari e il passaggio fra stadi. Niente font esterni,
 niente mappe, nessun movimento oltre brevi transizioni di stato.
 
 Il colore non porta mai significato da solo: ogni quota è anche nominata e contata.
-Su schermi stretti il dettaglio segue la tabella. Le descrizioni lunghe sono
+Su schermi stretti il pannello occupa tutta la larghezza. Le descrizioni lunghe sono
 espandibili. Lo stato include sempre un'etichetta testuale. Gli errori restano
 visibili; un salvataggio fallito non toglie dati dallo schermo.
+
+### Scelte di interfaccia
+
+Poche righe, a punti: le regole comuni a tutte le app stanno nell'app Standard dell'hub (stato in `.agents/standard.json`), qui solo ciò che vale per JobHunter.
+
+- **Kit:** versione 1.0 in `dashboard/kit/`, copiata senza modifiche. `dashboard/style.css` tiene un solo blocco di token con gli alias verso quelli del kit e i colori che sono contenuto.
+- **Viste:** Aziende, Salvate, Metriche, Pipeline, Debug, Fonti. Gli indirizzi sono `#aziende/<id>`, `#salvate/<id>`, `#metriche`, `#pipeline`, `#debug`, `#fonti`; il vecchio `?view=pipeline` vale ancora.
+- **Scheda azienda:** pannello sopra la tabella con velo; si chiude con ✕, velo o Esc, il doppio clic sulla barra la porta a schermo intero, la larghezza si trascina dal bordo sinistro. Si ricorda l'ultima azienda aperta. Nelle tab Salvate e Debug il dettaglio resta di fianco all'elenco, perché lì si confrontano elenco e scheda.
+- **Colori propri:** le serie dei grafici (validate per il daltonismo) restano quelle di prima, e così `--seg-gone`, che resta scuro. Le cinque categorie più numerose dell'archivio hanno la loro serie in tabella, nella scheda e nella ciambella delle Metriche; le altre sono neutre. Il nome della categoria c'è sempre, il colore non basta da solo.
+- **Ricerca:** Paese, Città e Categoria sono campi con elenco nativo (`datalist`), senza librerie; vale solo un valore dell'elenco. `/` o Ctrl+K portano alla ricerca, Esc chiude scheda e menu, j/k scorrono le aziende. Tasto destro sulla riga: apri, copia il link, salva.
+- **Aggiornamento:** al ritorno sulla scheda si rilegge la tab aperta (Aziende, Salvate, Pipeline, Fonti), mai sopra un campo in modifica. Metriche e Debug si aggiornano dal loro pulsante, perché il calcolo è lungo.
+- **Cosa non fa, di proposito:** niente selezione multipla con totali (UX-15, in `rimandate`).
+- **Hub:** porta fissa 8898 (`config/app.json`); `python main.py serve` avvia solo il server; `HUB_ORIGIN` si accetta accanto al loopback per `Host` e `Origin`, il token `X-JobHunter-Token` resta quello di prima.
 
 ## 10. Struttura del codice
 

@@ -1,7 +1,7 @@
 "use strict";
-// Il tema si decide prima del primo disegno: vince la scelta salvata, altrimenti il sistema.
-const darkQuery = matchMedia("(prefers-color-scheme: dark)");
-document.documentElement.dataset.theme = remembered("theme") || (darkQuery.matches ? "dark" : "light");
+// Il tema si decide prima del primo disegno (script non differito: la CSP vieta quelli inline): vince la scelta
+// salvata da Kit.theme ("jobhunter:theme", o la vecchia chiave "theme"), altrimenti il sistema.
+document.documentElement.dataset.theme = remembered("jobhunter:theme") || remembered("theme") || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
 const $ = (id) => document.getElementById(id);
 const labels = {
   new: "Nuova",
@@ -76,9 +76,9 @@ function params(start = offset, size = config.page_size) {
   return new URLSearchParams({
     query: $("query").value,
     source: $("source").value,
-    country: $("country").value,
-    city: $("city").value,
-    category: $("category").value,
+    country: comboValue($("country")),
+    city: comboValue($("city")),
+    category: comboValue($("category")),
     tier: currentTier(),
     posted_days: $("posted").value,
     phd: $("phd").value,
@@ -97,6 +97,26 @@ function remember(key, value) {
 }
 function remembered(key) {
   try { return localStorage.getItem(key); } catch { return null; }
+}
+
+/** Tendina con ricerca, senza librerie: un campo di testo con l'elenco nativo (datalist) dei valori noti.
+    Vale solo un valore dell'elenco, in qualunque maiuscola; altro testo blocca l'invio con l'avviso nativo. */
+function setCombo(input, values) {
+  $(input.id + "-list").replaceChildren(...values.map(([value, label]) => {
+    const option = el("option");
+    option.value = value;
+    if (label) option.label = label;
+    return option;
+  }));
+  input.known = new Map(values.map(([value]) => [value.toLowerCase(), value]));
+  validateCombo(input);
+}
+/** Il valore canonico che il campo indica, o "" quando è vuoto o non è nell'elenco. */
+function comboValue(input) {
+  return input.known?.get(input.value.trim().toLowerCase()) ?? "";
+}
+function validateCombo(input) {
+  input.setCustomValidity(!input.value.trim() || comboValue(input) ? "" : "Scegli un valore dell'elenco.");
 }
 
 /** Keep list rows short: the first place, a count for the rest, and a cap for one long source string. */
@@ -166,12 +186,13 @@ async function load() {
   refreshTierCounts();
   matchingRoles.clear();
   $("rows").replaceChildren();
-  $("count").textContent = `${total.toLocaleString("it-IT")} aziende`;
+  renderCount();
   for (const company of data.items) {
     matchingRoles.set(company.id, company.matching_ids || []);
     const tr = el("tr");
     tr.dataset.id = company.id;
     tr.dataset.tier = company.tier || "";
+    tr.dataset.status = company.status;
     if (company.id === selected) tr.className = "selected";
     const name = el("td", undefined, "col-azienda");
     const button = el("button", company.name, "company-link");
@@ -200,7 +221,7 @@ async function load() {
     );
     // Testo semplice: in una colonna stretta un tag non va a capo e copre la colonna accanto.
     const category = el("td", undefined, "col-categoria");
-    category.append(el("span", companyCategories(company).join(" · ")));
+    category.append(categoryList(company));
     // Chi l'ha assegnata sta nel tooltip e nella scheda: nella riga costava una linea per azienda.
     if (company.categories?.length) {
       category.title = "Origine: " + (categoryMethods[company.category_method] || company.category_method);
@@ -457,9 +478,20 @@ async function show(id, context = {}) {
   // senza i filtri della tab Aziende e senza ricaricarne la tabella.
   const {panel = $("detail"), filtered = true, refresh = load} = context;
   selected = id;
-  if (panel === $("detail")) markSelected();
+  const main = panel === $("detail");
+  if (main) {
+    markSelected();
+    if (panel.dataset.id !== id) panel.replaceChildren(el("p", "Caricamento della scheda…", "muted"));
+    openDetail();
+  }
   const company = await api("/api/company/" + id);
   if (selected !== id) return;
+  if (main) {
+    // L'indirizzo e la scelta ricordata seguono la scheda aperta: #aziende/<id> si può copiare e riaprire.
+    panel.dataset.id = id;
+    mirrorHash("aziende", id);
+    remember("detail-company", id);
+  }
   panel.replaceChildren();
   const heading = el("div", undefined, "detail-heading");
   heading.append(el("h2", company.name), el("span", labels[company.status], `badge ${company.status}`));
@@ -469,7 +501,7 @@ async function show(id, context = {}) {
     : company.category_method === "jev" ? "Assegnata dal giudice System One"
     : company.category_method === "rules" ? "Suggerita da regole" : "";
   panel.append(factList([
-    ["Categorie", companyCategories(company).join(" · "), [origin, company.category_reason].filter(Boolean).join(" · ")],
+    ["Categorie", categoryList(company), [origin, company.category_reason].filter(Boolean).join(" · ")],
     ["Settori", company.sectors],
     ["Sito", company.website ? link(company.website, hostname(company.website)) : ""],
     ["Osservata", date(company.last_seen), `${company.opportunities.length} opportunità osservate`]]));
@@ -614,37 +646,38 @@ let refillCities = () => {};
 async function setupPlaces() {
   // La prima lettura normalizza tutto l'archivio e ci mette un minuto: intanto la tabella è già
   // in pagina, e i due menu dicono che stanno arrivando invece di restare vuoti.
-  const waiting = el("option", "Lettura delle località…");
-  waiting.disabled = true;
-  $("country").append(waiting);
-  const data = await api("/api/places");
-  waiting.remove();
-  const cities = new Map(data.countries.map(country => [country.name, country.cities]));
-  for (const country of data.countries) {
-    const option = el("option", `${country.name} · ${nf(country.count)}`);
-    option.value = country.name;
-    $("country").append(option);
+  for (const input of [$("country"), $("city")]) {
+    input.disabled = true;
+    input.placeholder = "Lettura delle località…";
   }
+  const data = await api("/api/places");
+  const cities = new Map(data.countries.map(country => [country.name, country.cities]));
+  setCombo($("country"), data.countries.map(country => [country.name, nf(country.count)]));
+  $("country").disabled = $("city").disabled = false;
+  $("country").placeholder = "Tutti i paesi";
   const fillCities = () => {
-    const chosen = $("country").value;
+    const chosen = comboValue($("country"));
     const list = chosen ? cities.get(chosen) || [] : [...cities.values()].flat();
-    const previous = $("city").value;
-    // Senza value esplicito un'opzione vale il proprio testo, e «Tutte le città» diventerebbe un filtro.
-    const all = el("option", chosen ? "Tutte le città del paese" : "Tutte le città");
-    all.value = "";
-    $("city").replaceChildren(all);
-    for (const city of [...list].sort((a, b) => b.count - a.count)) {
-      const option = el("option", `${city.name} · ${nf(city.count)}`);
-      option.value = city.name;
-      $("city").append(option);
-    }
+    const previous = comboValue($("city"));
+    $("city").placeholder = chosen ? "Tutte le città del paese" : "Tutte le città";
+    const byCount = new Map([...list].sort((a, b) => b.count - a.count).map(city => [city.name, city]));
+    setCombo($("city"), [...byCount.values()].map(city => [city.name, nf(city.count)]));
     // Cambiando paese la città scelta prima quasi mai esiste ancora: meglio azzerarla che filtrare a vuoto.
-    $("city").value = [...$("city").options].some(o => o.value === previous) ? previous : "";
+    $("city").value = previous && $("city").known.has(previous.toLowerCase()) ? previous : "";
   };
   refillCities = fillCities;
   fillCities();
-  $("country").addEventListener("change", guarded(async () => { fillCities(); offset = 0; await load(); }));
-  $("city").addEventListener("change", guarded(async () => { offset = 0; await load(); }));
+  // «change» scatta quando la scelta è fatta (voce dell'elenco, Invio, uscita dal campo): un valore non valido non cerca.
+  $("country").addEventListener("change", guarded(async () => {
+    validateCombo($("country"));
+    if (!$("country").checkValidity()) return;
+    fillCities(); offset = 0; await load();
+  }));
+  $("city").addEventListener("change", guarded(async () => {
+    validateCombo($("city"));
+    if (!$("city").checkValidity()) return;
+    offset = 0; await load();
+  }));
 }
 
 /** Colonne facoltative della tabella: la prima resta sempre, è quella che apre l'azienda. */
@@ -668,12 +701,12 @@ function setupColumns() {
   apply();
 }
 
-/** Larghezza della scheda azienda: si trascina il bordo, e la misura resta per la prossima visita. */
+/** Larghezza della scheda azienda: si trascina il bordo sinistro, e la misura resta per la prossima visita. */
 function setupResize() {
   const handle = $("detail-resize");
-  const width = () => Number(remembered("detail-width")) || $("detail").getBoundingClientRect().width;
+  const width = () => Number(remembered("detail-width")) || $("detail-panel").getBoundingClientRect().width;
   const setWidth = (value) => {
-    const size = Math.round(Math.min(Math.max(value, 320), Math.max(320, document.querySelector(".workspace").getBoundingClientRect().width - 420)));
+    const size = Math.round(Math.min(Math.max(value, 320), Math.max(320, innerWidth - 120)));
     document.documentElement.style.setProperty("--detail-width", size + "px");
     handle.setAttribute("aria-valuenow", String(size));
     remember("detail-width", String(size));
@@ -681,7 +714,7 @@ function setupResize() {
   if (remembered("detail-width")) setWidth(width());
   handle.addEventListener("pointerdown", (event) => {
     handle.setPointerCapture(event.pointerId);
-    const move = (e) => setWidth(document.querySelector(".workspace").getBoundingClientRect().right - e.clientX);
+    const move = (e) => setWidth(innerWidth - e.clientX);
     const stop = () => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", stop); };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", stop);
@@ -693,6 +726,79 @@ function setupResize() {
     setWidth(width() + step);
     event.preventDefault();
   });
+}
+
+/** La scheda azienda è un pannello del kit sopra la tabella: velo, chiusura (✕, velo, Esc), stato ricordato e
+    schermo intero (pulsante o doppio clic sulla barra). Aperta o chiusa, la scelta resta per la prossima visita:
+    si riapre l'ultima azienda guardata. */
+let detailPanel = null;
+const detailOpen = () => $("detail-panel").classList.contains("k-open");
+function openDetail() {
+  if (detailOpen()) return;
+  detailPanel.open();
+  $("detail").focus({preventScroll: true});
+}
+function closeDetail() {
+  detailPanel.close();
+}
+function setupDetailPanel() {
+  const panel = $("detail-panel");
+  detailPanel = Kit.panel(panel, {toggle: $("detail-toggle")});
+  $("detail-close").addEventListener("click", closeDetail);
+  const full = () => $("detail-full").setAttribute("aria-pressed", String(panel.classList.toggle("is-full")));
+  $("detail-full").addEventListener("click", full);
+  $("detail-bar").addEventListener("dblclick", (event) => { if (!event.target.closest("button")) full(); });
+  $("detail-resize").addEventListener("dblclick", full);
+  // Qualunque modo di chiuderla (✕, velo, Esc, pulsante) passa da qui: l'indirizzo torna alla sola tab.
+  new MutationObserver(() => {
+    if (detailOpen()) return;
+    if (panel.classList.contains("is-full")) {
+      panel.classList.remove("is-full");
+      $("detail-full").setAttribute("aria-pressed", "false");
+    }
+    // Cambiando tab la scheda si chiude da sola, ma la scelta ricordata resta.
+    if (currentView !== "companies") return;
+    remember("detail-company", "");
+    if (location.hash.startsWith("#aziende/")) history.replaceState(null, "", "#aziende");
+  }).observe(panel, {attributes: true, attributeFilter: ["class"]});
+  setupResize();
+}
+
+/** Le tab e i loro indirizzi: #aziende/<id>, #salvate/<id>, #metriche, #pipeline, #debug, #fonti. */
+const views = {companies: "aziende", saved: "salvate", analytics: "metriche", pipeline: "pipeline", debug: "debug", sources: "fonti"};
+let currentView = "companies";
+const viewLoaders = {sources: () => sources(), saved: () => loadSaved(), analytics: () => loadAnalytics(), pipeline: () => loadPipeline(), debug: () => loadDebug()};
+
+/** Scrive l'indirizzo senza aggiungere voci alla cronologia e senza far scattare di nuovo la route. */
+function mirrorHash(slug, id) {
+  const hash = `#${slug}${id ? "/" + encodeURIComponent(id) : ""}`;
+  if (location.hash !== hash) history.replaceState(null, "", hash);
+}
+
+async function showView(name) {
+  currentView = name;
+  for (const node of document.querySelectorAll("[data-view]")) {
+    if (node.dataset.view === name) node.setAttribute("aria-current", "page");
+    else node.removeAttribute("aria-current");
+  }
+  for (const view of Object.keys(views)) $(view + "-view").hidden = view !== name;
+  if (name !== "companies") detailPanel.close();
+  if (viewLoaders[name]) await viewLoaders[name]();
+}
+
+/** Chiamata da Kit.route all'avvio e a ogni cambio di indirizzo (tab, indietro, link incollato). */
+let routed = false;
+async function route([slug, id]) {
+  const name = Object.keys(views).find((key) => views[key] === slug) || "companies";
+  if (name !== currentView) await showView(name);
+  if (name === "companies") {
+    const wanted = id || (!routed && remembered("detail-company")) || "";
+    if (!wanted) { if (detailOpen()) closeDetail(); }
+    else if ($("detail").dataset.id !== wanted || !detailOpen()) {
+      try { await show(wanted); } catch (error) { closeDetail(); remember("detail-company", ""); throw error; }
+    }
+  } else if (name === "saved" && id) await openSaved(id);
+  routed = true;
 }
 
 async function sources() {
@@ -875,6 +981,7 @@ function prepareCodexConversation(mode) {
 
 /** Apre la scheda dentro la tab Salvate, sul ruolo scelto quando ce n'è uno. */
 async function openSaved(id, roleId) {
+  mirrorHash("salvate", id);
   await show(id, {panel: $("saved-detail"), filtered: false, refresh: loadSaved});
   const target = roleId ? $("saved-detail").querySelector("#job-" + roleId) : $("saved-detail");
   if (target instanceof HTMLDetailsElement) target.open = true;
@@ -971,7 +1078,7 @@ async function showDebugDetail(item, lens) {
   heading.append(el("h3", company.name), el("span", company.tier || "Senza tier", "tag"));
   panel.append(heading, el("p", lens.label, "muted"));
   panel.append(factList([
-    ["Categorie", companyCategories(company).join(" · ")],
+    ["Categorie", categoryList(company)],
     ["Stato", labels[company.status] || company.status],
     ["Sito", company.website ? link(company.website, hostname(company.website)) : "Non disponibile"],
   ]));
@@ -1006,11 +1113,7 @@ async function showDebugDetail(item, lens) {
   }
 
   const open = el("button", "Apri la scheda completa in Aziende", "primary");
-  open.addEventListener("click", guarded(async () => {
-    document.querySelector('[data-view="companies"]').click();
-    await show(item.company_id);
-    $("detail").scrollIntoView({block: "start"});
-  }));
+  open.addEventListener("click", () => Kit.go("aziende", item.company_id));
   panel.append(open);
   if (matchMedia("(max-width: 720px)").matches) {
     panel.focus({preventScroll: true});
@@ -1092,30 +1195,22 @@ async function showDebugRows(lens, value, offset = 0, facetSet = false) {
 async function init() {
   config = await api("/api/bootstrap");
   token = config.token;
-  for (const category of config.categories) {
-    const option = el("option", category);
-    option.value = category;
-    $("category").append(option);
-  }
+  setCombo($("category"), config.categories.map(category => [category]));
+  for (const input of [$("country"), $("city"), $("category")]) input.addEventListener("input", () => validateCombo(input));
   for (const source of Object.keys(config.sources)) {
     const option = el("option", source);
     option.value = source;
     $("source").append(option);
   }
+  setupDetailPanel();
+  // Una tab si apre cambiando l'indirizzo (#tab): lo gestisce route(). Con l'indirizzo già su quella tab si rileggono i dati.
   document.querySelectorAll("[data-view]").forEach((button) =>
     button.addEventListener(
       "click",
       guarded(async () => {
-        for (const node of document.querySelectorAll("[data-view]"))
-          node.removeAttribute("aria-current");
-        button.setAttribute("aria-current", "page");
-        for (const name of ["companies", "sources", "saved", "analytics", "pipeline", "debug"])
-          $(name + "-view").hidden = name !== button.dataset.view;
-        if (button.dataset.view === "sources") await sources();
-        if (button.dataset.view === "saved") await loadSaved();
-        if (button.dataset.view === "analytics") await loadAnalytics();
-        if (button.dataset.view === "pipeline") await loadPipeline();
-        if (button.dataset.view === "debug") await loadDebug();
+        const name = button.dataset.view;
+        if (location.hash.slice(1) === views[name]) await showView(name);
+        else Kit.go(views[name]);
       }),
     ),
   );
@@ -1131,6 +1226,7 @@ async function init() {
     "click",
     guarded(async () => {
       HTMLFormElement.prototype.reset.call($("filters"));
+      for (const input of [$("country"), $("city"), $("category")]) validateCombo(input);
       // I pulsanti del tier non sono campi del modulo: si riportano a «Tutte» a mano.
       for (const button of $("tier-scope").querySelectorAll("button")) button.setAttribute("aria-pressed", String(!button.dataset.tier));
       remember("tier", "");
@@ -1169,7 +1265,6 @@ async function init() {
     await load();
   }));
   setupColumns();
-  setupResize();
   $("export").addEventListener("click", guarded(exportCSV));
   $("refresh-saved").addEventListener("click", guarded(loadSaved));
   $("refresh-debug").addEventListener("click", guarded(loadDebug));
@@ -1182,37 +1277,70 @@ async function init() {
   $('pipeline-form').addEventListener('submit', launchPipeline);
   $('pipeline-stop').addEventListener('click', () => stopPipeline(pipelineData?.controls.active?.id));
   $("analytics-scope").addEventListener("change", guarded(loadAnalytics));
+  setupMenu();
+  setupShortcuts();
   await load();
-  // I risultati non aspettano i menu geografici: arrivano quando sono pronti.
-  setupPlaces().catch((error) => message(error.message, true));
+  // I risultati non aspettano i menu geografici né i colori delle categorie: arrivano quando sono pronti.
+  setupPlaces().catch((error) => message(error.message, true)).finally(() => loadCategoryColors().catch(() => {}));
+  // Il vecchio indirizzo ?view=pipeline (lo apre Avvia JobHunter.pyw) vale come #pipeline.
+  if (!location.hash && new URLSearchParams(location.search).get("view") === "pipeline") history.replaceState(null, "", "#pipeline");
+  Kit.route((parts) => guarded(() => route(parts))());
+  // Al ritorno sulla scheda si rilegge la tab aperta, mai sopra un campo che si sta compilando o un passaggio in avvio.
+  const refreshers = {companies: load, saved: loadSaved, pipeline: loadPipeline, sources};
+  const editing = () => Boolean(document.querySelector("dialog[open]"))
+    || document.activeElement?.matches?.("input, textarea, select")
+    || [...document.querySelectorAll("#detail textarea, #saved-detail textarea")].some((box) => box.value.trim());
+  Kit.refresh(() => { if (refreshers[currentView]) guarded(refreshers[currentView])(); }, {every: 0, skipIf: editing});
 }
-/** Il bottone del tema funziona anche se il server non risponde: non aspetta il bootstrap. */
-function setupTheme() {
-  const root = document.documentElement, toggle = $("theme-toggle");
-  const sync = () => {
-    const text = root.dataset.theme === "dark" ? "Passa al tema chiaro" : "Passa al tema scuro";
-    toggle.setAttribute("aria-label", text);
-    toggle.title = text;
-  };
-  toggle.addEventListener("click", () => {
-    root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
-    remember("theme", root.dataset.theme);
-    sync();
+
+/** Tasto destro (o tocco lungo) sulla riga di un'azienda: apri, copia il link, salva. */
+function companyLink(id) {
+  return `${location.origin}${location.pathname}#aziende/${encodeURIComponent(id)}`;
+}
+async function saveCompany(id) {
+  await api("/api/feedback", {company_id: id, opportunity_id: null, status: "saved", reason: "interesting", note: "Azienda salvata a mano"});
+  message("Salvato l'azienda: lo trovi nella tab Salvate.");
+  await load();
+  if ($("detail").dataset.id === id) await show(id);
+}
+function setupMenu() {
+  Kit.menu($("rows"), "tr[data-id]", (row) => {
+    const id = row.dataset.id;
+    return [
+      {label: "Apri la scheda", action: guarded(() => show(id))},
+      {label: "Copia il link", action: () => Kit.copy(companyLink(id), "Link copiato")},
+      "-",
+      row.dataset.status === "saved"
+        ? {label: "Già salvata: apri nelle Salvate", action: () => Kit.go("salvate", id)}
+        : {label: "Salva azienda", action: guarded(() => saveCompany(id))},
+    ];
   });
-  // Finché non scegli a mano, il tema segue il sistema anche a pagina aperta.
-  darkQuery.addEventListener("change", (event) => {
-    if (remembered("theme")) return;
-    root.dataset.theme = event.matches ? "dark" : "light";
-    sync();
+}
+
+/** «/» e Ctrl+K portano alla ricerca; Esc chiude scheda e menu (lo fanno il pannello e il menu del kit) e esce dal campo. */
+function setupShortcuts() {
+  const focusSearch = guarded(async () => {
+    detailPanel.close();
+    if (currentView !== "companies") {
+      history.replaceState(null, "", "#aziende");
+      await showView("companies");
+    }
+    $("query").focus();
+    $("query").select();
   });
-  sync();
+  Kit.keys({"/": focusSearch, "ctrl+k": focusSearch});
+  // In un campo di ricerca Esc di solito svuota il testo: qui lo lascia e basta esce dal campo.
+  $("query").addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.target.blur();
+  });
 }
 // Lo script non è differito (serve al tema), quindi la pagina parte quando il documento è pronto.
+// Il tema funziona anche se il server non risponde: Kit.theme non aspetta il bootstrap.
 document.addEventListener("DOMContentLoaded", () => {
-  setupTheme();
-  init().then(() => {
-    if (new URLSearchParams(location.search).get('view') === 'pipeline') document.querySelector('[data-view="pipeline"]').click();
-  }).catch((error) => message(error.message, true));
+  Kit.theme.init("jobhunter");
+  init().catch((error) => message(error.message, true));
 });
 
 /** Render comparable counts with a shared denominator and no chart dependency. */
@@ -1323,10 +1451,20 @@ function setupTiers() {
   }));
 }
 
+/** Aziende che rispondono ai filtri su aziende dell'archivio (visibili/totale); senza filtri basta il totale. */
+let archiveTotal = 0;
+function renderCount() {
+  $("count").textContent = archiveTotal > total
+    ? `${nf(total)} di ${nf(archiveTotal)} aziende`
+    : `${nf(total)} aziende`;
+}
+
 /** I conteggi arrivano dopo l'elenco: sono sull'archivio intero e non devono ritardarlo. */
 function refreshTierCounts() {
   api("/api/tiers").then(({counts}) => {
     const all = Object.values(counts).reduce((sum, n) => sum + n, 0);
+    archiveTotal = all;
+    renderCount();
     for (const button of $("tier-scope").querySelectorAll("button")) {
       button.querySelector(".count").textContent = nf(button.dataset.tier ? counts[button.dataset.tier] : all);
     }
@@ -1336,6 +1474,36 @@ function refreshTierCounts() {
 /** Normalize the transitional first-category field into the multi-label UI contract. */
 function companyCategories(company) {
   return company.categories?.length ? company.categories : [company.category || "Da classificare"];
+}
+
+/** Un colore per categoria, lo stesso ovunque: le cinque più numerose dell'archivio (le fette colorate della ciambella
+    nelle Metriche) portano la loro serie cat-1…cat-5, in tabella, nella scheda e nei grafici; le altre restano neutre.
+    Il nome della categoria c'è sempre accanto: il colore da solo non basta. */
+let categoryColors = new Map();
+function setCategoryColors(rows) {
+  categoryColors = new Map(rows.filter(row => row.label !== "Da classificare").slice(0, 5)
+    .map((row, index) => [row.label, "cat-" + (index + 1)]));
+  document.querySelectorAll(".cat-dot").forEach(paintCategory);
+}
+/** Legge la classifica dell'intero archivio, la stessa che le Metriche mostrano senza filtro. */
+async function loadCategoryColors() {
+  setCategoryColors((await api("/api/analytics?eligibility=")).categories);
+}
+function paintCategory(dot) {
+  dot.className = "cat-dot " + (categoryColors.get(dot.dataset.category) || "");
+}
+/** «Energia · Software e tecnologia», ciascuna con il suo pallino. */
+function categoryList(company) {
+  const list = el("span", undefined, "category-list");
+  companyCategories(company).forEach((name, index) => {
+    if (index) list.append(" · ");
+    const dot = el("span");
+    dot.dataset.category = name;
+    dot.setAttribute("aria-hidden", "true");
+    paintCategory(dot);
+    list.append(dot, name);
+  });
+  return list;
 }
 
 const nf = (value) => Number(value || 0).toLocaleString("it-IT");
@@ -1430,8 +1598,10 @@ function gauges(rows, total) {
 Chi non ha categoria va in fondo e resta binario vuoto, come il dato mancante negli anelli di completezza. */
 function categorySlices(categories) {
   const known = categories.filter(row => row.label !== "Da classificare");
+  // Le categorie fuori dalla classifica dell'archivio restano neutre: il loro colore non deve somigliare a quello di un'altra.
   const slices = ranked(known, 5, "Altre categorie").map(([label, value, color], index) =>
-    [label, value, color === "seg-pending" ? "seg-pending" : "cat-" + (index + 1)]);
+    [label, value, color === "seg-pending" ? "seg-pending"
+      : categoryColors.size ? categoryColors.get(label) || "seg-rank" : "cat-" + (index + 1)]);
   const unclassified = categories.find(row => row.label === "Da classificare");
   if (unclassified) slices.push(["Senza categoria", unclassified.count, "track"]);
   return slices;
@@ -1584,6 +1754,12 @@ async function loadAnalytics() {
   try {
     const data = await api("/api/analytics?" + new URLSearchParams({eligibility: $("analytics-scope").value}));
     if (request !== analyticsRequest) return;
+    // Il filtro «Tutto l'archivio» è la classifica da cui nascono i colori; con un altro filtro si legge a parte.
+    if (!$("analytics-scope").value) setCategoryColors(data.categories);
+    else if (!categoryColors.size) {
+      await loadCategoryColors().catch(() => {});
+      if (request !== analyticsRequest) return;
+    }
     $("analytics-status").textContent = `Archivio: ${nf(data.archive_total)} annunci · ${nf(data.archive_companies)} aziende · Aggiornato alle ${new Date(data.generated_at).toLocaleTimeString("it-IT")}`;
     const content = $("analytics-content");
     renderProcessing(content, data.processing);
