@@ -1,4 +1,4 @@
-/* Kit delle app di Ettore — versione 1.0 (2026-11-24).
+/* Kit delle app di Ettore — versione 1.1 (2026-11-25).
    Stile: Mezzanotte con pulsanti ambra (scuro) e Notte verde (chiaro), scelti nell'app Standard (regola UI-02).
    Si copia la cartella kit/ nel progetto e non si modifica lì: i colori di un'app si cambiano sovrascrivendo i
    token in un file suo, caricato dopo questo. Novità e versioni: CHANGELOG.md accanto a questo file.
@@ -33,8 +33,9 @@
   color-scheme: light;
   --bg: #f4f6f0; --surface: #ffffff; --surface-2: #e9eee4; --line: #d5ddd0; --line-strong: #a9b8a4;
   --text: #0c140e; --text-2: #2e3d31; --text-3: #55665a;
-  --accent: #157a42; --on-accent: #ffffff; --accent-2: #a86b00;
-  --ok: #157a42; --warn: #a86b00; --bad: #c62828;
+  --accent: #157a42; --on-accent: #ffffff; --accent-2: #8f5b00;
+  /* Avvisi: #8f5b00 resta sopra 4,5:1 anche su --surface-2 (1.1; prima #a86b00, 4,4:1 sul bianco). */
+  --ok: #157a42; --warn: #8f5b00; --bad: #c62828;
   --cat-1: #157a42; --cat-2: #a86b00; --cat-3: #0b7a9e; --cat-4: #c2185b; --cat-5: #5c7a14;
   --scrim: rgb(12 20 14 / .35);
   --shadow-pop: 0 12px 32px rgb(12 20 14 / .18);
@@ -133,6 +134,7 @@ kbd { border: 1px solid var(--line-strong); border-radius: 4px; padding: 0 4px; 
 @keyframes k-shimmer { to { background-position: -200% 0; } }
 .k-save { font-size: 13px; color: var(--text-3); }
 .k-save.k-error { color: var(--bad); font-weight: 600; }
+.k-save.k-pending { color: var(--text-2); }
 
 /* ---------- Telefono e movimento ridotto ---------- */
 @media (max-width: 640px) {

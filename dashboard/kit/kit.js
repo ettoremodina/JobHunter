@@ -1,11 +1,11 @@
-/* Kit delle app di Ettore — versione 1.0 (2026-11-24).
+/* Kit delle app di Ettore — versione 1.1 (2026-11-25).
    Funzioni comuni, senza dipendenze, per le regole tenute nell'app Standard: tema (UI-01), pannello sovrapposto
    (UI-07), menu del tasto destro (UX-10), scorciatoie (UX-11), rilettura dei dati (UX-14), conferma in due passi
    (UX-06), salvataggio automatico con stato (UX-04), link profondi (UX-09), avvisi.
    Si usa con kit.css; tutto sta in window.Kit. Novità e versioni: CHANGELOG.md accanto a questo file. */
 (function () {
   "use strict";
-  const Kit = { versione: "1.0" };
+  const Kit = { versione: "1.1" };
   const typing = target => target?.closest?.("input, textarea, select, [contenteditable='true']");
 
   /* ---------- Tema chiaro e scuro (UI-01) ----------
@@ -108,6 +108,9 @@
      Kit.keys({ "/": fn, "j": fn, "ctrl+k": fn, "Escape": fn }). Mentre si scrive in un campo vale solo Escape. */
   Kit.keys = function (map) {
     document.addEventListener("keydown", event => {
+      // Invio e spazio su pulsanti e link restano loro: premono il pulsante, aprono il link (1.1).
+      if ((event.key === "Enter" || event.key === " ") &&
+          event.target.closest?.("button, a[href], summary, [role='button'], [role='menuitem'], [role='tab']")) return;
       const name = `${event.ctrlKey || event.metaKey ? "ctrl+" : ""}${event.key.length === 1 ? event.key.toLowerCase() : event.key}`;
       const action = map[name];
       if (!action || (typing(event.target) && event.key !== "Escape") || (event.altKey && !name.startsWith("ctrl+"))) return;
@@ -141,26 +144,46 @@
 
   /* ---------- Salvataggio automatico con stato (UX-04) ----------
      const save = Kit.autosave(async () => { ...PUT... }, { status: elemento, delay: 800 }); save() a ogni modifica.
-     I testi iniziano sempre con "Salvato" o "Non salvato": alcune app li controllano prima di chiudere la pagina. */
+     I salvataggi vanno in fila: una modifica arrivata mentre si salva parte subito dopo, mai in parallelo (1.1).
+     Durante l'attesa lo stato dice "Modifiche da salvare…" (1.1). Se la scrittura lancia un errore con
+     error.stop = true (per esempio un 409: dati cambiati altrove), non si ritenta finché l'utente non modifica di nuovo.
+     I testi finali iniziano sempre con "Salvato" o "Non salvato": alcune app li controllano prima di chiudere la pagina. */
   Kit.autosave = function (write, { status = null, delay = 800 } = {}) {
-    let timer = null, pending = false;
-    const show = (text, error = false) => { if (status) { status.textContent = text; status.classList.toggle("k-error", error); } };
+    let timer = null, pending = false, running = null;
+    const show = (text, kind = "") => {
+      if (!status) return;
+      status.textContent = text;
+      status.classList.toggle("k-error", kind === "error");
+      status.classList.toggle("k-pending", kind === "pending");
+    };
     const flush = async () => {
       clearTimeout(timer);
+      if (running) return running;   // il salvataggio in corso, finendo, riparte se nel frattempo è cambiato qualcosa
       if (!pending) return;
-      pending = false;
-      show("Salvataggio…");
-      try {
-        await write();
-        show(`Salvato alle ${new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`);
-      } catch (error) {
-        pending = true;
-        show(`Non salvato${error?.message ? ` (${error.message})` : ""}: le modifiche sono ancora qui.`, true);
-      }
+      running = (async () => {
+        while (pending) {
+          pending = false;
+          show("Salvataggio…", "pending");
+          try {
+            await write();
+            if (!pending) show(`Salvato alle ${new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`);
+          } catch (error) {
+            pending = !error?.stop;
+            show(`Non salvato${error?.message ? ` (${error.message})` : ""}: le modifiche sono ancora qui.`, "error");
+            break;
+          }
+        }
+      })();
+      try { await running; } finally { running = null; }
     };
-    const schedule = () => { pending = true; clearTimeout(timer); timer = setTimeout(flush, delay); };
+    const schedule = () => {
+      pending = true;
+      clearTimeout(timer);
+      if (!running) show("Modifiche da salvare…", "pending");
+      timer = setTimeout(flush, delay);
+    };
     schedule.flush = flush;
-    schedule.pending = () => pending;
+    schedule.pending = () => pending || Boolean(running);
     document.addEventListener("visibilitychange", () => { if (document.hidden) flush(); });
     return schedule;
   };
