@@ -6,7 +6,14 @@ Progetto **in pausa** (non serve ora). Le voci sotto riprendono quando si torna 
 
 - [ ] **Review progetto pipeline e opportunità mobilità urbana**: verificare e provare la pipeline. I passi 1-2 sono fatti (commit locale `e71c5c1`, non pushato); restano il 429 di LinkedIn (passo 3) e il comando notturno unico (passo 5). Dettagli nell'[handoff](docs/handoff/2026-10-27-review-pipeline.md).
 - [x] **Pushare il commit `e71c5c1`** dal PC (`main` locale avanti rispetto a GitHub).
-- [ ] **Condivisione repo**: la repo risulta pubblica e la cronologia contiene un token Telegram. Revocare il token da BotFather (`/revoke`), poi rendere la repo privata o riscrivere la history.
+
+## Repo e dati
+
+- [ ] **Sicurezza e backup della repo**: la repo risulta pubblica, la cronologia contiene un token Telegram e i dati locali non hanno copia.
+  - [ ] Revocare il token Telegram da BotFather (`/revoke`).
+  - [ ] Decidere la visibilità: rendere la repo privata, oppure riscrivere la history prima di tenerla pubblica (serve la tua autorizzazione esplicita). Vedi il [piano](../AgentWorkflow/PLANS/2026-11-24-applicazione-standard.md).
+  - [ ] Backup dei dati in `data/`: oggi sono solo sul disco (ignorati da Git). Serve una repo dati privata in `personale/`, come da profilo.
+  - [x] Push del commit del 24/11 (kit 1.0 e hub): `main` allineato a GitHub al 27/11.
 
 ## Aziende
 
